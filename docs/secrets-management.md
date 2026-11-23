@@ -103,7 +103,7 @@ a file or an environment variable, and your secrets manager fills it.
 ```yaml
 node:
   name: <machine>
-  deck: https://<deck host>.<tailnet>.ts.net
+  deck: https://<deck address>
   token_file: ~/.config/quietdeck/node-token
 ```
 
@@ -120,7 +120,7 @@ manager, so the token exists only in the node's own environment:
 ```yaml
 node:
   name: <machine>
-  deck: https://<deck host>.<tailnet>.ts.net
+  deck: https://<deck address>
   token_env: QUIETDECK_NODE_TOKEN
 ```
 

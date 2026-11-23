@@ -12,7 +12,7 @@ Quietdeck has two parts to deploy:
 ### Image
 
 - Built from `deploy/Dockerfile` (multi-stage: the Rust binary, then a distroless `nonroot` image holding that one
-  binary, with the web app embedded once it exists). Build from the repository root:
+  binary, with the web app built in a Node stage and embedded). Build from the repository root:
   `docker build -f deploy/Dockerfile -t quietdeck-deck .`
 - Binary `/quietdeck-deck`, entrypoint `["/quietdeck-deck", "serve"]`. Runs as uid and gid 65532.
 - Push it to your own registry as `<registry>/quietdeck/deck:<git short SHA>`. No public image is published yet.
@@ -22,7 +22,7 @@ Quietdeck has two parts to deploy:
 
 | Port | Serves | Exposure |
 |---|---|---|
-| 8080 | The web app, the REST API (`/api/*`), server-sent events, the node WebSocket (`/api/nodes/ws`), terminal WebSockets, and MCP at `/mcp` | **Tailnet only.** WebSocket upgrades must pass through. Never behind Cloudflare |
+| 8080 | The web app, the REST API (`/api/*`), server-sent events, the node WebSocket (`/api/nodes/ws`), terminal WebSockets, and MCP at `/mcp` | **Private network only**, through an HTTPS ingress. WebSocket upgrades and server-sent events must pass through unbuffered. Never behind Cloudflare or any other public proxy |
 | 8081 | Incoming webhooks: `POST /hooks/<endpoint id>/<secret>`. Nothing else | Public, through a Cloudflare Tunnel whose ingress sends only `^/hooks/` here and answers everything else with `http_status:404` |
 
 Health: `GET /healthz` on both ports answers `200 ok` once the database is open and migrated, and 503 before that. Use
@@ -48,8 +48,7 @@ volume read-write and run as gid 65532. On a ReadWriteOnce volume, the backup po
 
 | Variable | Required | Default | What |
 |---|---|---|---|
-| `QUIETDECK_PUBLIC_URL` | yes | | The app's one stable HTTPS origin on the tailnet, e.g. `https://quietdeck.<tailnet>.ts.net`. It's the passkey relying party (its host is the RP ID), the origin push links open, and the URL nodes connect to. Changing it means registering passkeys and installing the web app again |
-| `QUIETDECK_OWNER_LOGIN` | yes | | The owner's Tailscale login, or several separated by commas (the same person on two tailnets, when the deck's device is shared into another tailnet). Browser requests must carry `Tailscale-User-Login` equal to one of them, and passkeys can be registered only from them. Overrides `owner:` in deck.yaml |
+| `QUIETDECK_PUBLIC_URL` | yes | | The app's one stable HTTPS origin, e.g. `https://quietdeck.example.com`: a host name, not an IP address. It's the passkey relying party (its host is the RP ID), the only origin whose pages may act with the sign-in cookie, the origin push links open, and the URL nodes connect to. Changing it means registering passkeys and installing the web app again. `http://localhost:<port>` works for a deck on your own machine |
 | `QUIETDECK_HOOKS_PUBLIC_URL` | yes, for webhooks | | The public origin of the hooks port through the tunnel, e.g. `https://hooks.example.com`. Used to print endpoint URLs |
 | `QUIETDECK_VAPID_PUBLIC_KEY` | yes, for push | | Web Push VAPID public key, base64url (uncompressed P-256 point) |
 | `QUIETDECK_VAPID_PRIVATE_KEY` | yes, for push | | The matching private key, base64url. A secret. Generate a pair with `quietdeck-deck vapid-keys` |
@@ -59,20 +58,29 @@ volume read-write and run as gid 65532. On a ReadWriteOnce volume, the backup po
 | `QUIETDECK_LISTEN` | no | `0.0.0.0:8080` | |
 | `QUIETDECK_HOOKS_LISTEN` | no | `0.0.0.0:8081` | |
 | `RUST_LOG` | no | `info` | Logs never contain message bodies, webhook payloads or card contents |
+| `QUIETDECK_DEV_TRUST_LOCAL` | no | off | Development only: every browser request counts as the signed-in owner. Never set it on a deck anyone else can reach |
 
 Without the VAPID variables the deck runs and says in Settings that push is off. Changing the VAPID key pair drops
 every device's push subscription.
 
+### Sign-in
+
+Passkeys only. The first passkey is registered with a one-time setup code (`quietdeck-deck setup-code`, run in the
+container, valid 15 minutes, once); later ones are added in Settings while signed in. A browser session is an
+`HttpOnly`, `SameSite=Strict` cookie (`Secure` when the public URL is HTTPS) that ends after 30 days without use, and
+the deck refuses any state-changing request with it whose `Origin` isn't `QUIETDECK_PUBLIC_URL`. Nodes and the CLI
+authenticate with their own tokens, never the cookie.
+
 ### Ingress notes
 
-- The tailnet ingress (Tailscale operator `Ingress`, or `tailscale serve`) must pass `Tailscale-User-Login` through
-  and support WebSockets. Its certificate name goes into public Certificate Transparency logs.
-- **Only the tailnet ingress may reach port 8080.** The deck believes `Tailscale-User-Login`, so anything else that can
-  reach 8080 could claim to be the owner. In Kubernetes, add a NetworkPolicy that admits 8080 only from the Tailscale
-  proxy's pods. With Docker, publish 8080 on `127.0.0.1` and run `tailscale serve` on the same host. Tailscale Serve
-  replaces any `Tailscale-User-*` headers a client sends with its own.
-- Nodes connect to `QUIETDECK_PUBLIC_URL` over the tailnet too, from tagged machines that send no
-  `Tailscale-User-Login`. They authenticate with their node token, so the ingress must not demand a user identity.
+- Serve 8080 at `QUIETDECK_PUBLIC_URL` through an HTTPS ingress on the private network (a cluster ingress with a
+  private address and your certificate, or `tailscale serve`). It must support WebSockets and must not buffer
+  server-sent events (`/api/events`).
+- **Keep 8080 off every public network.** Sign-in protects every endpoint, but the deck is a single-user control
+  plane: there's no reason for the internet to reach it. A NetworkPolicy that admits 8080 only from the ingress's pods
+  is a good second fence. With Docker, publish 8080 on `127.0.0.1` and run the HTTPS proxy on the same host.
+- Nodes connect to `QUIETDECK_PUBLIC_URL` too. They authenticate with their node token, so the ingress must not demand
+  any other sign-in in front of the deck.
 - The deck makes outbound requests only to Web Push services (`*.push.apple.com`, `fcm.googleapis.com`,
   `updates.push.services.mozilla.com`).
 

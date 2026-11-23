@@ -26,7 +26,7 @@ pub struct NodeConfig {
 pub struct NodeSection {
     /// This machine's name on the deck.
     pub name: String,
-    /// The deck's URL (QUIETDECK_PUBLIC_URL), e.g. `https://quietdeck.example.ts.net`.
+    /// The deck's URL (QUIETDECK_PUBLIC_URL), e.g. `https://quietdeck.example.com`.
     pub deck: String,
     /// Where the node token is: a file only this user can read...
     #[serde(default)]

@@ -2,7 +2,7 @@
 
 Quietdeck has three parts:
 
-- **The deck**: one small server, on your tailnet. It holds the cards you approve, the directory of every agent
+- **The deck**: one small server on your private network. It holds the cards you approve, the directory of every agent
   session on every machine, the automatic-actions timeline, and the message relay between sessions. It reads no email
   and holds no credentials for your services.
 - **A node** on each machine where you run agent sessions (your laptop, a server VM). It connects out to the deck,
@@ -15,10 +15,12 @@ This guide sets up the deck, enrols a machine, connects Claude Code and checks t
 
 ## What you need
 
-- **A tailnet.** The deck is served only on your [Tailscale](https://tailscale.com) network, and it knows it's you
-  from the identity Tailscale Serve attaches to each request. Nothing about the deck is public.
-- **Somewhere to run the deck**: any machine with Docker, or a Kubernetes cluster, that's always on and on your
-  tailnet. It needs very little: a few tens of megabytes of memory and a small volume for its SQLite database.
+- **Somewhere to run the deck**: any machine with Docker, or a Kubernetes cluster, that's always on. It needs very
+  little: a few tens of megabytes of memory and a small volume for its SQLite database.
+- **A private HTTPS address for it.** You sign in with a passkey, and browsers allow passkeys only over HTTPS (or on
+  `localhost`). Keep the deck off the public internet: [Tailscale](https://tailscale.com) Serve is the simplest way to
+  give it an HTTPS name only your own devices can reach, and an ingress on your home network with your own certificate
+  works too.
 - **On each machine with agent sessions**: [herdr](https://herdr.dev), with your Claude Code or Codex sessions running
   in its tabs. The node reads herdr to know which sessions are where.
 - **A secrets manager.** Agents need credentials, and without a secrets manager they end up pasted into chat and
@@ -40,47 +42,59 @@ That puts `quietdeck-node` and `quietdeck` in `~/.cargo/bin`. Do this on every m
 
 ## Run the deck
 
-The deck is one container. Build its image from the repository root:
+The deck is one container. Build its image from the repository root (it builds the web app too):
 
 ```sh
 docker build -f deploy/Dockerfile -t quietdeck-deck .
 ```
 
-Then run it, with port 8080 published only on the host's loopback address, and put it on your tailnet with
-Tailscale Serve:
+Then run it, with port 8080 published only on the host's loopback address, and give it an HTTPS name. With Tailscale
+Serve on the same host:
 
 ```sh
 docker volume create quietdeck-data
 docker run -d --name quietdeck --restart unless-stopped \
   -v quietdeck-data:/data \
-  -e QUIETDECK_PUBLIC_URL=https://<deck host>.<tailnet>.ts.net \
-  -e QUIETDECK_OWNER_LOGIN=<your Tailscale login> \
+  -e QUIETDECK_PUBLIC_URL=https://<deck address> \
   -p 127.0.0.1:8080:8080 \
   quietdeck-deck
 tailscale serve --bg --https=443 http://127.0.0.1:8080
 ```
 
-- `QUIETDECK_PUBLIC_URL` is the deck's address on your tailnet: the HTTPS name `tailscale serve` prints.
-- `QUIETDECK_OWNER_LOGIN` is the login Tailscale shows for you (`tailscale whois` on your own IP prints it), such as
-  `you@example.com` or `you@github`. If you reach the deck from two tailnets (its machine shared into another one),
-  give both logins, separated by commas.
-- **Keep port 8080 off every other network.** The deck believes the identity header Tailscale Serve adds, so anything
-  that can reach 8080 directly could claim to be you. Publishing on `127.0.0.1` and serving it through Tailscale on
-  the same host keeps that from happening. On Kubernetes, see [deploy/README.md](../deploy/README.md) for the
-  ingress and the network policy it needs.
+- `QUIETDECK_PUBLIC_URL` is the address you'll open the deck at: with Tailscale Serve, the HTTPS name
+  `tailscale serve` prints (`https://<machine>.<tailnet>.ts.net`). Your passkeys belong to that name, so changing it
+  later means adding them again. It has to be a name, not an IP address.
+- On Kubernetes, see [deploy/README.md](../deploy/README.md) for the ingress and the network policy.
 
 Check it's up:
 
 ```sh
-curl -s https://<deck host>.<tailnet>.ts.net/healthz
+curl -s https://<deck address>/healthz
 ```
 
 It answers `ok`. The deck's own settings (your account labels, boards and the rest) go in `/data/deck.yaml`: start
 from [deploy/deck.example.yaml](../deploy/deck.example.yaml). Every key is optional.
 
+## Sign in
+
+Nothing on the deck works until you've signed in, and you sign in only with a passkey. The first one needs a one-time
+setup code from the deck's container:
+
+```sh
+docker exec quietdeck /quietdeck-deck setup-code
+```
+
+Open `https://<deck address>` in your browser, enter the code, name the device and create the passkey (Touch ID,
+Face ID, Windows Hello or a security key). The code is good for 15 minutes, once.
+
+To add your phone or another computer, sign in on a device you've already added, open **Settings**, and add a passkey
+there. A passkey synced through iCloud Keychain, Google Password Manager or 1Password signs you in on your other
+devices too. Each device stays signed in until you sign out, or until it hasn't been used for 30 days.
+
 ## Enrol a machine
 
-Each machine gets its own node token, from a one-time code the deck gives you. Get a code on the deck's host:
+Each machine gets its own node token, from a one-time code. In the deck's **Settings**, press **Enrol a machine**: it
+shows the whole command with a fresh code. Or get a code on the deck's host:
 
 ```sh
 docker exec quietdeck /quietdeck-deck enrolment-code
@@ -89,7 +103,7 @@ docker exec quietdeck /quietdeck-deck enrolment-code
 The code is good for 15 minutes, once. On the machine you're enrolling:
 
 ```sh
-quietdeck node enroll <code> --deck https://<deck host>.<tailnet>.ts.net --name <machine name>
+quietdeck node enroll <code> --deck https://<deck address> --name <machine name>
 ```
 
 That saves the node's token in `~/.config/quietdeck/node-token`, readable only by you, and writes
@@ -127,7 +141,7 @@ To give Claude Code the same commands as MCP tools, add the deck as an MCP serve
 
 ```sh
 claude mcp add-json --scope user quietdeck \
-  '{"type":"http","url":"https://<deck host>.<tailnet>.ts.net/mcp","headersHelper":"quietdeck auth headers"}'
+  '{"type":"http","url":"https://<deck address>/mcp","headersHelper":"quietdeck auth headers"}'
 ```
 
 `quietdeck auth headers` prints a fresh token for the session that runs it, and Claude Code runs it again when a token
@@ -263,7 +277,7 @@ unsummarised.
 Summaries say what each session worked on, which can include customers, money and anything else you discussed with
 it. The model is told never to copy secrets (tokens, passwords, keys), bank or card numbers, or personal data about
 your own customers' end users, and to refer to records by ID instead. It's a rule in the prompt, not a filter, so keep
-your deck private: it's served only on your tailnet.
+your deck private: on your own network, behind your passkeys.
 
 ### Coming from claude-summarizer
 
