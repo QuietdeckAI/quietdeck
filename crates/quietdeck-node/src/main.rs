@@ -1,13 +1,13 @@
-//! quietdeck-node: the daemon on each machine that runs agent sessions. It connects out to the deck, watches herdr,
+//! quietdeck-node: the daemon on each machine that runs agent sessions. It connects out to the deck, watches the orchestrator (herdr),
 //! delivers messages to sessions, writes their summaries, monitors account usage, and hands session tokens to the
 //! CLI over its local socket.
 
 mod config;
 mod control;
 mod deliver;
-mod herdr;
 mod link;
 mod local;
+mod orchestrator;
 mod runner;
 mod service;
 mod summaries;
@@ -60,6 +60,8 @@ pub struct Node {
     pub home: PathBuf,
     pub link: link::Link,
     pub deliverer: deliver::Deliverer,
+    /// The program that runs this machine's sessions (herdr's TUI).
+    pub orchestrator: Arc<dyn orchestrator::Orchestrator>,
     pub sessions: Mutex<Vec<SessionInfo>>,
     pub summaries: Option<summaries::SummariesHandle>,
     pub usage: Option<usage::UsageHandle>,
@@ -109,8 +111,10 @@ async fn ask_local(req: &LocalRequest) -> anyhow::Result<LocalResponse> {
 
 async fn run() -> anyhow::Result<()> {
     let config = NodeConfig::load(&config::config_path())?;
-    // herdr's auto-continue prompt is typed into a session like a person's message: it isn't one.
-    if let Some(message) = herdr::auto_continue_message() {
+    let orchestrator: Arc<dyn orchestrator::Orchestrator> =
+        Arc::new(orchestrator::herdr::Herdr { program: config.programs.herdr.clone() });
+    // A message the orchestrator types into a session by itself is typed like a person's: it isn't one.
+    for message in orchestrator.own_messages() {
         summaries::set_auto_continue_message(&message);
     }
     // Check the token now, so a bad one stops the daemon at start instead of looping on reconnects.
@@ -150,7 +154,8 @@ async fn run() -> anyhow::Result<()> {
     });
 
     let node = Arc::new(Node {
-        deliverer: deliver::Deliverer::new(&home, config.programs.herdr.clone()),
+        deliverer: deliver::Deliverer::new(&home, orchestrator.clone()),
+        orchestrator,
         config,
         home,
         link: link::Link::default(),

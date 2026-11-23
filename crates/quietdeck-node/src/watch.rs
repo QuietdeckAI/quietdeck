@@ -1,15 +1,15 @@
-//! herdr's sessions, live: the node follows herdr's event stream and pushes each change to the deck and the
+//! The orchestrator's sessions, live: the node follows its event stream and pushes each change to the deck and the
 //! summaries module as it happens.
 //!
-//! - Status changes come straight from `pane.agent_status_changed`.
-//! - Close events (`tab.closed`, `pane.agent_exited`) say how a session ended.
+//! - Status changes come straight from its status events.
+//! - Close events (a tab closed, an agent exited) say how a session ended.
 //! - `agent list` is read again after a lifecycle event that changes it (a new agent, its session ID arriving, a
 //!   rename or a move), every 30 seconds as a check, and whenever the stream starts again: events from a gap are
 //!   never replayed.
-//! - A session that goes away without a close event (herdr stopped, the machine shut down) is pushed as not running,
-//!   which isn't the same as closed. herdr sends no close events while it stops.
-//! - A herdr from before its client contract can't subscribe to every pane: the node reads `agent list` every 3
-//!   seconds instead, and tries the stream again every minute.
+//! - A session that goes away without a close event (the orchestrator stopped, the machine shut down) is pushed as
+//!   not running, which isn't the same as closed. herdr sends no close events while it stops.
+//! - An orchestrator that can't stream every session (herdr from before its client contract): the node reads its
+//!   sessions every 3 seconds instead, and tries the stream again every minute.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -23,43 +23,39 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use crate::Node;
-use crate::herdr::{self, Event, StreamError, Subscription};
+use crate::orchestrator::{Event, EventStream, StreamError};
 
 const CHECK_EVERY: Duration = Duration::from_secs(30);
 const POLL_EVERY: Duration = Duration::from_secs(3);
 /// How long after a lifecycle event `agent list` is read, so a burst of events reads it once.
 const SETTLE: Duration = Duration::from_millis(200);
-/// herdr unreachable this long means it has stopped, and its sessions with it. A live handoff (`herdr restart`)
+/// The orchestrator unreachable this long means it has stopped, and its sessions with it. A live handoff (`herdr restart`)
 /// takes far less.
 const DOWN_AFTER: Duration = Duration::from_secs(10);
 /// Sessions recently pushed as not running: a close event that arrives just after still says how they ended.
 const GONE_LIMIT: usize = 64;
 
 pub async fn run(node: Arc<Node>, signals: mpsc::Sender<SessionSignal>) {
-    let herdr = node.config.programs.herdr.clone();
     let mut w = Watcher { node, signals, gone: VecDeque::new() };
     let mut backoff = Duration::from_secs(1);
     let mut down_since: Option<Instant> = None;
     let mut warned_old = false;
     loop {
-        let opened = match herdr::socket_path(&herdr).await {
-            Ok(path) => Subscription::open(&path).await,
-            Err(e) => Err(StreamError::Io(std::io::Error::other(e.to_string()))),
-        };
+        let opened = w.node.orchestrator.subscribe().await;
         match opened {
             Ok(mut sub) => {
-                tracing::info!("following herdr's events");
+                tracing::info!(orchestrator = w.node.orchestrator.name(), "following the orchestrator's events");
                 backoff = Duration::from_secs(1);
                 down_since = None;
                 w.reconcile().await;
-                w.follow(&mut sub).await;
-                // The stream ended: herdr stopped, restarted or handed off. Read what's running now.
+                w.follow(sub.as_mut()).await;
+                // The stream ended: the orchestrator stopped, restarted or handed off. Read what's running now.
                 w.reconcile().await;
             }
             Err(StreamError::Refused(msg)) => {
                 if !warned_old {
-                    tracing::warn!(%msg, "this herdr can't report every pane's status: reading it every 3 seconds \
-                        until herdr is updated");
+                    tracing::warn!(%msg, "the orchestrator can't stream every session's status: reading it every 3 \
+                        seconds until it's updated");
                     warned_old = true;
                 }
                 let until = Instant::now() + Duration::from_secs(60);
@@ -69,10 +65,10 @@ pub async fn run(node: Arc<Node>, signals: mpsc::Sender<SessionSignal>) {
                 }
             }
             Err(StreamError::Io(e)) => {
-                tracing::debug!(error = %e, "herdr's event stream");
+                tracing::debug!(error = %e, "the orchestrator's event stream");
                 let since = *down_since.get_or_insert_with(Instant::now);
                 if since.elapsed() >= DOWN_AFTER {
-                    // herdr isn't running: nothing it ran is either.
+                    // The orchestrator isn't running: nothing it ran is either.
                     w.apply_snapshot(Vec::new()).await;
                 }
                 tokio::time::sleep(backoff).await;
@@ -89,7 +85,7 @@ struct Watcher {
 }
 
 impl Watcher {
-    async fn follow(&mut self, sub: &mut Subscription) {
+    async fn follow(&mut self, sub: &mut dyn EventStream) {
         let mut check = tokio::time::interval_at(Instant::now() + CHECK_EVERY, CHECK_EVERY);
         let mut due: Option<Instant> = None;
         loop {
@@ -107,11 +103,11 @@ impl Watcher {
                         }
                     }
                     Ok(None) => {
-                        tracing::info!("herdr closed its event stream");
+                        tracing::info!("the orchestrator closed its event stream");
                         return;
                     }
                     Err(e) => {
-                        tracing::warn!(error = %e, "reading herdr's event stream");
+                        tracing::warn!(error = %e, "reading the orchestrator's event stream");
                         return;
                     }
                 },
@@ -127,10 +123,10 @@ impl Watcher {
     /// Apply one event. True when `agent list` should be read again.
     async fn apply(&mut self, event: Event) -> bool {
         match event {
-            Event::Status { pane, status } => {
+            Event::Status { address, status } => {
                 let (known, changed) = {
                     let mut sessions = self.node.sessions.lock().await;
-                    match sessions.iter_mut().find(|s| s.pane.as_deref() == Some(pane.as_str())) {
+                    match sessions.iter_mut().find(|s| s.address.as_deref() == Some(address.as_str())) {
                         Some(s) if s.status != status => {
                             s.status = status;
                             s.status_changed_at = jiff::Timestamp::now();
@@ -143,8 +139,8 @@ impl Watcher {
                 if let Some(s) = changed {
                     self.pushed(&s).await;
                 }
-                // A pane the node has no session for: an agent that has just started (herdr doesn't always send
-                // `pane_updated` when its session ID arrives), or a plain shell, which costs one `agent list`.
+                // An address the node has no session for: an agent that has just started (herdr doesn't always send
+                // `pane_updated` when its session ID arrives), or a plain shell, which costs one sessions read.
                 !known
             }
             Event::TabClosed { sessions } => {
@@ -158,13 +154,13 @@ impl Watcher {
                 false
             }
             Event::AgentExited { session: None, .. } | Event::Other => false,
-            Event::PaneUpdated { pane, session: Some(id), tab, cwd } => {
+            Event::Updated { address, session: Some(id), tab, cwd } => {
                 let sessions = self.node.sessions.lock().await;
-                !sessions
-                    .iter()
-                    .any(|s| s.session_id == id && s.pane.as_deref() == Some(&pane) && s.tab == tab && s.cwd == cwd)
+                !sessions.iter().any(|s| {
+                    s.session_id == id && s.address.as_deref() == Some(&address) && s.tab == tab && s.cwd == cwd
+                })
             }
-            Event::PaneUpdated { session: None, .. } => false,
+            Event::Updated { session: None, .. } => false,
             Event::Changed => true,
         }
     }
@@ -192,9 +188,9 @@ impl Watcher {
     }
 
     async fn reconcile(&mut self) {
-        match herdr::snapshot(&self.node.config.programs.herdr).await {
+        match self.node.orchestrator.sessions().await {
             Ok(now) => self.apply_snapshot(now).await,
-            Err(e) => tracing::debug!(error = %e, "herdr agent list"),
+            Err(e) => tracing::debug!(error = %e, "reading the orchestrator's sessions"),
         }
     }
 
@@ -213,7 +209,7 @@ impl Watcher {
                 o.status != s.status
                     || o.tab != s.tab
                     || o.cwd != s.cwd
-                    || o.pane != s.pane
+                    || o.address != s.address
                     || o.resume_command != s.resume_command
             }) {
                 self.gone.retain(|g| g != &s.session_id);

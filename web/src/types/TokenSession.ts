@@ -3,4 +3,4 @@
 /**
  * The session a token speaks for.
  */
-export type TokenSession = { session_id: string | null, tab: string | null, pane: string | null, };
+export type TokenSession = { session_id: string | null, tab: string | null, address: string | null, };

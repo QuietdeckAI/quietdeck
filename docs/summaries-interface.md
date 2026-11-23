@@ -13,7 +13,7 @@ between the node's core and the module.
 |---|---|---|
 | Settings | `SummariesConfig` | From `summaries:` in node.yaml. Defaults: idle 60 s, gap 30 min, 2 calls at once, 48,000-character cap, day chunks for 30 days, sweep on, model `sonnet` |
 | Machine facts | `SummariesEnv` | State directory, home, the `claude` binary, the coordinator socket (or none), the time zone |
-| Session signals | `mpsc::Receiver<SessionSignal>` | One `Status` for every session in herdr's snapshot when the node starts, then one per `pane.agent_status_changed`, and a `Closed` per close event |
+| Session signals | `mpsc::Receiver<SessionSignal>` | One `Status` for every session in herdr's snapshot when the node starts, then one per status event from the orchestrator, and a `Closed` per close event |
 | Catch-up requests | `SummariesHandle::catchup(CatchupRequest)` | When the chat view opens a session |
 | The import | `SummariesHandle::import_claude_summarizer(dir)` | Run once per machine, from `quietdeck-node import-summaries <dir>` |
 

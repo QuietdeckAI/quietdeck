@@ -1,5 +1,5 @@
 //! Sessions the deck starts, resumes and closes on this machine (flow 3.15). The person's click or submitted form
-//! is the approval, and the deck logs it. The node checks the request, then has herdr do it, with `--no-focus` so
+//! is the approval, and the deck logs it. The node checks the request, then has the orchestrator do it, without taking focus, so
 //! nothing moves on the person's screen. The agents' permission flags come from node.yaml only.
 
 use quietdeck_types::AgentKind;
@@ -7,7 +7,7 @@ use quietdeck_types::directory::{SessionResume, SessionStart, SessionStarted};
 
 use crate::Node;
 use crate::config::expand;
-use crate::herdr;
+use crate::orchestrator::OpenTab;
 
 fn program(node: &Node, agent: AgentKind) -> (&str, &[String]) {
     match agent {
@@ -63,9 +63,59 @@ fn directory(cwd: &str) -> Result<String, String> {
     Ok(path.display().to_string())
 }
 
+/// Whether a program can be run: a path that exists, or a name found on PATH.
+pub fn installed(program: &str) -> bool {
+    if program.contains('/') {
+        return std::path::Path::new(program).is_file();
+    }
+    std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|d| d.join(program).is_file()))
+}
+
+/// A new session's arguments for its agent, after the agent's program: node.yaml's own, then the name, model and
+/// effort in the agent's flags.
+fn start_args(
+    agent: AgentKind,
+    name: &str,
+    model: Option<&str>,
+    effort: Option<&str>,
+    agent_args: &[String],
+) -> Vec<String> {
+    let mut a = agent_args.to_vec();
+    match agent {
+        AgentKind::Claude => {
+            a.extend(["--name".into(), name.into()]);
+            if let Some(m) = model {
+                a.extend(["--model".into(), m.into()]);
+            }
+            if let Some(e) = effort {
+                a.extend(["--effort".into(), e.into()]);
+            }
+        }
+        AgentKind::Codex => {
+            if let Some(m) = model {
+                a.extend(["-m".into(), m.into()]);
+            }
+            if let Some(e) = effort {
+                a.extend(["-c".into(), format!("model_reasoning_effort={e}")]);
+            }
+        }
+    }
+    a
+}
+
+/// The arguments that resume a session.
+fn resume_args(agent: AgentKind, tab: &str, session_id: &str, agent_args: &[String]) -> Vec<String> {
+    let mut a = agent_args.to_vec();
+    match agent {
+        AgentKind::Claude => a.extend(["--name".into(), tab.into(), "--resume".into(), session_id.into()]),
+        AgentKind::Codex => a.extend(["resume".into(), session_id.into()]),
+    }
+    a
+}
+
 pub async fn start(node: &Node, spec: SessionStart) -> Result<SessionStarted, String> {
     let (prog, args) = program(node, spec.agent);
-    if !herdr::installed(prog) {
+    if !installed(prog) {
         return Err(format!("{} isn't installed on this machine ({prog} isn't on PATH)", agent_name(spec.agent)));
     }
     let cwd = directory(&spec.cwd)?;
@@ -73,20 +123,24 @@ pub async fn start(node: &Node, spec: SessionStart) -> Result<SessionStarted, St
         return Err(format!("a session is already running in a tab named {}", spec.tab));
     }
     let name = spec.name.as_deref().unwrap_or(&spec.tab);
-    let argv =
-        herdr::start_args(spec.agent, &spec.tab, &cwd, name, spec.model.as_deref(), spec.effort.as_deref(), args);
-    let created = herdr::create_tab(&node.config.programs.herdr, &argv).await?;
-    tracing::info!(tab = %spec.tab, pane = %created.pane_id, "started a session for the deck");
+    let tab = OpenTab {
+        label: spec.tab.clone(),
+        cwd,
+        agent: spec.agent,
+        args: start_args(spec.agent, name, spec.model.as_deref(), spec.effort.as_deref(), args),
+    };
+    let created = node.orchestrator.open(&tab).await?;
+    tracing::info!(tab = %spec.tab, address = %created.address, "started a session for the deck");
     // The prompt goes in once the agent takes input, never on the command line: a session started with a prompt
-    // goes straight to working, and herdr waits for its idle screen.
+    // goes straight to working, and the orchestrator waits for its idle screen.
     let prompt_error = match &spec.prompt {
-        Some(text) => crate::deliver::herdr_prompt(&node.config.programs.herdr, &created.pane_id, text).await.err(),
+        Some(text) => node.orchestrator.deliver(&created.address, text).await.err(),
         None => None,
     };
     Ok(SessionStarted {
         node: node.config.node.name.clone(),
         tab: spec.tab,
-        pane: created.pane_id,
+        address: created.address,
         session_id: created.session_id,
         prompt_error,
     })
@@ -97,26 +151,55 @@ pub async fn resume(node: &Node, spec: SessionResume) -> Result<SessionStarted, 
         return Err(format!("that session is already running, in {}", s.tab.as_deref().unwrap_or("a tab")));
     }
     let (prog, args) = program(node, spec.agent);
-    if !herdr::installed(prog) {
+    if !installed(prog) {
         return Err(format!("{} isn't installed on this machine ({prog} isn't on PATH)", agent_name(spec.agent)));
     }
     let cwd = directory(&spec.cwd)?;
     let short: String = spec.session_id.chars().take(8).collect();
     let tab = spec.tab.clone().unwrap_or_else(|| format!("resumed {short}"));
-    let argv = herdr::resume_args(spec.agent, &tab, &cwd, &spec.session_id, args);
-    let created = herdr::create_tab(&node.config.programs.herdr, &argv).await?;
-    tracing::info!(%tab, pane = %created.pane_id, "resumed a session for the deck");
+    let open = OpenTab {
+        label: tab.clone(),
+        cwd,
+        agent: spec.agent,
+        args: resume_args(spec.agent, &tab, &spec.session_id, args),
+    };
+    let created = node.orchestrator.open(&open).await?;
+    tracing::info!(%tab, address = %created.address, "resumed a session for the deck");
     Ok(SessionStarted {
         node: node.config.node.name.clone(),
         tab,
-        pane: created.pane_id,
+        address: created.address,
         session_id: created.session_id.or(Some(spec.session_id)),
         prompt_error: None,
     })
 }
 
 pub async fn close(node: &Node, session_id: &str) -> Result<(), String> {
-    herdr::close_session(&node.config.programs.herdr, session_id).await?;
+    node.orchestrator.close(session_id).await?;
     tracing::info!(%session_id, "closed a session's tab for the deck");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn starts_and_resumes_take_the_agents_own_flags() {
+        let claude = start_args(
+            AgentKind::Claude,
+            "esign cert",
+            Some("opus"),
+            Some("high"),
+            &["--dangerously-skip-permissions".into()],
+        );
+        assert_eq!(claude.join(" "), "--dangerously-skip-permissions --name esign cert --model opus --effort high");
+        let codex = start_args(AgentKind::Codex, "b", Some("gpt-6"), Some("xhigh"), &["--no-daemon".into()]);
+        assert_eq!(codex.join(" "), "--no-daemon -m gpt-6 -c model_reasoning_effort=xhigh");
+        assert_eq!(resume_args(AgentKind::Claude, "b", "s1", &[]).join(" "), "--name b --resume s1");
+        assert_eq!(
+            resume_args(AgentKind::Codex, "b", "s1", &["--no-daemon".into()]).join(" "),
+            "--no-daemon resume s1"
+        );
+    }
 }

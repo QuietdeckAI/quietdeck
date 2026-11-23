@@ -13,7 +13,7 @@ use quietdeck_types::relay::{Delivery, DeliveryKind, DeliveryTarget};
 use crate::Node;
 
 const ASK: Duration = Duration::from_secs(30);
-/// Starting or resuming a session waits for herdr and the agent to come up.
+/// Starting or resuming a session waits for the orchestrator and the agent to come up.
 const START: Duration = Duration::from_secs(160);
 
 #[async_trait]
@@ -79,7 +79,7 @@ impl DeckApi for LinkDeck {
     }
 }
 
-/// The agent, by its tab on this machine, through the node's own delivery (its messaging socket, or herdr).
+/// The agent, by its tab on this machine, through the node's own delivery (its messaging socket, or the orchestrator).
 pub struct LocalAgent {
     pub node: Arc<Node>,
     pub tab: String,
@@ -98,7 +98,7 @@ impl AgentInbox for LocalAgent {
             target: DeliveryTarget {
                 tab: self.tab.clone(),
                 session_id: Some(s.session_id.clone()),
-                pane: s.pane.clone(),
+                address: s.address.clone(),
                 agent: s.agent,
             },
             kind,

@@ -90,8 +90,8 @@ async fn respond(node: &Node, req: LocalRequest, peer_pid: Option<u32>) -> Local
             },
             None => LocalResponse::Err { error: "summaries are off in node.yaml".into() },
         },
-        LocalRequest::Token { session_id, claude_pid, pane } => {
-            let session = verify_session(node, peer_pid, session_id, claude_pid, pane).await;
+        LocalRequest::Token { session_id, claude_pid, address } => {
+            let session = verify_session(node, peer_pid, session_id, claude_pid, address).await;
             match token_for(node, session).await {
                 Ok(t) => LocalResponse::Token {
                     token: t.token,
@@ -111,7 +111,7 @@ async fn verify_session(
     peer_pid: Option<u32>,
     session_id: Option<String>,
     claude_pid: Option<u32>,
-    pane: Option<String>,
+    address: Option<String>,
 ) -> Option<TokenSession> {
     let (peer, claude_pid) = (peer_pid?, claude_pid?);
     if !is_ancestor(claude_pid, peer).await {
@@ -124,7 +124,7 @@ async fn verify_session(
         tracing::debug!("caller's CLAUDE_CODE_SESSION_ID differs from the registry; using the registry's");
     }
     let tab = node.sessions.lock().await.iter().find(|s| s.session_id == reg.session_id).and_then(|s| s.tab.clone());
-    Some(TokenSession { session_id: Some(reg.session_id), tab, pane })
+    Some(TokenSession { session_id: Some(reg.session_id), tab, address })
 }
 
 async fn token_for(node: &Node, session: Option<TokenSession>) -> Result<MintedToken, String> {

@@ -3,4 +3,4 @@
 /**
  * Answers for deliveries and searches.
  */
-export type Delivered = "socket" | "herdr";
+export type Delivered = "socket" | "orchestrator";

@@ -4,4 +4,4 @@ import type { AgentStatus } from "./AgentStatus";
 /**
  * How a session ended, from herdr's close events.
  */
-export type SessionEnd = { "how": "tab_closed" } | { "how": "agent_exited", final_status: AgentStatus | null, pane_exited: boolean, };
+export type SessionEnd = { "how": "tab_closed" } | { "how": "agent_exited", final_status: AgentStatus | null, terminal_closed: boolean, };

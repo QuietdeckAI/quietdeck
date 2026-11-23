@@ -215,7 +215,7 @@ mod tests {
                 agent: AgentKind::Claude,
                 workspace: None,
                 tab: Some(tab.into()),
-                pane: Some("p1".into()),
+                address: Some("p1".into()),
                 cwd: Some(cwd.into()),
                 status: AgentStatus::Idle,
                 status_changed_at: jiff::Timestamp::now(),

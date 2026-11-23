@@ -75,7 +75,9 @@ pub async fn session_token() -> anyhow::Result<Token> {
     let req = LocalRequest::Token {
         session_id: std::env::var("CLAUDE_CODE_SESSION_ID").ok().filter(|s| !s.is_empty()),
         claude_pid: std::env::var("CLAUDE_PID").ok().and_then(|p| p.parse().ok()),
-        pane: std::env::var("HERDR_PANE_ID").ok().filter(|s| !s.is_empty()),
+        address: quietdeck_types::SESSION_ADDRESS_ENV
+            .iter()
+            .find_map(|name| std::env::var(name).ok().filter(|s| !s.is_empty())),
     };
     match ask_node(&req).await? {
         LocalResponse::Token { token, deck_url, .. } => Ok(Token { token, deck_url }),

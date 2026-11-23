@@ -40,7 +40,7 @@ pub fn target_of(row: &SessionRow) -> DeliveryTarget {
     DeliveryTarget {
         tab: row.info.tab.clone().unwrap_or_default(),
         session_id: Some(row.info.session_id.clone()),
-        pane: row.info.pane.clone(),
+        address: row.info.address.clone(),
         agent: row.info.agent,
     }
 }

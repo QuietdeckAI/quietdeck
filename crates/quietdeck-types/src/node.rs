@@ -155,7 +155,8 @@ pub struct SendAsCheck {
 pub struct TokenSession {
     pub session_id: Option<String>,
     pub tab: Option<String>,
-    pub pane: Option<String>,
+    #[serde(alias = "pane")]
+    pub address: Option<String>,
 }
 
 /// What the deck asks a node.
@@ -256,7 +257,8 @@ pub struct TokenClaims {
     pub node: String,
     pub session_id: Option<String>,
     pub tab: Option<String>,
-    pub pane: Option<String>,
+    #[serde(alias = "pane")]
+    pub address: Option<String>,
     /// Unix seconds.
     pub exp: i64,
 }
@@ -268,8 +270,9 @@ pub struct TokenClaims {
 pub enum Delivered {
     /// Handed to the session's own messaging socket.
     Socket,
-    /// Typed into the pane with `herdr agent prompt`.
-    Herdr,
+    /// Sent through the orchestrator (herdr: `herdr agent prompt`).
+    #[serde(alias = "herdr")]
+    Orchestrator,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -299,8 +302,10 @@ pub enum LocalRequest {
         session_id: Option<String>,
         /// `CLAUDE_PID`
         claude_pid: Option<u32>,
-        /// `HERDR_PANE_ID`
-        pane: Option<String>,
+        /// The session's address, from the environment variable its orchestrator sets
+        /// ([`crate::SESSION_ADDRESS_ENV`]).
+        #[serde(alias = "pane")]
+        address: Option<String>,
     },
     /// The node's own state, for `quietdeck ping`-style checks and the menu bar app.
     Status,

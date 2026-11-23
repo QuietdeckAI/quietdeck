@@ -1,7 +1,8 @@
 //! Putting a delivery in front of a session, the way `docs/claude-code-messaging.md` describes:
 //! - a Claude Code session with a messaging socket gets one `user` frame on it, with an envelope that names the
 //!   sender (`from-name`) and claims no permission mode;
-//! - a Codex session, or a Claude Code session with no socket, gets `herdr agent prompt`.
+//! - a Codex session, or a Claude Code session with no socket, gets the message through the orchestrator (herdr:
+//!   `herdr agent prompt`).
 //!
 //! The only failure the node reports as "offline" is a session that isn't running. Nothing is queued or retried.
 
@@ -42,7 +43,7 @@ struct KeyFile {
 
 pub struct Deliverer {
     pub claude_sessions_dir: PathBuf,
-    pub herdr: String,
+    pub orchestrator: std::sync::Arc<dyn crate::orchestrator::Orchestrator>,
     /// IDs of recent deliveries: a repeat is refused, so nothing reaches a session twice.
     seen: Mutex<VecDeque<String>>,
 }
@@ -50,8 +51,8 @@ pub struct Deliverer {
 const SEEN_LIMIT: usize = 512;
 
 impl Deliverer {
-    pub fn new(home: &Path, herdr: String) -> Deliverer {
-        Deliverer { claude_sessions_dir: home.join(".claude/sessions"), herdr, seen: Mutex::default() }
+    pub fn new(home: &Path, orchestrator: std::sync::Arc<dyn crate::orchestrator::Orchestrator>) -> Deliverer {
+        Deliverer { claude_sessions_dir: home.join(".claude/sessions"), orchestrator, seen: Mutex::default() }
     }
 
     pub async fn deliver(&self, d: &Delivery) -> Result<Delivered, String> {
@@ -73,19 +74,20 @@ impl Deliverer {
                 Some(reg) if usable(&reg) => {
                     return send_socket(&self.claude_sessions_dir, &reg, &d.from_name(), &text).await;
                 }
-                Some(_) => {} // no socket, or another protocol: herdr below
-                None if d.target.pane.is_none() => {
+                Some(_) => {} // no socket, or another protocol: the orchestrator below
+                None if d.target.address.is_none() => {
                     return Err(format!("{OFFLINE_PREFIX} no running Claude Code session {session_id}"));
                 }
                 None => {}
             }
         }
-        let pane = d
-            .target
-            .pane
-            .as_deref()
-            .ok_or_else(|| format!("{OFFLINE_PREFIX} the session has no herdr pane and no messaging socket"))?;
-        herdr_prompt(&self.herdr, pane, &text).await
+        let address = d.target.address.as_deref().ok_or_else(|| {
+            format!(
+                "{OFFLINE_PREFIX} the session has no address in {} and no messaging socket",
+                self.orchestrator.name()
+            )
+        })?;
+        self.orchestrator.deliver(address, &text).await
     }
 }
 
@@ -184,23 +186,6 @@ fn uuid_like() -> String {
     format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
 }
 
-pub async fn herdr_prompt(herdr: &str, pane: &str, text: &str) -> Result<Delivered, String> {
-    let out = tokio::process::Command::new(herdr)
-        .args(["agent", "prompt", pane, text])
-        .output()
-        .await
-        .map_err(|e| format!("running {herdr}: {e}"))?;
-    if out.status.success() {
-        return Ok(Delivered::Herdr);
-    }
-    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-    let err = if err.is_empty() { String::from_utf8_lossy(&out.stdout).trim().to_string() } else { err };
-    if err.contains("not found") || err.contains("no such pane") || err.contains("unknown pane") {
-        return Err(format!("{OFFLINE_PREFIX} {err}"));
-    }
-    Err(err)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,13 +214,17 @@ mod tests {
         assert_eq!(p, PathBuf::from(format!("/x/42.{hash}.key")));
     }
 
-    fn delivery(id: &str, session_id: &str, pane: Option<&str>) -> Delivery {
+    fn no_orchestrator() -> std::sync::Arc<dyn crate::orchestrator::Orchestrator> {
+        std::sync::Arc::new(crate::orchestrator::herdr::Herdr { program: "herdr-that-does-not-exist".into() })
+    }
+
+    fn delivery(id: &str, session_id: &str, address: Option<&str>) -> Delivery {
         Delivery {
             id: id.into(),
             target: DeliveryTarget {
                 tab: "t".into(),
                 session_id: Some(session_id.into()),
-                pane: pane.map(Into::into),
+                address: address.map(Into::into),
                 agent: AgentKind::Claude,
             },
             kind: DeliveryKind::Deck,
@@ -246,7 +235,7 @@ mod tests {
     #[tokio::test]
     async fn a_session_that_isnt_running_is_offline() {
         let dir = tempfile::tempdir().unwrap();
-        let d = Deliverer::new(dir.path(), "herdr-that-does-not-exist".into());
+        let d = Deliverer::new(dir.path(), no_orchestrator());
         let err = d.deliver(&delivery("d1", "nope", None)).await.unwrap_err();
         assert!(err.starts_with(OFFLINE_PREFIX), "{err}");
     }
@@ -254,7 +243,7 @@ mod tests {
     #[tokio::test]
     async fn a_repeat_delivery_is_refused() {
         let dir = tempfile::tempdir().unwrap();
-        let d = Deliverer::new(dir.path(), "herdr-that-does-not-exist".into());
+        let d = Deliverer::new(dir.path(), no_orchestrator());
         let _ = d.deliver(&delivery("d1", "nope", None)).await;
         assert!(d.deliver(&delivery("d1", "nope", None)).await.unwrap_err().contains("already"));
     }
@@ -283,7 +272,7 @@ mod tests {
             s.read_to_string(&mut got).await.unwrap();
             got
         });
-        let d = Deliverer::new(home.path(), "herdr-that-does-not-exist".into());
+        let d = Deliverer::new(home.path(), no_orchestrator());
         let mut del = delivery("d2", "s1", None);
         del.kind = DeliveryKind::Wakeup;
         del.body = "New mail: 1 Personal".into();

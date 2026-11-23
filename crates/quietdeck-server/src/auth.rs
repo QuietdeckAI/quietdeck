@@ -240,7 +240,7 @@ mod tests {
             node: "laptop".into(),
             session_id: Some("s1".into()),
             tab: Some("billing".into()),
-            pane: None,
+            address: None,
             exp,
         }
     }

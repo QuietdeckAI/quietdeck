@@ -171,8 +171,8 @@ async fn answer(state: &AppState, node: &str, request: NodeRequest) -> Reply {
 }
 
 async fn mint_for(state: &AppState, node: &str, session: Option<TokenSession>) -> anyhow::Result<MintedToken> {
-    let (session_id, mut tab, pane) = match session {
-        Some(s) => (s.session_id, s.tab, s.pane),
+    let (session_id, mut tab, address) = match session {
+        Some(s) => (s.session_id, s.tab, s.address),
         None => (None, None, None),
     };
     if tab.is_none()
@@ -181,7 +181,7 @@ async fn mint_for(state: &AppState, node: &str, session: Option<TokenSession>) -
         tab = sessions::tab_of(&state.db, node, id).await?;
     }
     let exp = now_ms() / 1000 + SESSION_TOKEN_TTL_SECONDS;
-    let claims = TokenClaims { node: node.to_string(), session_id, tab, pane, exp };
+    let claims = TokenClaims { node: node.to_string(), session_id, tab, address, exp };
     Ok(MintedToken {
         token: mint_session_token(&state.signing_key, &claims),
         expires_at: jiff::Timestamp::from_second(exp)?,
@@ -234,7 +234,7 @@ mod tests {
             agent: AgentKind::Claude,
             workspace: None,
             tab: Some("target".into()),
-            pane: Some("p1".into()),
+            address: Some("p1".into()),
             cwd: None,
             status: AgentStatus::Idle,
             status_changed_at: jiff::Timestamp::now(),

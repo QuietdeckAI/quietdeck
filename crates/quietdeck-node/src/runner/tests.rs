@@ -162,7 +162,7 @@ impl DeckApi for FakeDeck {
     }
     async fn relay(&self, to: String, _: DeliveryKind, body: String) -> Result<Delivered, String> {
         self.relayed.lock().unwrap().push((to, body));
-        Ok(Delivered::Herdr)
+        Ok(Delivered::Orchestrator)
     }
     async fn start_session(&self, _: SessionStart) -> Result<SessionStarted, String> {
         Err("not in this test".into())

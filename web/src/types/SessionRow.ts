@@ -16,7 +16,11 @@ node_online: boolean, links: Array<SessionLink>,
  * When herdr reported it closed. A session that isn't running and has no `closed_at` went away without a close
  * event: herdr stopped, or the machine shut down.
  */
-closed_at: string | null, ended: SessionEnd | null, session_id: string, agent: AgentKind, workspace: string | null, tab: string | null, pane: string | null, cwd: string | null, status: AgentStatus, status_changed_at: string, 
+closed_at: string | null, ended: SessionEnd | null, session_id: string, agent: AgentKind, workspace: string | null, tab: string | null, 
+/**
+ * Where the orchestrator runs it, in the orchestrator's own terms (herdr: a pane ID). Opaque to the deck.
+ */
+address: string | null, cwd: string | null, status: AgentStatus, status_changed_at: string, 
 /**
  * The command that resumes it, to copy until herdr's create-and-resume is there.
  */

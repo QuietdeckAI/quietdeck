@@ -161,7 +161,7 @@ mod tests {
             agent: AgentKind::Claude,
             workspace: None,
             tab: Some(tab.into()),
-            pane: Some("w1:p1".into()),
+            address: Some("w1:p1".into()),
             cwd: Some("/Users/sam/code/app".into()),
             status: AgentStatus::Idle,
             status_changed_at: Timestamp::now(),
@@ -193,7 +193,7 @@ mod tests {
         let started = SessionStarted {
             node: "laptop".into(),
             tab: "billing".into(),
-            pane: "w1:p9".into(),
+            address: "w1:p9".into(),
             session_id: Some("s1".into()),
             prompt_error: None,
         };

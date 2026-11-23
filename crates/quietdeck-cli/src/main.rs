@@ -443,7 +443,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             let c = Client::connect().await?;
             let r: quietdeck_types::directory::SessionStarted =
                 c.post("/api/sessions/resume", &quietdeck_types::directory::SessionTarget { session }).await?;
-            print::out(json, &r, |r| format!("Resumed {} on {} (pane {}).", r.tab, r.node, r.pane))
+            print::out(json, &r, |r| format!("Resumed {} on {}.", r.tab, r.node))
         }
         Command::WhoHas { query } => {
             let c = Client::connect().await?;

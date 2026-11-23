@@ -3,7 +3,11 @@
 /**
  * What the node did for a start or a resume.
  */
-export type SessionStarted = { node: string, tab: string, pane: string, 
+export type SessionStarted = { node: string, tab: string, 
+/**
+ * The new session's address in the orchestrator.
+ */
+address: string, 
 /**
  * Absent when the agent hadn't reported it yet (Codex before its first turn without `/status`).
  */

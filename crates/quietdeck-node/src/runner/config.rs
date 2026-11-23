@@ -44,7 +44,7 @@ pub struct RunnerConfig {
     pub gmail_filters: Option<GmailFiltersConfig>,
     #[serde(default = "default_eligible")]
     pub eligible: Vec<ActionType>,
-    /// The tool that carries out each action type. Forwards, resumes and new sessions go through the deck and herdr
+    /// The tool that carries out each action type. Forwards, resumes and new sessions go through the deck and the orchestrator
     /// and need no entry.
     #[serde(default)]
     pub tools: BTreeMap<ActionType, ToolSpec>,

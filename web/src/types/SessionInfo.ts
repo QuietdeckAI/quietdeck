@@ -6,7 +6,11 @@ import type { AgentStatus } from "./AgentStatus";
  * What a node knows about one of its sessions from herdr (and Claude Code's registry). Pushed in snapshots and on
  * every change.
  */
-export type SessionInfo = { session_id: string, agent: AgentKind, workspace: string | null, tab: string | null, pane: string | null, cwd: string | null, status: AgentStatus, status_changed_at: string, 
+export type SessionInfo = { session_id: string, agent: AgentKind, workspace: string | null, tab: string | null, 
+/**
+ * Where the orchestrator runs it, in the orchestrator's own terms (herdr: a pane ID). Opaque to the deck.
+ */
+address: string | null, cwd: string | null, status: AgentStatus, status_changed_at: string, 
 /**
  * The command that resumes it, to copy until herdr's create-and-resume is there.
  */

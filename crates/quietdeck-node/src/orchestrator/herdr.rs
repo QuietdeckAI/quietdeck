@@ -1,15 +1,59 @@
-//! herdr on this machine: the agents and their tabs (`agent list`), its event stream (`events.subscribe` on its
-//! socket), and tabs started, resumed and closed for the deck. Commands run through herdr's CLI (argv, never a
-//! shell). The client contract this follows is in herdr's socket-api docs ("Client contract").
+//! herdr's TUI as the node's orchestrator: the agents and their tabs (`agent list`), its event stream
+//! (`events.subscribe` on its socket), tabs opened and closed for the deck, and messages typed in with
+//! `agent prompt`. A session's address is its herdr pane ID. Commands run through herdr's CLI (argv, never a shell).
+//! The client contract this follows is in herdr's socket-api docs ("Client contract").
 
 use std::path::{Path, PathBuf};
 
+use crate::deliver::OFFLINE_PREFIX;
+use async_trait::async_trait;
 use jiff::Timestamp;
 use quietdeck_types::directory::{SessionEnd, SessionInfo};
+use quietdeck_types::node::Delivered;
 use quietdeck_types::{AgentKind, AgentStatus};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+use super::{Event, EventStream, OpenTab, Opened, Orchestrator, StreamError};
+
+/// herdr, run as `program` (`programs.herdr` in node.yaml).
+pub struct Herdr {
+    pub program: String,
+}
+
+#[async_trait]
+impl Orchestrator for Herdr {
+    fn name(&self) -> &'static str {
+        "herdr"
+    }
+
+    async fn sessions(&self) -> anyhow::Result<Vec<SessionInfo>> {
+        snapshot(&self.program).await
+    }
+
+    async fn subscribe(&self) -> Result<Box<dyn EventStream>, StreamError> {
+        let path =
+            socket_path(&self.program).await.map_err(|e| StreamError::Io(std::io::Error::other(e.to_string())))?;
+        Ok(Box::new(Subscription::open(&path).await?))
+    }
+
+    async fn open(&self, tab: &OpenTab) -> Result<Opened, String> {
+        create_tab(&self.program, &tab_create(tab)).await
+    }
+
+    async fn close(&self, session_id: &str) -> Result<(), String> {
+        close_session(&self.program, session_id).await
+    }
+
+    async fn deliver(&self, address: &str, text: &str) -> Result<Delivered, String> {
+        prompt(&self.program, address, text).await
+    }
+
+    fn own_messages(&self) -> Vec<String> {
+        auto_continue_message().into_iter().collect()
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct Envelope<T> {
@@ -102,7 +146,7 @@ fn join(agents: AgentList, tabs: TabList) -> Vec<SessionInfo> {
                 agent,
                 workspace: a.workspace_id,
                 tab,
-                pane: Some(a.pane_id),
+                address: Some(a.pane_id),
                 cwd: a.cwd,
                 status: parse_status(a.agent_status.as_deref()),
                 status_changed_at: a
@@ -117,7 +161,7 @@ fn join(agents: AgentList, tabs: TabList) -> Vec<SessionInfo> {
 }
 
 /// The auto-continue message herdr's config.toml sets, if any (`[session.auto_continue] message`).
-pub fn auto_continue_message() -> Option<String> {
+fn auto_continue_message() -> Option<String> {
     let dir =
         std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|| crate::config::home().join(".config"));
     let text = std::fs::read_to_string(dir.join("herdr/config.toml")).ok()?;
@@ -144,34 +188,6 @@ const SUBSCRIPTIONS: &[&str] = &[
     "tab.moved",
 ];
 
-/// One line of herdr's event stream, as the node uses it.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Event {
-    Status {
-        pane: String,
-        status: AgentStatus,
-    },
-    /// A tab closed, with the sessions of the agents that were running in it.
-    TabClosed {
-        sessions: Vec<String>,
-    },
-    AgentExited {
-        session: Option<String>,
-        end: SessionEnd,
-    },
-    /// A pane's record changed. The node re-reads `agent list` when it shows something the node doesn't know yet.
-    PaneUpdated {
-        pane: String,
-        session: Option<String>,
-        tab: Option<String>,
-        cwd: Option<String>,
-    },
-    /// Something `agent list` shows differently now.
-    Changed,
-    /// An event the node doesn't use, including new kinds herdr may add.
-    Other,
-}
-
 fn session_value(v: &Value) -> Option<String> {
     v.get("agent_session")?.get("value")?.as_str().map(str::to_string)
 }
@@ -185,8 +201,8 @@ pub fn parse_event(line: &str) -> Event {
     let data = v.get("data").cloned().unwrap_or(Value::Null);
     match v.get("event").and_then(Value::as_str).unwrap_or_default() {
         "pane.agent_status_changed" => match str_field(&data, "pane_id") {
-            Some(pane) => {
-                Event::Status { pane, status: parse_status(data.get("agent_status").and_then(Value::as_str)) }
+            Some(address) => {
+                Event::Status { address, status: parse_status(data.get("agent_status").and_then(Value::as_str)) }
             }
             None => Event::Other,
         },
@@ -201,14 +217,14 @@ pub fn parse_event(line: &str) -> Event {
             session: session_value(&data),
             end: SessionEnd::AgentExited {
                 final_status: data.get("final_status").and_then(Value::as_str).map(|s| parse_status(Some(s))),
-                pane_exited: data.get("pane_exited").and_then(Value::as_bool).unwrap_or(false),
+                terminal_closed: data.get("pane_exited").and_then(Value::as_bool).unwrap_or(false),
             },
         },
         "pane_updated" => {
             let pane = data.get("pane").cloned().unwrap_or(Value::Null);
             match str_field(&pane, "pane_id") {
-                Some(id) => Event::PaneUpdated {
-                    pane: id,
+                Some(id) => Event::Updated {
+                    address: id,
                     session: session_value(&pane),
                     tab: str_field(&pane, "tab_label"),
                     cwd: str_field(&pane, "cwd"),
@@ -222,7 +238,7 @@ pub fn parse_event(line: &str) -> Event {
 }
 
 /// herdr's API socket, as `herdr status server` reports it (it knows named sessions and dev builds).
-pub async fn socket_path(herdr: &str) -> anyhow::Result<PathBuf> {
+async fn socket_path(herdr: &str) -> anyhow::Result<PathBuf> {
     let out = tokio::process::Command::new(herdr).args(["status", "server"]).output().await?;
     let text = String::from_utf8_lossy(&out.stdout);
     text.lines()
@@ -231,23 +247,13 @@ pub async fn socket_path(herdr: &str) -> anyhow::Result<PathBuf> {
         .ok_or_else(|| anyhow::anyhow!("herdr isn't running"))
 }
 
-/// Why a subscription ended.
-#[derive(Debug, thiserror::Error)]
-pub enum StreamError {
-    /// This herdr can't subscribe to every pane's status (before herdr's client contract).
-    #[error("herdr refused the subscription: {0}")]
-    Refused(String),
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-}
-
 /// An open subscription: call [`Subscription::next`] for each event.
-pub struct Subscription {
+struct Subscription {
     lines: tokio::io::Lines<BufReader<tokio::net::UnixStream>>,
 }
 
 impl Subscription {
-    pub async fn open(socket: &Path) -> Result<Subscription, StreamError> {
+    async fn open(socket: &Path) -> Result<Subscription, StreamError> {
         let mut stream = tokio::net::UnixStream::connect(socket).await?;
         let subs: Vec<Value> = SUBSCRIPTIONS.iter().map(|t| serde_json::json!({"type": t})).collect();
         let req = serde_json::json!({"id": "quietdeck-node", "method": "events.subscribe",
@@ -262,26 +268,21 @@ impl Subscription {
         let msg = v.pointer("/error/message").and_then(Value::as_str).unwrap_or(&first).to_string();
         Err(StreamError::Refused(msg))
     }
+}
 
-    /// The next event, or None when herdr closed the stream (it stopped, restarted or handed off).
-    pub async fn next(&mut self) -> Result<Option<Event>, StreamError> {
+#[async_trait]
+impl EventStream for Subscription {
+    /// None when herdr closed the stream (it stopped, restarted or handed off).
+    async fn next(&mut self) -> Result<Option<Event>, StreamError> {
         Ok(self.lines.next_line().await?.map(|l| parse_event(&l)))
     }
 }
 
 // ---------------------------------------------------------------- starting, resuming and closing
 
-/// A tab herdr created with an agent in it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Created {
-    pub tab_id: String,
-    pub pane_id: String,
-    pub session_id: Option<String>,
-}
-
 /// `herdr tab create --agent …`: answers once the agent takes input, or with herdr's own message for a start-up
 /// screen (the tab stays open for the person) or a failed start.
-pub async fn create_tab(herdr: &str, args: &[String]) -> Result<Created, String> {
+async fn create_tab(herdr: &str, args: &[String]) -> Result<Opened, String> {
     let run = tokio::process::Command::new(herdr).args(args).output();
     let out = tokio::time::timeout(std::time::Duration::from_secs(120), run)
         .await
@@ -294,11 +295,9 @@ pub async fn create_tab(herdr: &str, args: &[String]) -> Result<Created, String>
     let tab_id = v.pointer("/result/tab/tab_id").and_then(Value::as_str);
     let pane_id = v.pointer("/result/root_pane/pane_id").and_then(Value::as_str);
     match (tab_id, pane_id) {
-        (Some(t), Some(p)) => Ok(Created {
-            tab_id: t.into(),
-            pane_id: p.into(),
-            session_id: v.pointer("/result/agent").and_then(session_value),
-        }),
+        (Some(_), Some(p)) => {
+            Ok(Opened { address: p.into(), session_id: v.pointer("/result/agent").and_then(session_value) })
+        }
         _ => Err("herdr's answer named no tab or pane".into()),
     }
 }
@@ -320,62 +319,22 @@ fn herdr_error(stderr: &[u8]) -> String {
     }
 }
 
-/// The argv for a new session's tab.
-pub fn start_args(
-    agent: AgentKind,
-    tab: &str,
-    cwd: &str,
-    name: &str,
-    model: Option<&str>,
-    effort: Option<&str>,
-    agent_args: &[String],
-) -> Vec<String> {
-    let mut a = tab_create(agent, tab, cwd, agent_args);
-    match agent {
-        AgentKind::Claude => {
-            a.extend(["--name".into(), name.into()]);
-            if let Some(m) = model {
-                a.extend(["--model".into(), m.into()]);
-            }
-            if let Some(e) = effort {
-                a.extend(["--effort".into(), e.into()]);
-            }
-        }
-        AgentKind::Codex => {
-            if let Some(m) = model {
-                a.extend(["-m".into(), m.into()]);
-            }
-            if let Some(e) = effort {
-                a.extend(["-c".into(), format!("model_reasoning_effort={e}")]);
-            }
-        }
-    }
-    a
-}
-
-/// The argv that resumes a session in a new tab.
-pub fn resume_args(agent: AgentKind, tab: &str, cwd: &str, session_id: &str, agent_args: &[String]) -> Vec<String> {
-    let mut a = tab_create(agent, tab, cwd, agent_args);
-    match agent {
-        AgentKind::Claude => a.extend(["--name".into(), tab.into(), "--resume".into(), session_id.into()]),
-        AgentKind::Codex => a.extend(["resume".into(), session_id.into()]),
-    }
-    a
-}
-
-fn tab_create(agent: AgentKind, tab: &str, cwd: &str, agent_args: &[String]) -> Vec<String> {
-    let kind = match agent {
+/// `herdr tab create` for a tab: herdr runs the agent itself, with the agent's arguments after `--`.
+fn tab_create(tab: &OpenTab) -> Vec<String> {
+    let kind = match tab.agent {
         AgentKind::Claude => "claude",
         AgentKind::Codex => "codex",
     };
     let mut a: Vec<String> =
-        ["tab", "create", "--label", tab, "--cwd", cwd, "--no-focus", "--agent", kind, "--"].map(String::from).into();
-    a.extend(agent_args.iter().cloned());
+        ["tab", "create", "--label", &tab.label, "--cwd", &tab.cwd, "--no-focus", "--agent", kind, "--"]
+            .map(String::from)
+            .into();
+    a.extend(tab.args.iter().cloned());
     a
 }
 
 /// Close the tab a running session is in.
-pub async fn close_session(herdr: &str, session_id: &str) -> Result<(), String> {
+async fn close_session(herdr: &str, session_id: &str) -> Result<(), String> {
     let agents: AgentList = run_json(herdr, &["agent", "list"]).await.map_err(|e| e.to_string())?;
     let tab = agents
         .agents
@@ -391,12 +350,22 @@ pub async fn close_session(herdr: &str, session_id: &str) -> Result<(), String> 
     if out.status.success() { Ok(()) } else { Err(herdr_error(&out.stderr)) }
 }
 
-/// Whether a program can be run: a path that exists, or a name found on PATH.
-pub fn installed(program: &str) -> bool {
-    if program.contains('/') {
-        return Path::new(program).is_file();
+/// `herdr agent prompt`: types the text into the pane and submits it, once the agent takes input.
+async fn prompt(herdr: &str, pane: &str, text: &str) -> Result<Delivered, String> {
+    let out = tokio::process::Command::new(herdr)
+        .args(["agent", "prompt", pane, text])
+        .output()
+        .await
+        .map_err(|e| format!("running {herdr}: {e}"))?;
+    if out.status.success() {
+        return Ok(Delivered::Orchestrator);
     }
-    std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|d| d.join(program).is_file()))
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    let err = if err.is_empty() { String::from_utf8_lossy(&out.stdout).trim().to_string() } else { err };
+    if err.contains("not found") || err.contains("no such pane") || err.contains("unknown pane") {
+        return Err(format!("{OFFLINE_PREFIX} {err}"));
+    }
+    Err(err)
 }
 
 #[cfg(test)]
@@ -425,7 +394,7 @@ mod tests {
     #[test]
     fn herdr_events_parse() {
         let status = r#"{"data":{"agent":"claude","agent_status":"working","pane_id":"w1:p3","tab_id":"w1:t3","tab_label":"qd probe","workspace_id":"w1"},"event":"pane.agent_status_changed"}"#;
-        assert_eq!(parse_event(status), Event::Status { pane: "w1:p3".into(), status: AgentStatus::Working });
+        assert_eq!(parse_event(status), Event::Status { address: "w1:p3".into(), status: AgentStatus::Working });
 
         let closed = r#"{"data":{"agents":[{"agent":"claude","agent_session":{"agent":"claude","kind":"id","source":"herdr:claude","value":"4f20528f"},"name":"qd-probe","pane_id":"w1:p3"}],"label":"qd probe","tab_id":"w1:t3","type":"tab_closed","workspace_id":"w1"},"event":"tab_closed"}"#;
         assert_eq!(parse_event(closed), Event::TabClosed { sessions: vec!["4f20528f".into()] });
@@ -435,15 +404,15 @@ mod tests {
             parse_event(exited),
             Event::AgentExited {
                 session: None,
-                end: SessionEnd::AgentExited { final_status: Some(AgentStatus::Done), pane_exited: false }
+                end: SessionEnd::AgentExited { final_status: Some(AgentStatus::Done), terminal_closed: false }
             }
         );
 
         let updated = r#"{"data":{"pane":{"agent":"claude","agent_session":{"agent":"claude","kind":"id","source":"herdr:claude","value":"4f20528f"},"agent_status":"idle","cwd":"/Users/x/code/q","pane_id":"w1:p3","tab_id":"w1:t3","tab_label":"qd probe","workspace_id":"w1"},"type":"pane_updated"},"event":"pane_updated"}"#;
         assert_eq!(
             parse_event(updated),
-            Event::PaneUpdated {
-                pane: "w1:p3".into(),
+            Event::Updated {
+                address: "w1:p3".into(),
                 session: Some("4f20528f".into()),
                 tab: Some("qd probe".into()),
                 cwd: Some("/Users/x/code/q".into())
@@ -455,33 +424,29 @@ mod tests {
     }
 
     #[test]
-    fn starts_and_resumes_take_the_agents_own_flags() {
-        let claude = start_args(
-            AgentKind::Claude,
-            "esign cert",
-            "/w",
-            "esign cert",
-            Some("opus"),
-            Some("high"),
-            &["--dangerously-skip-permissions".into()],
-        );
+    fn a_tab_runs_the_agent_with_its_own_arguments_after_the_separator() {
+        let tab = OpenTab {
+            label: "esign cert".into(),
+            cwd: "/w".into(),
+            agent: AgentKind::Claude,
+            args: vec!["--name".into(), "esign cert".into()],
+        };
         assert_eq!(
-            claude.join(" "),
-            "tab create --label esign cert --cwd /w --no-focus --agent claude -- --dangerously-skip-permissions \
-             --name esign cert --model opus --effort high"
-        );
-        let codex = start_args(AgentKind::Codex, "b", "/w", "b", Some("gpt-6"), Some("xhigh"), &["--no-daemon".into()]);
-        assert_eq!(
-            codex.join(" "),
-            "tab create --label b --cwd /w --no-focus --agent codex -- --no-daemon -m gpt-6 -c model_reasoning_effort=xhigh"
-        );
-        assert_eq!(
-            resume_args(AgentKind::Claude, "b", "/w", "s1", &[]).join(" "),
-            "tab create --label b --cwd /w --no-focus --agent claude -- --name b --resume s1"
-        );
-        assert_eq!(
-            resume_args(AgentKind::Codex, "b", "/w", "s1", &["--no-daemon".into()]).join(" "),
-            "tab create --label b --cwd /w --no-focus --agent codex -- --no-daemon resume s1"
+            tab_create(&tab),
+            [
+                "tab",
+                "create",
+                "--label",
+                "esign cert",
+                "--cwd",
+                "/w",
+                "--no-focus",
+                "--agent",
+                "claude",
+                "--",
+                "--name",
+                "esign cert"
+            ]
         );
     }
 

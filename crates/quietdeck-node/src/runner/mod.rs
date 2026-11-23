@@ -123,7 +123,7 @@ fn thread_of(a: &Action) -> Option<(&str, &str)> {
     }
 }
 
-/// Action types the runner carries out through the deck and herdr rather than a configured tool.
+/// Action types the runner carries out through the deck and the orchestrator rather than a configured tool.
 fn built_in(t: ActionType) -> bool {
     matches!(t, ActionType::Forward | ActionType::Resume | ActionType::NewSession)
 }

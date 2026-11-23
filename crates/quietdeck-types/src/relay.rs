@@ -72,7 +72,9 @@ pub struct Delivery {
 pub struct DeliveryTarget {
     pub tab: String,
     pub session_id: Option<String>,
-    pub pane: Option<String>,
+    /// The session's address in the orchestrator, for delivery through it.
+    #[serde(alias = "pane")]
+    pub address: Option<String>,
     pub agent: crate::session::AgentKind,
 }
 
@@ -168,7 +170,7 @@ mod tests {
     use crate::session::AgentKind;
 
     fn target() -> DeliveryTarget {
-        DeliveryTarget { tab: "api".into(), session_id: None, pane: None, agent: AgentKind::Claude }
+        DeliveryTarget { tab: "api".into(), session_id: None, address: None, agent: AgentKind::Claude }
     }
 
     #[test]

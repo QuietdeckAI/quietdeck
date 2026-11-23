@@ -4,4 +4,8 @@ import type { AgentKind } from "./AgentKind";
 /**
  * The session on the receiving node.
  */
-export type DeliveryTarget = { tab: string, session_id: string | null, pane: string | null, agent: AgentKind, };
+export type DeliveryTarget = { tab: string, session_id: string | null, 
+/**
+ * The session's address in the orchestrator, for delivery through it.
+ */
+address: string | null, agent: AgentKind, };

@@ -18,7 +18,9 @@ pub struct SessionInfo {
     pub agent: AgentKind,
     pub workspace: Option<String>,
     pub tab: Option<String>,
-    pub pane: Option<String>,
+    /// Where the orchestrator runs it, in the orchestrator's own terms (herdr: a pane ID). Opaque to the deck.
+    #[serde(alias = "pane")]
+    pub address: Option<String>,
     pub cwd: Option<String>,
     pub status: AgentStatus,
     #[ts(type = "string")]
@@ -65,8 +67,13 @@ pub struct SessionRow {
 pub enum SessionEnd {
     /// Its tab closed: a person closed it, or the last process in it exited.
     TabClosed,
-    /// The agent's process exited. `pane_exited` is false when it went back to the pane's shell and the tab stayed.
-    AgentExited { final_status: Option<AgentStatus>, pane_exited: bool },
+    /// The agent's process exited. `terminal_closed` is false when it went back to its terminal's shell and the tab
+    /// stayed.
+    AgentExited {
+        final_status: Option<AgentStatus>,
+        #[serde(alias = "pane_exited")]
+        terminal_closed: bool,
+    },
 }
 
 fn no_leading_dash(value: &str, _: &()) -> garde::Result {
@@ -143,7 +150,9 @@ pub struct SessionTarget {
 pub struct SessionStarted {
     pub node: String,
     pub tab: String,
-    pub pane: String,
+    /// The new session's address in the orchestrator.
+    #[serde(alias = "pane")]
+    pub address: String,
     /// Absent when the agent hadn't reported it yet (Codex before its first turn without `/status`).
     pub session_id: Option<String>,
     /// Set when the session started but its initial prompt couldn't be sent.

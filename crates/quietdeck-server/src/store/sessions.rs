@@ -17,7 +17,7 @@ struct Row {
     agent: String,
     workspace: Option<String>,
     tab: Option<String>,
-    pane: Option<String>,
+    address: Option<String>,
     cwd: Option<String>,
     project: Option<String>,
     status: String,
@@ -33,7 +33,7 @@ struct Row {
     ended: Option<String>,
 }
 
-const COLUMNS: &str = "node, session_id, agent, workspace, tab, pane, cwd, project, status, status_changed_at, \
+const COLUMNS: &str = "node, session_id, agent, workspace, tab, address, cwd, project, status, status_changed_at, \
     resume_command, running, sentence, paragraph, page, last_activity, pushed_at, closed_at, ended";
 
 impl Row {
@@ -49,7 +49,7 @@ impl Row {
                 agent: parse_enum(&self.agent)?,
                 workspace: self.workspace,
                 tab: self.tab,
-                pane: self.pane,
+                address: self.address,
                 cwd: self.cwd,
                 status: parse_enum(&self.status)?,
                 status_changed_at: ts(self.status_changed_at),
@@ -125,11 +125,11 @@ pub async fn upsert(db: &Db, config: &DeckConfig, node: &str, s: &SessionInfo) -
     let blocked_since = (s.status == AgentStatus::Blocked).then(|| s.status_changed_at.as_millisecond());
     let mut tx = db.begin().await?;
     sqlx::query(
-        "INSERT INTO sessions (node, session_id, agent, workspace, tab, pane, cwd, project, status, status_changed_at, \
+        "INSERT INTO sessions (node, session_id, agent, workspace, tab, address, cwd, project, status, status_changed_at, \
            resume_command, running, pushed_at, closed_at, blocked_since) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?) \
          ON CONFLICT (node, session_id) DO UPDATE SET agent = excluded.agent, workspace = excluded.workspace, \
-           tab = excluded.tab, pane = excluded.pane, cwd = excluded.cwd, project = excluded.project, \
+           tab = excluded.tab, address = excluded.address, cwd = excluded.cwd, project = excluded.project, \
            status = excluded.status, status_changed_at = excluded.status_changed_at, \
            resume_command = excluded.resume_command, running = excluded.running, pushed_at = excluded.pushed_at, \
            closed_at = CASE WHEN excluded.running = 1 THEN NULL ELSE sessions.closed_at END, \
@@ -142,7 +142,7 @@ pub async fn upsert(db: &Db, config: &DeckConfig, node: &str, s: &SessionInfo) -
     .bind(enum_str(&s.agent))
     .bind(&s.workspace)
     .bind(&s.tab)
-    .bind(&s.pane)
+    .bind(&s.address)
     .bind(&s.cwd)
     .bind(&project)
     .bind(enum_str(&s.status))
@@ -564,7 +564,7 @@ mod tests {
             agent: AgentKind::Claude,
             workspace: Some("w1".into()),
             tab: Some(tab.into()),
-            pane: Some("w1:p1".into()),
+            address: Some("w1:p1".into()),
             cwd: Some("/home/sam/code/app".into()),
             status,
             status_changed_at: Timestamp::now(),
