@@ -581,6 +581,26 @@ pub async fn decide(db: &Db, card_id: i64, d: &Decide) -> Result<Card, AppError>
             .execute(&mut *tx)
             .await?;
         }
+        DecisionKind::MoveUp if card.state == CardState::Later => {
+            // Bring a thread back from the Later list: its card returns to Actions as it was.
+            sqlx::query("DELETE FROM later WHERE account = ? AND thread_key = ?")
+                .bind(&card.input.account)
+                .bind(&card.input.thread_key)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("UPDATE cards SET state = 'open', section = 'actions', updated_at = ? WHERE id = ?")
+                .bind(now)
+                .bind(card_id)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query(
+                "UPDATE actions SET status = 'pending' WHERE card_id = ? AND card_version = ? AND status = 'stopped'",
+            )
+            .bind(card_id)
+            .bind(card.version)
+            .execute(&mut *tx)
+            .await?;
+        }
         DecisionKind::MoveUp | DecisionKind::MoveDown => {
             let section = if d.kind == DecisionKind::MoveUp { CardSection::Actions } else { CardSection::ArchiveList };
             sqlx::query("UPDATE cards SET section = ?, updated_at = ? WHERE id = ?")
@@ -730,6 +750,24 @@ mod tests {
         assert!(a.cards.is_empty());
         assert!(a.skipped[0].reason.contains("version 2"));
         assert!(approving(&db).await.unwrap().is_none(), "nothing approved leaves no batch to undo");
+    }
+
+    #[tokio::test]
+    async fn a_thread_left_for_later_comes_back_with_move_up() {
+        let db = crate::db::memory().await;
+        let c = post(&db, "t1").await;
+        let later = decide(&db, c.id, &Decide { version: 1, kind: DecisionKind::Later, text: None }).await.unwrap();
+        assert_eq!(later.state, CardState::Later);
+        assert_eq!(later.action_records[0].status, ActionStatus::Stopped);
+        let back = decide(&db, c.id, &Decide { version: 1, kind: DecisionKind::MoveUp, text: None }).await.unwrap();
+        assert_eq!(back.state, CardState::Open);
+        assert_eq!(back.input.section, CardSection::Actions);
+        assert_eq!(back.action_records[0].status, ActionStatus::Pending);
+        let left: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM later").fetch_optional(&db).await.unwrap();
+        assert!(left.is_none(), "the thread is no longer left for later");
+        // And it can be approved like any other card.
+        let a = approve_all(&db, &ApproveAll { cards: vec![approve(&back)], timeline: vec![] }, 60).await.unwrap();
+        assert_eq!(a.cards, vec![c.id]);
     }
 
     #[tokio::test]

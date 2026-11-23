@@ -11,6 +11,9 @@ struct Assets;
 
 pub async fn serve(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
+    if path == "api" || path.starts_with("api/") || path.starts_with("hooks/") {
+        return crate::error::AppError::NotFound(format!("no endpoint {}", uri.path())).into_response();
+    }
     if let Some(file) = Assets::get(path).filter(|_| !path.is_empty()) {
         let mime = mime_guess::from_path(path).first_or_octet_stream();
         // Vite's hashed assets never change; everything else is checked each time.
@@ -24,5 +27,18 @@ pub async fn serve(uri: Uri) -> Response {
         }
         None => (StatusCode::OK, "Quietdeck's deck is running. This build has no web app (web/dist was empty).")
             .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn unknown_api_paths_are_404_not_the_app() {
+        let res = serve("/api/nope".parse().unwrap()).await;
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let res = serve("/settings".parse().unwrap()).await;
+        assert_eq!(res.status(), StatusCode::OK);
     }
 }
