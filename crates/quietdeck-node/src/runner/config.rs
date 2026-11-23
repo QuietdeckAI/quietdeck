@@ -44,10 +44,11 @@ pub struct RunnerConfig {
     pub gmail_filters: Option<GmailFiltersConfig>,
     #[serde(default = "default_eligible")]
     pub eligible: Vec<ActionType>,
-    /// The tool that carries out each action type. Forwards, resumes and new sessions go through the deck and the orchestrator
-    /// and need no entry.
+    /// The tool that carries out each action type, by its name in `eligible`. Stories and tasks have a tool per op
+    /// (`story.create`, `story.comment`, `task.create`, `task.update`, `task.done`), so an update never runs a create.
+    /// Forwards, resumes, new sessions, leases and watches need no entry.
     #[serde(default)]
-    pub tools: BTreeMap<ActionType, ToolSpec>,
+    pub tools: BTreeMap<String, ToolSpec>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -172,6 +173,34 @@ pub fn parse_duration(s: &str) -> Result<Duration, String> {
     Ok(Duration::from_secs(secs))
 }
 
+/// The names `runner.tools` takes: one per action the runner carries out with a tool.
+pub const TOOL_KEYS: [&str; 10] = [
+    "archive",
+    "mark_read",
+    "label",
+    "draft",
+    "calendar",
+    "story.create",
+    "story.comment",
+    "task.create",
+    "task.update",
+    "task.done",
+];
+
+/// The `runner.tools` entry that carries out an action.
+pub fn tool_key(a: &quietdeck_types::Action) -> String {
+    use quietdeck_types::Action;
+    use quietdeck_types::action::{StoryOp, TaskOp};
+    match a {
+        Action::Story(StoryOp::Create { .. }) => "story.create".into(),
+        Action::Story(StoryOp::Comment { .. }) => "story.comment".into(),
+        Action::Task { op: TaskOp::Create, .. } => "task.create".into(),
+        Action::Task { op: TaskOp::Update, .. } => "task.update".into(),
+        Action::Task { op: TaskOp::Done, .. } => "task.done".into(),
+        other => other.action_type().as_str().into(),
+    }
+}
+
 impl RunnerConfig {
     /// The rules config can't break: replies always go through the agent, every tool names exactly one way to run
     /// it, and Executor tools need an Executor.
@@ -183,6 +212,22 @@ impl RunnerConfig {
         }
         if self.agent.tab.trim().is_empty() {
             return Err("runner.agent.tab is empty".into());
+        }
+        for key in self.tools.keys() {
+            if !TOOL_KEYS.contains(&key.as_str()) {
+                return Err(match key.as_str() {
+                    "story" | "task" => format!(
+                        "runner.tools.{key}: name the op ({}): each op has its own tool, so an update never runs a create",
+                        TOOL_KEYS
+                            .iter()
+                            .filter(|k| k.starts_with(&format!("{key}.")))
+                            .copied()
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                    _ => format!("runner.tools.{key}: no such tool; the runner takes {}", TOOL_KEYS.join(", ")),
+                });
+            }
         }
         let mut specs: Vec<(String, &ToolSpec)> = self.tools.iter().map(|(t, s)| (format!("tools.{t}"), s)).collect();
         for (name, s) in [("send_as", &self.send_as), ("thread", &self.thread), ("labels", &self.labels)] {
@@ -256,6 +301,36 @@ mod tests {
             yaml_serde::from_str("agent: { tab: t }\ntools:\n  archive: { path: tools.google.gmail.modify }\n")
                 .unwrap();
         assert!(c.check().unwrap_err().contains("runner.executor isn't set"));
+    }
+
+    #[test]
+    fn stories_and_tasks_take_a_tool_per_op() {
+        let tool = "{ path: tools.x }";
+        let c: RunnerConfig = yaml_serde::from_str(&format!("{}tools:\n  story: {tool}\n", base())).unwrap();
+        let e = c.check().unwrap_err();
+        assert!(e.contains("story.create, story.comment"), "{e}");
+        let c: RunnerConfig = yaml_serde::from_str(&format!("{}tools:\n  task: {tool}\n", base())).unwrap();
+        assert!(c.check().unwrap_err().contains("task.create, task.update, task.done"));
+        let c: RunnerConfig = yaml_serde::from_str(&format!("{}tools:\n  archiv: {tool}\n", base())).unwrap();
+        assert!(c.check().unwrap_err().contains("no such tool"));
+        let c: RunnerConfig =
+            yaml_serde::from_str(&format!("{}tools:\n  story.create: {tool}\n  task.done: {tool}\n", base())).unwrap();
+        c.check().unwrap();
+
+        use quietdeck_types::Action;
+        let action = |v: serde_json::Value| -> Action { serde_json::from_value(v).unwrap() };
+        assert_eq!(
+            tool_key(&action(serde_json::json!({"type": "story", "op": "comment", "story_id": "1", "text": "x"}))),
+            "story.comment"
+        );
+        assert_eq!(
+            tool_key(&action(serde_json::json!({"type": "task", "op": "update", "story_id": "1"}))),
+            "task.update"
+        );
+        assert_eq!(
+            tool_key(&action(serde_json::json!({"type": "archive", "account": "a", "thread_id": "t"}))),
+            "archive"
+        );
     }
 
     #[test]

@@ -105,12 +105,49 @@ enum Command {
         #[command(subcommand)]
         command: ActionsCommand,
     },
+    /// Ping the person's phone, only for what can't wait a few hours: a reply on a watched thread, an urgent event.
+    Ping {
+        #[arg(long)]
+        title: String,
+        /// The text; `-` reads it from stdin.
+        #[arg(long)]
+        body: String,
+        /// Your one line on why this can't wait a few hours.
+        #[arg(long)]
+        reason: String,
+        /// A card or thread to look at (a URL, or what the person will recognise).
+        #[arg(long)]
+        link: Option<String>,
+        #[arg(long)]
+        account: Option<String>,
+        /// The thread it's about: repeats for one thread replace each other on the phone.
+        #[arg(long)]
+        thread: Option<String>,
+    },
+    /// Your pings: `pings feedback` picks up the person's "Don't ping for this again" on them.
+    Pings {
+        #[command(subcommand)]
+        command: PingsCommand,
+    },
+    /// The threads the person watches: a reply on one may ping.
+    Watches {
+        /// Stopped watches too.
+        #[arg(long)]
+        all: bool,
+    },
     /// What happened since you last asked: timeline entries and cards that changed.
     History {
         /// `last`, or an RFC 3339 time.
         #[arg(long, default_value = "last")]
         since: String,
     },
+}
+
+#[derive(Subcommand)]
+enum PingsCommand {
+    /// The person's feedback on your pings that you haven't picked up yet. Picking it up marks it: turn each into a
+    /// rule of your own.
+    Feedback,
 }
 
 #[derive(Subcommand)]
@@ -462,6 +499,31 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             let e: quietdeck_types::timeline::TimelineEntry =
                 c.post("/api/timeline", &TimelineAdd { kind, account, refs, text, lease_id }).await?;
             print::out(json, &e, |e| format!("Timeline entry {} added.", e.id))
+        }
+        Command::Ping { title, body, reason, link, account, thread } => {
+            let c = Client::connect().await?;
+            let req = quietdeck_types::timeline::PingRequest {
+                title,
+                body: read_arg(&body)?,
+                link,
+                reason,
+                account,
+                thread_key: thread,
+            };
+            let p: quietdeck_types::timeline::Ping = c.post("/api/pings", &req).await?;
+            print::out(json, &p, |p| format!("Ping {}: {}", p.id, p.result.as_deref().unwrap_or("recorded")))
+        }
+        Command::Pings { command: PingsCommand::Feedback } => {
+            let c = Client::connect().await?;
+            let r: Vec<quietdeck_types::timeline::Ping> =
+                c.post("/api/pings/feedback/take", &serde_json::json!({})).await?;
+            print::out(json, &r, |r| print::ping_feedback(r))
+        }
+        Command::Watches { all } => {
+            let c = Client::connect().await?;
+            let r: Vec<quietdeck_types::timeline::ThreadWatch> =
+                c.get("/api/watches", &[("all", all.to_string())]).await?;
+            print::out(json, &r, |r| print::watches(r))
         }
         Command::Decisions { command: DecisionsCommand::Take } => {
             let c = Client::connect().await?;

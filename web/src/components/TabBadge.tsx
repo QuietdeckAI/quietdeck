@@ -64,7 +64,15 @@ function setIcon(href: string) {
   link.href = href;
 }
 
-/** How many cards wait in the Inbox, on the tab's icon and in its title, while "Show the pending count on the tab
+/** The installed app's icon badge (the Badging API), where the browser has one. */
+function appBadge(count: number) {
+  if (!("setAppBadge" in navigator)) return;
+  const done = count > 0 ? navigator.setAppBadge(count) : navigator.clearAppBadge();
+  // Refused without notification permission on some browsers: the tab's own icon still shows the count.
+  done.catch(() => undefined);
+}
+
+/** How many cards wait in the Inbox, on the tab's icon, the installed app's icon and in its title, while "Show the pending count on the tab
  * icon" is on (Settings). Nothing at zero. The Inbox's own live updates keep it current. */
 export function TabBadge() {
   const auth = useQuery({ queryKey: ["auth"], queryFn: () => api<AuthState>("/api/auth/state") });
@@ -84,6 +92,7 @@ export function TabBadge() {
   const count = on && d ? d.actions.length + d.suggestions.length + d.archive_list.length + d.sent.length : 0;
 
   useEffect(() => {
+    appBadge(count);
     let current = true;
     if (count === 0) {
       setIcon(BASE_ICON);

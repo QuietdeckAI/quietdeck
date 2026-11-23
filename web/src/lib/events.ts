@@ -11,6 +11,8 @@ const STALE: Record<Changed, string[][]> = {
   nodes: [["nodes"]],
   rules: [["rules"], ["inbox"]],
   leases: [["leases"]],
+  pings: [["pings"], ["watches"]],
+  push: [["push"]],
   all: [[]],
 };
 

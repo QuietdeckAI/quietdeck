@@ -13,6 +13,8 @@ mod leases;
 mod mcp;
 mod ops;
 mod passkeys;
+mod pings;
+mod push;
 mod relay;
 mod rules;
 mod runner;
@@ -116,9 +118,15 @@ async fn serve(env: Env) -> anyhow::Result<()> {
     let db = db::open(&env.data.db_path()).await?;
     ensure_owner(&db).await?;
     let signing_key = auth::signing_key(&db).await?;
-    if env.vapid_public_key.is_none() || env.vapid_private_key.is_none() {
-        tracing::warn!("no VAPID keys: web push is off");
-    }
+    let pusher = match (&env.vapid_public_key, &env.vapid_private_key) {
+        (Some(public), Some(private)) => {
+            Some(Arc::new(push::Pusher::new(public, private, env.vapid_subject.as_deref(), &env.public_url)?))
+        }
+        _ => {
+            tracing::warn!("no VAPID keys: web push is off");
+            None
+        }
+    };
     let state = AppState {
         db,
         config: Arc::new(config),
@@ -130,6 +138,7 @@ async fn serve(env: Env) -> anyhow::Result<()> {
         ceremonies: Arc::default(),
         events: tokio::sync::broadcast::channel(256).0,
         release: Arc::default(),
+        pusher,
         hooks_public_url: env.hooks_public_url.clone(),
     };
     if env.dev_trust_local {

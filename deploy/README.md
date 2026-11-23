@@ -53,7 +53,7 @@ volume read-write and run as gid 65532. On a ReadWriteOnce volume, the backup po
 | `QUIETDECK_HOOKS_PUBLIC_URL` | yes, for webhooks | | The public origin of the hooks port through the tunnel, e.g. `https://hooks.example.com`. Used to print endpoint URLs |
 | `QUIETDECK_VAPID_PUBLIC_KEY` | yes, for push | | Web Push VAPID public key, base64url (uncompressed P-256 point) |
 | `QUIETDECK_VAPID_PRIVATE_KEY` | yes, for push | | The matching private key, base64url. A secret. Generate a pair with `quietdeck-server vapid-keys` |
-| `QUIETDECK_VAPID_SUBJECT` | yes, for push | | `mailto:you@example.com` or an `https://` URL. Apple rejects localhost and `.local` addresses |
+| `QUIETDECK_VAPID_SUBJECT` | no | `QUIETDECK_PUBLIC_URL` | A contact for push services: `mailto:you@example.com` or an `https://` URL. Apple rejects localhost and `.local` addresses |
 | `QUIETDECK_DATA_DIR` | no | `/data` | |
 | `QUIETDECK_CONFIG` | no | `$QUIETDECK_DATA_DIR/deck.yaml` | |
 | `QUIETDECK_LISTEN` | no | `0.0.0.0:8080` | |

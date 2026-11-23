@@ -20,6 +20,8 @@ pub struct AppState {
     pub events: tokio::sync::broadcast::Sender<crate::events::Changed>,
     /// Wakes the releaser when a batch is recorded.
     pub release: Arc<tokio::sync::Notify>,
+    /// Web push, when the deck has VAPID keys.
+    pub pusher: Option<Arc<crate::push::Pusher>>,
     #[expect(dead_code, reason = "webhook endpoints' URLs use it (build step 11)")]
     pub hooks_public_url: Option<String>,
 }
@@ -45,6 +47,7 @@ impl AppState {
             ceremonies: Arc::default(),
             events: tokio::sync::broadcast::channel(64).0,
             release: Arc::default(),
+            pusher: None,
             hooks_public_url: Some("https://hooks.example.com".into()),
         }
     }

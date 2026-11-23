@@ -168,11 +168,47 @@ pub struct Ping {
     pub sent_at: Timestamp,
     /// How many devices took it.
     pub result: Option<String>,
-    /// "Don't ping for this again", with the person's words.
+    /// "Don't ping for this again", with the person's words (empty when they left no note).
     pub feedback: Option<String>,
     #[ts(type = "string | null")]
     #[schemars(with = "Option<String>")]
+    pub feedback_at: Option<Timestamp>,
+    #[ts(type = "string | null")]
+    #[schemars(with = "Option<String>")]
     pub feedback_picked_up_at: Option<Timestamp>,
+}
+
+/// The Rules screen's pings: the last seven days' against the weekly budget, which suppresses nothing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct PingsView {
+    pub weekly_budget: u32,
+    /// Pings sent in the last seven days.
+    pub last_week: u32,
+    /// The newest first, up to 100.
+    pub pings: Vec<Ping>,
+}
+
+/// "Don't ping for this again", with an optional note for the agent that sent it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
+#[ts(export)]
+pub struct PingFeedback {
+    #[serde(default)]
+    #[garde(inner(length(max = 2000)))]
+    pub note: Option<String>,
+}
+
+/// Watch a thread from the card's menu: replies on it may ping.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
+#[ts(export)]
+pub struct WatchAdd {
+    #[garde(length(min = 1, max = 100))]
+    pub account: String,
+    #[garde(length(min = 1, max = 300))]
+    pub thread_key: String,
+    #[serde(default)]
+    #[garde(inner(length(max = 500)))]
+    pub subject: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]

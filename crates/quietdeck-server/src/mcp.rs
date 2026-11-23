@@ -111,6 +111,13 @@ pub struct CardsArgs {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NoArgs {}
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct WatchesArgs {
+    /// Stopped watches too.
+    #[serde(default)]
+    pub all: bool,
+}
+
 fn ok<T: Serialize>(value: T) -> Result<CallToolResult, ErrorData> {
     let v = serde_json::to_value(value).map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
     // Structured content must be an object; wrap lists.
@@ -386,6 +393,53 @@ impl Mcp {
         let r = async {
             let me = self.agent(&ctx).await?;
             crate::leases::acquire(&self.state, &me, req).await
+        }
+        .await;
+        tool_try!(r)
+    }
+
+    #[tool(description = "Ping the person's phone. Only for what passes their test: does it need them right now, or \
+        can it wait a few hours? For now that's a reply on a watched thread, or an urgent event such as a disk under \
+        5 GB and falling. Give the reason in one line. Repeats for one thread_key replace each other on the phone.")]
+    async fn ping(
+        &self,
+        Parameters(req): Parameters<quietdeck_types::timeline::PingRequest>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async {
+            let me = self.agent(&ctx).await?;
+            crate::pings::send(&self.state, &me, req).await
+        }
+        .await;
+        tool_try!(r)
+    }
+
+    #[tool(
+        description = "The person's \"Don't ping for this again\" on your pings, with their notes, that you haven't \
+        picked up yet. Picking it up marks it. Turn each into a rule of your own. Call it at the start of every round."
+    )]
+    async fn pings_feedback(
+        &self,
+        _: Parameters<NoArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async {
+            let me = self.agent(&ctx).await?;
+            crate::pings::take_feedback(&self.state, &me).await
+        }
+        .await;
+        tool_try!(r)
+    }
+
+    #[tool(description = "The threads the person watches: a reply on one may ping, under the ping test.")]
+    async fn watches(
+        &self,
+        Parameters(args): Parameters<WatchesArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async {
+            self.caller(&ctx).await?;
+            crate::pings::watches(&self.state.db, args.all).await
         }
         .await;
         tool_try!(r)

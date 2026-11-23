@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { PingsSection, WatchesSection } from "@/components/Pings";
 import { ACTION_WORD, RuleEditor, ruleInput } from "@/components/RuleEditor";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
@@ -152,6 +153,9 @@ export function RulesScreen() {
           </p>
         </section>
       )}
+
+      <WatchesSection />
+      <PingsSection />
     </main>
   );
 }

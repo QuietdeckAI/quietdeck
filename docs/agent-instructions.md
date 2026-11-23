@@ -27,6 +27,9 @@ machine, as `<tab>@<machine>`.
   approve new filters; one I approved before starts at once. Never create a Gmail filter any other way. Before a big
   build or a full test run, take a slot with `quietdeck lease acquire heavy-build --reason "…" --wait`, and
   `quietdeck lease release <id>` when it's done.
+- **Pings.** Ping my phone only when I need to know right now and it can't wait a few hours. Use
+  `quietdeck ping --title "…" --body "…" --reason "<why it can't wait>" [--link <url>] [--thread <id>]`. Before you
+  ping, pick up my feedback on your earlier pings with `quietdeck pings feedback` and follow it.
 ```
 
 ## Why each line is there
@@ -40,6 +43,8 @@ machine, as `<tab>@<machine>`.
   recorded the draft's text as what you promised would be wrong whenever you changed it.
 - **Work from an email.** The triage agent forwarded the email to the session that does the work; telling it when
   the work is done closes the loop, without the agent watching every session.
+- **Pings.** A ping is the only thing that interrupts you, so the bar is high. Your "Don't ping for this again"
+  reaches only the agent that pinged, so each agent checks for it before pinging again.
 - **Leases.** A filter an agent creates on its own outlives the session and keeps hiding mail nobody reads. A lease
   ends with its session, and approving each new filter once keeps you in charge of what leaves your inbox. Build slots
   stop several sessions from compiling at once and slowing every one of them down.

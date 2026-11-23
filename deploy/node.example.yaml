@@ -85,6 +85,6 @@ runner:
     label:     { path: tools.google.gmail.modify, input: { account: "${account.address}", threadIds: ["${action.thread_id}"], addLabels: "${action.add}", removeLabels: "${action.remove}" } }
     draft:     { path: tools.google.gmail.draft, input: { account: "${account.address}", from: "${action.from}", to: "${action.to}", cc: "${action.cc}", subject: "${action.subject}", body: "${action.body}", replyToMessageId: "${action.reply_to_message_id}" } }
     calendar:  { path: tools.google.calendar.createEvent, input: { account: "${account.address}", calendarId: "${action.calendar}", summary: "${action.title}", start: "${action.start}", end: "${action.end}", timeZone: "${action.time_zone}", location: "${action.location}", description: "${action.description}" } }
-    story:
+    story.create:                               # stories and tasks: one tool per op (story.comment, task.create, task.update, task.done)
       path: tools.shortcut.stories.createStory
       input: { accountId: acc_<shortcut account>, input: { body: { name: "${action.title}", description: "${action.description}", story_type: "${action.story_type}", workflow_state_id: "${board.workflow_state_id}" } } }

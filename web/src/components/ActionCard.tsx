@@ -1,6 +1,8 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
+  Eye,
+  EyeOff,
   Clock,
   ExternalLink,
   MoreHorizontal,
@@ -24,6 +26,7 @@ import type { Approving } from "@/types/Approving";
 import type { Card } from "@/types/Card";
 import type { DecisionKind } from "@/types/DecisionKind";
 import type { RuleOffer } from "@/types/RuleOffer";
+import type { ThreadWatch } from "@/types/ThreadWatch";
 
 export type Draft = { text: string; include: boolean };
 
@@ -100,9 +103,31 @@ export function ActionCard({
     mutationFn: () =>
       api<Approving>(`/api/cards/${card.id}/retry`, { method: "POST" }),
   });
+  const watches = useQuery({
+    queryKey: ["watches"],
+    queryFn: () => api<ThreadWatch[]>("/api/watches"),
+  });
+  const watching = watches.data?.find(
+    (w) => w.account === card.account && w.thread_key === card.thread_key,
+  );
+  const watch = useMutation({
+    mutationFn: () =>
+      watching
+        ? api(`/api/watches/${watching.id}/stop`, { method: "POST" })
+        : api<ThreadWatch>("/api/watches", {
+            method: "POST",
+            body: {
+              account: card.account,
+              thread_key: card.thread_key,
+              subject: card.subject,
+            },
+          }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["watches"] }),
+  });
   const status = stateLine(card);
   const decidable = card.state === "open" || card.state === "handed_off";
-  const error = later.error ?? down.error ?? retry.error ?? move.error;
+  const error =
+    later.error ?? down.error ?? retry.error ?? move.error ?? watch.error;
 
   return (
     <article
@@ -146,6 +171,20 @@ export function ActionCard({
                 </a>
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem
+              disabled={!watches.isSuccess}
+              onSelect={() => watch.mutate()}
+            >
+              {watching ? (
+                <>
+                  <EyeOff /> Stop watching the thread
+                </>
+              ) : (
+                <>
+                  <Eye /> Watch thread
+                </>
+              )}
+            </DropdownMenuItem>
             <DropdownMenuItem
               disabled={!decidable}
               onSelect={() => later.mutate()}

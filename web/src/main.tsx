@@ -17,6 +17,11 @@ const queryClient = new QueryClient({
   },
 });
 
+// The installed app's shell and pings. Development builds are served by Vite and skip it.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  void navigator.serviceWorker.register("/sw.js").catch((e: unknown) => console.warn("service worker:", e));
+}
+
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

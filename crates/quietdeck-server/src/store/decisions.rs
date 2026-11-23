@@ -302,8 +302,9 @@ async fn release_one(
     .await?;
     // Lease actions are the deck's own to carry out: approving one approves its lease.
     let leases = crate::leases::approve_released(&mut *tx, card_id, version, now).await?;
-    if released.rows_affected() == leases {
-        // Nothing left to run (a sent row he only looked at, or a lease proposal): done.
+    let watches = crate::pings::apply_released(&mut *tx, card_id, version).await?;
+    if released.rows_affected() == leases + watches {
+        // Nothing left to run (a sent row he only looked at, a lease proposal, a watch): done.
         sqlx::query("UPDATE cards SET state = 'done', updated_at = ? WHERE id = ?")
             .bind(now)
             .bind(card_id)
@@ -350,12 +351,21 @@ pub async fn release_automatic(
     .await?;
     crate::store::rules::record_match(&mut tx, grant_id).await?;
     crate::store::rules::record_session_starts(&mut tx, card_id, session_starts).await?;
+    let watches = crate::pings::apply_released(&mut tx, card_id, version).await?;
+    let left = released.rows_affected().saturating_sub(watches);
+    if left == 0 {
+        sqlx::query("UPDATE cards SET state = 'done', updated_at = ? WHERE id = ?")
+            .bind(now)
+            .bind(card_id)
+            .execute(&mut *tx)
+            .await?;
+    }
     let (node, tab): (String, String) = sqlx::query_as("SELECT posted_node, posted_tab FROM cards WHERE id = ?")
         .bind(card_id)
         .fetch_one(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(Waiting { node, tab, decisions: released.rows_affected().min(1) as usize })
+    Ok(Waiting { node, tab, decisions: left.min(1) as usize })
 }
 
 #[derive(sqlx::FromRow)]
@@ -869,6 +879,32 @@ mod tests {
         let a = approve_all(db, &req, 0).await.unwrap();
         release_due(db).await.unwrap();
         a
+    }
+
+    #[tokio::test]
+    async fn the_deck_carries_out_watch_actions_itself_and_the_rest_go_to_the_agent() {
+        let db = crate::db::memory().await;
+        let watch = json!({"type": "watch", "account": "personal", "thread_id": "t1", "on": true});
+        let only = cards::add(&db, &agent(), &input("t1", json!([watch])), CardState::Open, None).await.unwrap().card;
+        let mut both_actions = archive("t2");
+        both_actions
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type": "watch", "account": "personal", "thread_id": "t2", "on": true}));
+        let both = cards::add(&db, &agent(), &input("t2", both_actions), CardState::Open, None).await.unwrap().card;
+        approve_now(&db, &[&only, &both]).await;
+        assert_eq!(cards::get(&db, only.id).await.unwrap().unwrap().state, CardState::Done);
+        assert_eq!(cards::get(&db, both.id).await.unwrap().unwrap().state, CardState::Approved);
+        let watched = crate::pings::watches(&db, false).await.unwrap();
+        assert_eq!(watched.iter().map(|w| w.thread_key.as_str()).collect::<Vec<_>>(), ["t2", "t1"]);
+        assert_eq!(watched[0].subject.as_deref(), Some("Invoice"));
+        // The agent has only the archive left to run: the watches are done.
+        let taken = take(&db, &agent()).await.unwrap();
+        let statuses = |id: i64| -> Vec<ActionStatus> {
+            taken.iter().find(|r| r.card.id == id).unwrap().actions.iter().map(|a| a.status).collect()
+        };
+        assert_eq!(statuses(both.id), [ActionStatus::Released, ActionStatus::Done]);
+        assert_eq!(statuses(only.id), [ActionStatus::Done]);
     }
 
     #[tokio::test]

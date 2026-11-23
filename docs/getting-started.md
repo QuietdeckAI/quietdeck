@@ -94,6 +94,53 @@ devices too. Each device stays signed in until you sign out, or until it hasn't 
 Keep the deck open in a pinned tab if you like: its tab icon shows how many cards are in your Inbox, and so does its
 title ("(3) Quietdeck"). Switch **Show the pending count on the tab icon** off in Settings if you'd rather it didn't.
 
+## Pings on your phone
+
+An agent can ping your phone when something can't wait a few hours: at first, a reply on a thread you watch, or an
+urgent event such as a disk running out. Nothing else is pushed: no new cards, no counts.
+
+The deck needs a VAPID key pair to send pushes. Make one:
+
+```sh
+docker run --rm quietdeck vapid-keys
+```
+
+It prints `QUIETDECK_VAPID_PUBLIC_KEY=…` and `QUIETDECK_VAPID_PRIVATE_KEY=…`. Keep the private key in your secrets
+manager ([secrets management](secrets-management.md)), and start the container again with both set, plus a contact
+address push services can use:
+
+```sh
+docker rm -f quietdeck
+docker run -d --name quietdeck --restart unless-stopped \
+  -v quietdeck-data:/data \
+  -e QUIETDECK_PUBLIC_URL=https://<deck address> \
+  -e QUIETDECK_VAPID_PUBLIC_KEY -e QUIETDECK_VAPID_PRIVATE_KEY \
+  -e QUIETDECK_VAPID_SUBJECT=mailto:<you@example.com> \
+  -p 127.0.0.1:8080:8080 \
+  quietdeck
+```
+
+(`-e NAME` with no value passes the variable from your shell, so the key never sits in your shell history.) Keep the
+same pair from then on: a new one stops every device's pushes until you turn them on again.
+
+Then, on the phone:
+
+- **iPhone or iPad:** open the deck in Safari, tap Share, then **Add to Home Screen**. Open Quietdeck from the Home
+  Screen (iOS allows push only there), sign in, open **Settings** and tap **Turn on notifications on this device**,
+  then **Allow**.
+- **Android, or a computer:** open the deck in Chrome, Edge or Firefox (install it from the browser's menu if you
+  like), open **Settings** and turn notifications on.
+
+Settings lists every device that takes pings, and when a ping last reached it. Tapping a ping opens it on the
+**Rules** screen, with its link and the agent's reason for not waiting. **Don't ping for this again**, with a note if
+you like, goes back to the agent that sent it: it picks the note up at the start of its next round and makes it a
+rule of its own, and the ping shows when it did. Rules also shows how many pings came in the last seven days against
+the weekly budget (`pings: { weekly_budget: 10 }` in `deck.yaml`). The budget only shows when agents ping more than
+you'd like; no ping is ever held back.
+
+**Watched threads** are listed on Rules too. Watch one from a card's menu (**Watch thread**), or approve a card that
+proposes watching it.
+
 ## Enrol a machine
 
 Each machine gets its own node token, from a one-time code. In the deck's **Settings**, press **Enrol a machine**: it

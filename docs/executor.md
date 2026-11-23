@@ -75,7 +75,9 @@ Copy the `runner:` section from [`deploy/node.example.yaml`](../deploy/node.exam
 - `executor.url`: your Executor's MCP address (`https://<executor host>/org/<org>/mcp`).
 - `accounts`: each mail account, by the account IDs in the deck's config, with its address and Executor's ID for it.
 - `boards`: each tracker board the deck's config names, with the IDs your story tool needs.
-- `tools`: one entry per action type, with the tool's path and input.
+- `tools`: one entry per action, with the tool's path and input: `archive`, `mark_read`, `label`, `draft`, `calendar`,
+  and for stories and tasks one per op, `story.create`, `story.comment`, `task.create`, `task.update` and `task.done`,
+  so an approved update never runs your create tool. An action with no entry goes to the triage agent.
 
 In an input, `${...}` names a value: `account.address`, `account.<var>` from the account's `vars`, `action.<field>`
 from the approved action, `card.<field>` (`id`, `thread_key`, `last_message_ref`, `subject`), `board.<field>` for a

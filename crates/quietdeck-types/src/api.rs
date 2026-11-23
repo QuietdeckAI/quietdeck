@@ -177,6 +177,10 @@ pub enum Changed {
     Nodes,
     Rules,
     Leases,
+    /// Pings, their feedback and thread watches.
+    Pings,
+    /// Devices that take pushes.
+    Push,
     /// The stream fell behind: refetch everything.
     All,
 }
@@ -187,4 +191,48 @@ pub enum Changed {
 pub struct RoundDone {
     /// Whether a runner on the caller's machine was told. False when none runs for this session.
     pub runner_told: bool,
+}
+
+/// Web push on this deck: the VAPID public key a browser subscribes with, or none when push is off.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct PushConfig {
+    pub public_key: Option<String>,
+}
+
+/// A browser's push subscription (`PushSubscription.toJSON()`, flattened), with a name for the device.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
+#[ts(export)]
+pub struct PushSubscribe {
+    #[garde(length(min = 1, max = 2000), pattern("^https://"))]
+    pub endpoint: String,
+    #[garde(length(min = 1, max = 200))]
+    pub p256dh: String,
+    #[garde(length(min = 1, max = 100))]
+    pub auth: String,
+    #[serde(default)]
+    #[garde(inner(length(min = 1, max = 100)))]
+    pub device: Option<String>,
+}
+
+/// One device that takes pushes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct PushDevice {
+    pub endpoint: String,
+    pub device: Option<String>,
+    #[ts(type = "string")]
+    #[schemars(with = "String")]
+    pub created_at: jiff::Timestamp,
+    /// When a push last reached it.
+    #[ts(type = "string | null")]
+    #[schemars(with = "Option<String>")]
+    pub last_ok_at: Option<jiff::Timestamp>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
+#[ts(export)]
+pub struct PushEndpoint {
+    #[garde(length(min = 1, max = 2000))]
+    pub endpoint: String,
 }

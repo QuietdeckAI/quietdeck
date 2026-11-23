@@ -117,7 +117,7 @@ mail_watch:
 tools:
   archive: {{ path: tools.google.gmail.modify, input: {{ account: "${{account.address}}", threadIds: ["${{action.thread_id}}"], archive: true }} }}
   draft: {{ path: tools.google.gmail.draft, input: {{ account: "${{account.address}}", from: "${{action.from}}", to: "${{action.to}}", subject: "${{action.subject}}", body: "${{action.body}}", replyToMessageId: "${{action.reply_to_message_id}}" }} }}
-  story: {{ path: tools.shortcut.stories.create, input: {{ name: "${{action.title}}", workflow_state_id: "${{board.workflow_state_id}}" }} }}
+  story.create: {{ path: tools.shortcut.stories.create, input: {{ name: "${{action.title}}", workflow_state_id: "${{board.workflow_state_id}}" }} }}
 boards:
   engineering: {{ workflow_state_id: 500000008 }}
 {extra}"#

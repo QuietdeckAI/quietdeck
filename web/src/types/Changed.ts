@@ -4,4 +4,4 @@
  * One message on the web app's event stream (`GET /api/events`): what changed, so it refetches that. Never the data
  * itself.
  */
-export type Changed = "cards" | "timeline" | "sessions" | "settings" | "nodes" | "rules" | "leases" | "all";
+export type Changed = "cards" | "timeline" | "sessions" | "settings" | "nodes" | "rules" | "leases" | "pings" | "push" | "all";

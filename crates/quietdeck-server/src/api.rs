@@ -70,6 +70,108 @@ pub fn router() -> Router<AppState> {
         .route("/api/leases/{id}/cleaned", post(lease_cleaned))
         .route("/api/lease-patterns/{id}/revoke", post(lease_pattern_revoke))
         .route("/api/comments", post(comment_add))
+        .route("/api/pings", get(pings_view).post(ping_send))
+        .route("/api/pings/{id}/feedback", post(ping_feedback))
+        .route("/api/pings/feedback/take", post(ping_feedback_take))
+        .route("/api/watches", get(watches_list).post(watch_add))
+        .route("/api/watches/{id}/stop", post(watch_stop))
+        .route("/api/push", get(push_config))
+        .route("/api/push/devices", get(push_devices).post(push_subscribe))
+        .route("/api/push/devices/remove", post(push_remove))
+}
+
+async fn ping_send(
+    State(state): State<AppState>,
+    Agent(me): Agent,
+    Json(req): Json<quietdeck_types::timeline::PingRequest>,
+) -> AppResult<Json<quietdeck_types::timeline::Ping>> {
+    Ok(Json(crate::pings::send(&state, &me, req).await?))
+}
+
+async fn pings_view(
+    State(state): State<AppState>,
+    _owner: Owner,
+) -> AppResult<Json<quietdeck_types::timeline::PingsView>> {
+    Ok(Json(crate::pings::view(&state).await?))
+}
+
+async fn ping_feedback(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(id): Path<i64>,
+    Json(f): Json<quietdeck_types::timeline::PingFeedback>,
+) -> AppResult<Json<quietdeck_types::timeline::Ping>> {
+    Ok(Json(crate::pings::feedback(&state, id, f).await?))
+}
+
+async fn ping_feedback_take(
+    State(state): State<AppState>,
+    Agent(me): Agent,
+) -> AppResult<Json<Vec<quietdeck_types::timeline::Ping>>> {
+    Ok(Json(crate::pings::take_feedback(&state, &me).await?))
+}
+
+#[derive(Deserialize)]
+struct WatchesParams {
+    #[serde(default)]
+    all: bool,
+}
+
+async fn watches_list(
+    State(state): State<AppState>,
+    Authed(_): Authed,
+    Query(q): Query<WatchesParams>,
+) -> AppResult<Json<Vec<quietdeck_types::timeline::ThreadWatch>>> {
+    Ok(Json(crate::pings::watches(&state.db, q.all).await?))
+}
+
+async fn watch_add(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(w): Json<quietdeck_types::timeline::WatchAdd>,
+) -> AppResult<Json<quietdeck_types::timeline::ThreadWatch>> {
+    Ok(Json(crate::pings::watch(&state, w).await?))
+}
+
+async fn watch_stop(State(state): State<AppState>, _owner: Owner, Path(id): Path<i64>) -> AppResult<Json<()>> {
+    crate::pings::unwatch(&state, id).await?;
+    Ok(Json(()))
+}
+
+async fn push_config(State(state): State<AppState>, _owner: Owner) -> Json<quietdeck_types::api::PushConfig> {
+    Json(quietdeck_types::api::PushConfig { public_key: state.pusher.as_ref().map(|p| p.public_key().to_string()) })
+}
+
+async fn push_devices(
+    State(state): State<AppState>,
+    _owner: Owner,
+) -> AppResult<Json<Vec<quietdeck_types::api::PushDevice>>> {
+    Ok(Json(crate::push::devices(&state.db).await?))
+}
+
+async fn push_subscribe(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(s): Json<quietdeck_types::api::PushSubscribe>,
+) -> AppResult<Json<Vec<quietdeck_types::api::PushDevice>>> {
+    garde::Validate::validate(&s).map_err(bad)?;
+    if state.pusher.is_none() {
+        return Err(AppError::Conflict("web push is off on this deck: it has no VAPID keys".into()));
+    }
+    crate::push::check_keys(&s).map_err(AppError::BadRequest)?;
+    crate::push::subscribe(&state.db, &s).await?;
+    state.changed(Changed::Push);
+    Ok(Json(crate::push::devices(&state.db).await?))
+}
+
+async fn push_remove(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(e): Json<quietdeck_types::api::PushEndpoint>,
+) -> AppResult<Json<Vec<quietdeck_types::api::PushDevice>>> {
+    crate::push::remove(&state.db, &e.endpoint).await?;
+    state.changed(Changed::Push);
+    Ok(Json(crate::push::devices(&state.db).await?))
 }
 
 async fn rules_view(State(state): State<AppState>, Authed(_): Authed) -> AppResult<Json<RulesView>> {

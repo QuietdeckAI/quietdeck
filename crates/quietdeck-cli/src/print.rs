@@ -273,3 +273,34 @@ pub fn leases(v: &quietdeck_types::lease::LeasesView) -> String {
     }
     out.join("\n")
 }
+
+pub fn ping_feedback(r: &[quietdeck_types::timeline::Ping]) -> String {
+    if r.is_empty() {
+        return "No new feedback on your pings.".into();
+    }
+    r.iter()
+        .map(|p| {
+            let note = p.feedback.as_deref().filter(|n| !n.is_empty()).unwrap_or("(no note)");
+            format!("Don't ping for this again: ping {} \"{}\" ({}). {note}", p.id, p.title, p.reason)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub fn watches(r: &[quietdeck_types::timeline::ThreadWatch]) -> String {
+    if r.is_empty() {
+        return "No watched threads.".into();
+    }
+    r.iter()
+        .map(|w| {
+            format!(
+                "{} {}{}{}",
+                w.account,
+                w.thread_key,
+                w.subject.as_deref().map(|s| format!(" \"{s}\"")).unwrap_or_default(),
+                if w.active { "" } else { " (stopped)" }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}

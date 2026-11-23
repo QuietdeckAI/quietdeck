@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { fieldClass, Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
+import { appleMobile, currentSubscription, installed, pushPossible, subscribe } from "@/lib/push";
 import { when } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { createPasskey, guessDeviceName } from "@/lib/webauthn";
@@ -16,12 +17,15 @@ import type { LeasesView } from "@/types/LeasesView";
 import type { LeaseState } from "@/types/LeaseState";
 import type { NodeRow } from "@/types/NodeRow";
 import type { PasskeyInfo } from "@/types/PasskeyInfo";
+import type { PushConfig } from "@/types/PushConfig";
+import type { PushDevice } from "@/types/PushDevice";
 import type { Settings } from "@/types/Settings";
 
 export function SettingsScreen() {
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-12 px-4 py-8">
       <DeckSettings />
+      <Notifications />
       <Passkeys />
       <Nodes />
       <Leases />
@@ -87,7 +91,8 @@ function DeckSettings() {
             <span>
               <span className="block">Show the pending count on the tab icon</span>
               <span className="block text-sm text-neutral">
-                How many cards are in your Inbox, on the deck’s tab icon and in its title.
+                How many cards are in your Inbox, on the deck’s tab icon and in its title, and on the installed
+                app’s icon.
               </span>
             </span>
             <Switch
@@ -100,6 +105,87 @@ function DeckSettings() {
       {(settings.error ?? save.error) && (
         <p role="alert" className="mt-2 text-sm text-danger">
           {(settings.error ?? save.error)?.message}
+        </p>
+      )}
+    </Section>
+  );
+}
+
+/** Pings reach the phone by web push. Nothing else is pushed. */
+function Notifications() {
+  const qc = useQueryClient();
+  const config = useQuery({ queryKey: ["push", "config"], queryFn: () => api<PushConfig>("/api/push") });
+  const devices = useQuery({ queryKey: ["push", "devices"], queryFn: () => api<PushDevice[]>("/api/push/devices") });
+  const mine = useQuery({
+    queryKey: ["push", "this-device"],
+    queryFn: async () => (await currentSubscription())?.endpoint ?? null,
+  });
+  const refresh = () => void qc.invalidateQueries({ queryKey: ["push"] });
+  const turnOn = useMutation({
+    mutationFn: async (publicKey: string) =>
+      api<PushDevice[]>("/api/push/devices", { method: "POST", body: await subscribe(publicKey) }),
+    onSuccess: refresh,
+  });
+  const remove = useMutation({
+    mutationFn: async (endpoint: string) => {
+      if (endpoint === mine.data) await (await currentSubscription())?.unsubscribe();
+      return api<PushDevice[]>("/api/push/devices/remove", { method: "POST", body: { endpoint } });
+    },
+    onSuccess: refresh,
+  });
+  const key = config.data?.public_key;
+  const thisOne = devices.data?.some((d) => d.endpoint === mine.data) ?? false;
+  const error = config.error ?? devices.error ?? turnOn.error ?? remove.error;
+  return (
+    <Section title="Notifications">
+      <p className="mb-3 max-w-[65ch] text-sm text-neutral">
+        Pings only: an agent pings when something can’t wait a few hours, such as a reply on a thread you watch.
+      </p>
+      {config.isSuccess && !key && (
+        <p className="text-muted">
+          Web push is off on this deck: it needs VAPID keys. The getting started guide says how to make them.
+        </p>
+      )}
+      {key && !pushPossible() && (
+        <p className="text-muted">
+          {appleMobile() && !installed()
+            ? "On an iPhone or iPad, add Quietdeck to your Home Screen (Share, then Add to Home Screen) and open it from there to turn notifications on."
+            : "This browser can’t take push notifications."}
+        </p>
+      )}
+      {key && pushPossible() && mine.isSuccess && !thisOne && (
+        <Button loading={turnOn.isPending} onClick={() => turnOn.mutate(key)}>
+          Turn on notifications on this device
+        </Button>
+      )}
+      {(devices.data?.length ?? 0) > 0 && (
+        <ul className="mt-3 flex flex-col divide-y divide-rule rounded-lg border border-rule bg-paper-2">
+          {devices.data?.map((d) => (
+            <li key={d.endpoint} className="flex items-center justify-between gap-4 p-4">
+              <span className="min-w-0">
+                <span className="block">
+                  {d.device ?? "A device"}
+                  {d.endpoint === mine.data && <span className="text-neutral"> (this device)</span>}
+                </span>
+                <span className="block text-sm text-neutral">
+                  {d.last_ok_at ? `Last reached ${when(d.last_ok_at)}` : `Added ${when(d.created_at)}, not reached yet`}
+                </span>
+              </span>
+              <Button
+                variant="quiet"
+                size="sm"
+                loading={remove.isPending && remove.variables === d.endpoint}
+                onClick={() => remove.mutate(d.endpoint)}
+              >
+                Turn off
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-danger">
+          {error.message}
         </p>
       )}
     </Section>

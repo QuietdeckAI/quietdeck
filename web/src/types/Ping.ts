@@ -7,6 +7,6 @@ export type Ping = { id: number, sent_by: SessionRef, title: string, body: strin
  */
 result: string | null, 
 /**
- * "Don't ping for this again", with the person's words.
+ * "Don't ping for this again", with the person's words (empty when they left no note).
  */
-feedback: string | null, feedback_picked_up_at: string | null, };
+feedback: string | null, feedback_at: string | null, feedback_picked_up_at: string | null, };

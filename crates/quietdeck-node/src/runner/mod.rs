@@ -291,8 +291,9 @@ impl Runner {
             {
                 return handoff(format!("account {acct} isn't in the runner's config"));
             }
-            if !built_in(t) && !self.cfg.tools.contains_key(&t) {
-                return Sorted::Handoff { reason: format!("no handler for {t}"), no_handler: Some(t) };
+            let key = config::tool_key(a);
+            if !built_in(t) && !self.cfg.tools.contains_key(&key) {
+                return Sorted::Handoff { reason: format!("no handler for {key}"), no_handler: Some(t) };
             }
             if let Action::Story(StoryOp::Create { board, .. }) = a
                 && !self.cfg.boards.contains_key(board)
@@ -413,8 +414,8 @@ impl Runner {
                         return Err(format!("{} can't send as {}", c.account, c.from));
                     }
                 }
-                let t = a.action_type();
-                let spec = self.cfg.tools.get(&t).ok_or_else(|| format!("no tool for {t}"))?;
+                let key = config::tool_key(a);
+                let spec = self.cfg.tools.get(&key).ok_or_else(|| format!("no tool for {key}"))?;
                 let mut ctx = json!({
                     "action": serde_json::to_value(a).map_err(|e| e.to_string())?,
                     "card": {"id": r.card.id, "thread_key": r.card.input.thread_key,
