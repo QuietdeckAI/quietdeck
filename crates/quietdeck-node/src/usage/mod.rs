@@ -422,17 +422,28 @@ pub fn spawn(config: UsageConfig, env: UsageEnv, events: mpsc::Sender<UsageEvent
         let (shared, config, env, logger) = (shared.clone(), config.clone(), env.clone(), logger.clone());
         tokio::spawn(async move {
             let mut stopped = shared.stopped.subscribe();
+            let mut followed: Option<i32> = None;
             loop {
-                match server::take_lock(&server::lock_path(&env.rotator_dir)) {
+                // Once a followed coordinator stops, its sessions ask for one again within 2 s and would start
+                // the rotator's own: take the lock first.
+                let wait = match server::take_lock(&server::lock_path(&env.rotator_dir)) {
                     Ok(None) => return run_own(shared, &config, &env, logger).await,
                     Ok(Some(pid)) => {
-                        logger.log(&format!("{NAME}: a coordinator runs (pid {pid}); following it until it stops"));
+                        // Said once per coordinator: one still starting, whose socket isn't up, is asked again soon.
+                        if followed != Some(pid) {
+                            logger.log(&format!("{NAME}: a coordinator runs (pid {pid}); following it until it stops"));
+                            followed = Some(pid);
+                        }
                         follow(shared.clone(), server::socket_path(&env.rotator_dir)).await;
+                        Duration::from_millis(250)
                     }
-                    Err(e) => logger.log(&format!("{NAME}: {e}")),
-                }
+                    Err(e) => {
+                        logger.log(&format!("{NAME}: {e}"));
+                        Duration::from_secs(5)
+                    }
+                };
                 tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                    _ = tokio::time::sleep(wait) => {}
                     _ = stopped.wait_for(|s| *s) => return,
                 }
             }
