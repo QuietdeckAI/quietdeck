@@ -1,6 +1,5 @@
 //! The SQLite database: WAL mode, migrations at start-up, and helpers for the columns every table shares.
 
-use std::str::FromStr;
 use std::time::Duration;
 
 use jiff::Timestamp;
@@ -29,7 +28,7 @@ pub async fn open(path: &std::path::Path) -> anyhow::Result<Db> {
 /// An in-memory database for tests, migrated.
 #[cfg(test)]
 pub async fn memory() -> Db {
-    let opts = SqliteConnectOptions::from_str("sqlite::memory:").unwrap().foreign_keys(true);
+    let opts = <SqliteConnectOptions as std::str::FromStr>::from_str("sqlite::memory:").unwrap().foreign_keys(true);
     // One connection: every connection to :memory: is its own database.
     let pool = SqlitePoolOptions::new().max_connections(1).connect_with(opts).await.unwrap();
     sqlx::migrate!("./migrations").run(&pool).await.unwrap();
