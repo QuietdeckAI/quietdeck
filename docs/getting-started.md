@@ -231,9 +231,9 @@ cost anything. The node makes at most two summary calls at once.
 
 ### Which account it uses
 
-With several Claude accounts on the machine, each call uses the one whose week resets soonest and still has room. With one account, calls use Claude Code's own
-login. If every account has run out for the week, summaries wait, and the next idle session or the daily sweep tries
-again.
+With several Claude accounts on the machine, each call uses the one whose week resets soonest and still has room.
+With one account, calls use Claude Code's own login. If every account has run out for the week, summaries wait, and
+the next idle session or the daily sweep tries again.
 
 The calls run with no settings, hooks, plugins, tools, MCP servers or CLAUDE.md, so your configuration doesn't add to
 their cost or change what they do.
