@@ -16,6 +16,37 @@ fn program(node: &Node, agent: AgentKind) -> (&str, &[String]) {
     }
 }
 
+/// What a person pastes into a terminal to resume a session as this machine would: its directory, then the agent
+/// with the `sessions:` arguments from node.yaml, its tab name, and the session.
+pub fn resume_command(node: &Node, s: &quietdeck_types::directory::SessionInfo) -> Option<String> {
+    let cwd = s.cwd.as_deref()?;
+    let (program, args) = program(node, s.agent);
+    let mut words = vec![quote(cwd)];
+    words.insert(0, "cd".into());
+    words.push("&&".into());
+    words.push(quote(program));
+    words.extend(args.iter().map(|a| quote(a)));
+    match s.agent {
+        AgentKind::Claude => {
+            if let Some(tab) = &s.tab {
+                words.extend(["--name".into(), quote(tab)]);
+            }
+            words.extend(["--resume".into(), quote(&s.session_id)]);
+        }
+        AgentKind::Codex => words.extend(["resume".into(), quote(&s.session_id)]),
+    }
+    Some(words.join(" "))
+}
+
+/// A word for a POSIX shell: bare when it's plainly safe, otherwise in single quotes.
+fn quote(w: &str) -> String {
+    if !w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || "-_./=:@%+".contains(c)) {
+        w.to_string()
+    } else {
+        format!("'{}'", w.replace('\'', "'\\''"))
+    }
+}
+
 fn agent_name(agent: AgentKind) -> &'static str {
     match agent {
         AgentKind::Claude => "Claude Code",

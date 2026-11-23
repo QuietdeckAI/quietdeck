@@ -199,10 +199,23 @@ impl Watcher {
     }
 
     async fn apply_snapshot(&mut self, now: Vec<SessionInfo>) {
+        let now: Vec<SessionInfo> = now
+            .into_iter()
+            .map(|mut s| {
+                s.resume_command = crate::control::resume_command(&self.node, &s);
+                s
+            })
+            .collect();
         let before = std::mem::replace(&mut *self.node.sessions.lock().await, now.clone());
         for s in &now {
             let old = before.iter().find(|b| b.session_id == s.session_id);
-            if old.is_none_or(|o| o.status != s.status || o.tab != s.tab || o.cwd != s.cwd || o.pane != s.pane) {
+            if old.is_none_or(|o| {
+                o.status != s.status
+                    || o.tab != s.tab
+                    || o.cwd != s.cwd
+                    || o.pane != s.pane
+                    || o.resume_command != s.resume_command
+            }) {
                 self.gone.retain(|g| g != &s.session_id);
                 self.pushed(s).await;
             }

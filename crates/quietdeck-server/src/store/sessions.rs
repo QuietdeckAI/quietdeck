@@ -40,7 +40,7 @@ impl Row {
     fn into_row(self, node_online: bool, links: Vec<SessionLink>) -> anyhow::Result<SessionRow> {
         let resume = self.resume_command.clone().or_else(|| {
             let agent = parse_enum(&self.agent).ok()?;
-            Some(resume_command(agent, self.cwd.as_deref()?, &self.session_id))
+            Some(resume_command(agent, self.cwd.as_deref()?, self.tab.as_deref(), &self.session_id))
         });
         Ok(SessionRow {
             node: self.node,
@@ -339,11 +339,16 @@ async fn hydrate(db: &Db, hub: &crate::hub::Hub, rows: Vec<Row>) -> anyhow::Resu
     Ok(out)
 }
 
-/// What a person pastes into a terminal to pick a session up again: its directory, then the agent's own resume.
-pub fn resume_command(agent: quietdeck_types::AgentKind, cwd: &str, session_id: &str) -> String {
-    let dir = format!("'{}'", cwd.replace('\'', "'\\''"));
+/// For a session whose node sent no resume command (an imported one, or an older node): its directory, then the
+/// agent's own resume, without the machine's `sessions:` arguments, which only the node knows.
+pub fn resume_command(agent: quietdeck_types::AgentKind, cwd: &str, tab: Option<&str>, session_id: &str) -> String {
+    let q = |w: &str| format!("'{}'", w.replace('\'', "'\\''"));
+    let dir = q(cwd);
     match agent {
-        quietdeck_types::AgentKind::Claude => format!("cd {dir} && claude --resume {session_id}"),
+        quietdeck_types::AgentKind::Claude => match tab {
+            Some(t) => format!("cd {dir} && claude --name {} --resume {session_id}", q(t)),
+            None => format!("cd {dir} && claude --resume {session_id}"),
+        },
         quietdeck_types::AgentKind::Codex => format!("cd {dir} && codex resume {session_id}"),
     }
 }
@@ -661,7 +666,10 @@ mod tests {
         }
         let found = find_any(&db, &hub, "certs@laptop").await.unwrap();
         assert_eq!(found.len(), 1, "a tab finds the session that ended when none runs");
-        assert_eq!(found[0].info.resume_command.as_deref(), Some("cd '/work/it'\\''s here' && claude --resume s1"));
+        assert_eq!(
+            found[0].info.resume_command.as_deref(),
+            Some("cd '/work/it'\\''s here' && claude --name 'certs' --resume s1")
+        );
         let points: Vec<String> =
             timeline(&db, "laptop", "s1").await.unwrap().into_iter().map(|r| r.sentence).collect();
         assert_eq!(points, ["Started on the certificate", "Ordered the certificate"]);
