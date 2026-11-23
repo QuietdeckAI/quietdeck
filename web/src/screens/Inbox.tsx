@@ -183,7 +183,7 @@ function InboxBody({
           <h2 className="mb-1 text-lg text-muted">Archive list</h2>
           <ul>
             {inbox.archive_list.map((c) => (
-              <ArchiveLine key={key(c)} card={c} />
+              <ArchiveLine key={key(c)} card={c} draft={draftFor(c)} onDraft={setDraft(c)} />
             ))}
           </ul>
         </section>

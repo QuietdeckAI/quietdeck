@@ -16,7 +16,10 @@ use crate::action::{Action, SessionRef};
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum CardSection {
+    /// What the person needs to look at: a reply in their name, money, a decision, something only they can do.
     Actions,
+    /// Routine mail Approve All just handles, one line each: an archive, with at most a label or a one-line
+    /// unsubscribe reply ("Unsubscribe, thanks.") before it. Sales pitches and FYI mail go here.
     ArchiveList,
     Suggestion,
     Later,
