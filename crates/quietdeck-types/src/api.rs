@@ -51,11 +51,20 @@ pub struct Settings {
     /// "Require a proposal for every new filter". A hard rule in code while on.
     #[garde(skip)]
     pub require_filter_proposal: bool,
+    /// "Show the pending count on the tab icon": the number of cards in the Inbox on the deck's favicon and in its
+    /// title. On unless switched off.
+    #[serde(default = "yes")]
+    #[garde(skip)]
+    pub show_pending_count: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { undo_seconds: 3, require_filter_proposal: true }
+        Settings { undo_seconds: 3, require_filter_proposal: true, show_pending_count: true }
     }
 }
 

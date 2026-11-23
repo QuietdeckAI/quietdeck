@@ -11,4 +11,9 @@ undo_seconds: number,
 /**
  * "Require a proposal for every new filter". A hard rule in code while on.
  */
-require_filter_proposal: boolean, };
+require_filter_proposal: boolean, 
+/**
+ * "Show the pending count on the tab icon": the number of cards in the Inbox on the deck's favicon and in its
+ * title. On unless switched off.
+ */
+show_pending_count: boolean, };

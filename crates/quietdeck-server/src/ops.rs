@@ -505,6 +505,7 @@ pub async fn save_settings(state: &AppState, s: Settings) -> AppResult<Settings>
     for (name, value) in [
         ("undo_seconds", s.undo_seconds.to_string()),
         ("require_filter_proposal", s.require_filter_proposal.to_string()),
+        ("show_pending_count", s.show_pending_count.to_string()),
     ] {
         sqlx::query(
             "INSERT INTO settings (name, value) VALUES (?, ?) \

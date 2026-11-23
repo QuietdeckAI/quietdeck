@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "@/App";
+import { TabBadge } from "@/components/TabBadge";
 import { DeckError } from "@/lib/api";
 import "@/app.css";
 
@@ -20,6 +21,7 @@ createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <App />
+      <TabBadge />
     </QueryClientProvider>
   </StrictMode>,
 );

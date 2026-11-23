@@ -91,6 +91,9 @@ To add your phone or another computer, sign in on a device you've already added,
 there. A passkey synced through iCloud Keychain, Google Password Manager or 1Password signs you in on your other
 devices too. Each device stays signed in until you sign out, or until it hasn't been used for 30 days.
 
+Keep the deck open in a pinned tab if you like: its tab icon shows how many cards are in your Inbox, and so does its
+title ("(3) Quietdeck"). Switch **Show the pending count on the tab icon** off in Settings if you'd rather it didn't.
+
 ## Enrol a machine
 
 Each machine gets its own node token, from a one-time code. In the deck's **Settings**, press **Enrol a machine**: it

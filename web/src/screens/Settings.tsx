@@ -83,6 +83,18 @@ function DeckSettings() {
               onCheckedChange={(on) => save.mutate({ ...s, require_filter_proposal: on })}
             />
           </label>
+          <label className="flex items-center justify-between gap-4 p-4">
+            <span>
+              <span className="block">Show the pending count on the tab icon</span>
+              <span className="block text-sm text-neutral">
+                How many cards are in your Inbox, on the deck’s tab icon and in its title.
+              </span>
+            </span>
+            <Switch
+              checked={s.show_pending_count}
+              onCheckedChange={(on) => save.mutate({ ...s, show_pending_count: on })}
+            />
+          </label>
         </div>
       )}
       {(settings.error ?? save.error) && (
