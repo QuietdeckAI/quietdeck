@@ -573,8 +573,9 @@ impl Runner {
 
 /// Gmail's own labels, which a labels list may leave out.
 /// Values tools need in another shape than the action has: `story_number` (the number in "sc-1234" or "1234", for
-/// trackers whose tools take a number) and `agent_labels` (["agent:<tab>"] when the task names the tab that works on
-/// it; left out otherwise, so the tool's key goes too).
+/// trackers whose tools take a number), and `agent_labels` (["agent:<tab>"] when the task names the tab that works on
+/// it) with `agent_label_objects` ([{"name": "agent:<tab>"}], for tools that take label objects); both are left out
+/// without a tab, so the tool's key goes too.
 fn derived_values(a: &Action, v: &mut Value) {
     let story_id = match a {
         Action::Story(StoryOp::Comment { story_id, .. }) => Some(story_id.as_str()),
@@ -586,6 +587,7 @@ fn derived_values(a: &Action, v: &mut Value) {
     }
     if let Action::Task { agent_tab: Some(tab), .. } = a {
         v["agent_labels"] = json!([format!("agent:{tab}")]);
+        v["agent_label_objects"] = json!([{"name": format!("agent:{tab}")}]);
     }
 }
 

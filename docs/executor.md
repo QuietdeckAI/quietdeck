@@ -82,7 +82,8 @@ Copy the `runner:` section from [`deploy/node.example.yaml`](../deploy/node.exam
 In an input, `${...}` names a value: `account.address`, `account.<var>` from the account's `vars`, `action.<field>`
 from the approved action (plus `action.story_number`, the number in a story or task's `story_id` such as `sc-1234`,
 for trackers whose tools take a number, and `action.agent_labels`, `["agent:<tab>"]` when a task names the tab that
-works on it), `card.<field>` (`id`, `thread_key`, `last_message_ref`, `subject`), `board.<field>` for a
+works on it, or as `action.agent_label_objects`, `[{"name": "agent:<tab>"}]`), `card.<field>` (`id`, `thread_key`,
+`last_message_ref`, `subject`), `board.<field>` for a
 story, and `history_id` and `page_token` for the mail watch. A string that's only a placeholder keeps the value's
 type, so `addLabels: "${action.add}"` passes a list. A placeholder with no value leaves its key out, which is how the
 first page of history goes without a `pageToken`.

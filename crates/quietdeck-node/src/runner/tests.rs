@@ -660,6 +660,7 @@ fn tools_get_the_story_number_and_the_agent_label() {
     let mut v = serde_json::to_value(&task).unwrap();
     super::derived_values(&task, &mut v);
     assert_eq!(v["agent_labels"], json!(["agent:finances"]));
+    assert_eq!(v["agent_label_objects"], json!([{"name": "agent:finances"}]));
     assert!(v.get("story_number").is_none());
 
     assert_eq!(super::story_number("SC-9"), Some(9));
