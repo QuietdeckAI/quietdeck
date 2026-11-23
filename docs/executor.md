@@ -115,6 +115,17 @@ quietdeck round done
 finds one message waiting, not twenty. The last history ID is kept on the machine
 (`~/.local/state/quietdeck/runner-mail.json`), so after the machine sleeps the runner picks up where it left off.
 
+The watch starts from the moment the runner first runs: mail already in the inbox never wakes the agent, and is its
+own to sweep or leave. To see where the watch is, the agent runs `quietdeck round status` (or the `round_status` MCP
+tool):
+
+```text
+Not waiting on you: the next new mail wakes you.
+Last checked the mailboxes at 2026-11-24 00:44.
+Personal (personal): watching since 2026-11-23 21:40, history ID 28613693
+Mail from before the watch started never woke you.
+```
+
 ## What the runner checks before it acts
 
 Approved cards reach the runner first. It sorts them in code, and hands a whole card to the agent, with a reason the

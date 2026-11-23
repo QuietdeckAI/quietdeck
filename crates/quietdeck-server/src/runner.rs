@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use quietdeck_types::SessionRef;
 use quietdeck_types::action::Action;
-use quietdeck_types::api::Changed;
+use quietdeck_types::api::{Changed, RoundStatus};
 use quietdeck_types::card::RunBy;
 use quietdeck_types::node::{DeckRequest, NodeRequest, Reply, RunnerInfo, SendAsCheck};
 
@@ -57,6 +57,21 @@ pub async fn round_done(state: &AppState, me: &SessionRef) -> AppResult<bool> {
             Ok(true)
         }
         _ => Ok(false),
+    }
+}
+
+/// `quietdeck round status` from `me`: the mail watch of the runner on its machine, when it runs for `me`.
+pub async fn round_status(state: &AppState, me: &SessionRef) -> AppResult<RoundStatus> {
+    match connected_runner(state, &me.node).await {
+        Some(r) if r.agent_tab == me.tab => {
+            let reply = state
+                .hub
+                .request(&me.node, DeckRequest::RoundStatus, ASK_TIMEOUT)
+                .await
+                .map_err(|e| AppError::Conflict(format!("the runner on {} didn't answer: {e}", me.node)))?;
+            reply.into_result::<RoundStatus>().map_err(AppError::Conflict)
+        }
+        _ => Ok(RoundStatus { runner: false, waiting: false, woke_at: None, checked_at: None, accounts: vec![] }),
     }
 }
 

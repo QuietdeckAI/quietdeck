@@ -345,6 +345,18 @@ impl Mcp {
         tool_try!(r)
     }
 
+    #[tool(description = "Where the runner's mail watch is: when it started on each mailbox (older mail never woke \
+        you), the history ID it has read up to, new messages waiting for the next wake-up, and whether it's waiting \
+        for your round_done.")]
+    async fn round_status(
+        &self,
+        _: Parameters<NoArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async { crate::runner::round_status(&self.state, &self.agent(&ctx).await?).await }.await;
+        tool_try!(r)
+    }
+
     #[tool(description = "Start one approved action before you run it. Refused once the person has pressed Stop: \
         then don't run it.")]
     async fn action_start(

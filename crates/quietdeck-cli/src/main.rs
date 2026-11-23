@@ -204,6 +204,7 @@ enum AuthCommand {
 #[derive(Subcommand)]
 enum CardCommand {
     /// Post a card from JSON (a file, or - for stdin). One card per thread: a thread's open card gets a new version.
+    #[command(after_long_help = CARD_EXAMPLE)]
     Add {
         /// The card as JSON (the CardInput shape).
         file: String,
@@ -234,7 +235,36 @@ enum CardCommand {
     },
     /// Show one card.
     Show { id: String },
+    /// Print the JSON Schema of a card (`card add`'s input), with what every field is for.
+    Schema,
 }
+
+const CARD_EXAMPLE: &str = r#"Fields not shown are optional; `quietdeck card schema` lists them all. Unknown fields are refused, and every
+missing one is named in one error.
+
+Example: a sales pitch for the archive list, with a one-line unsubscribe reply:
+
+  {
+    "account": "work",
+    "thread_key": "19a4f0c2b7e1d3a5",
+    "last_message_ref": "19a4f0c2b7e1d3a5",
+    "sender": {"name": "Paul", "address": "paul@vendor.example"},
+    "subject": "Quick question about your card renewals",
+    "summary": "Sales pitch: card dunning",
+    "section": "archive_list",
+    "reason": "Cold sales pitch: unsubscribe and archive",
+    "actions": [
+      {"type": "reply", "account": "work", "thread_id": "19a4f0c2b7e1d3a5",
+       "reply_to_message_id": "19a4f0c2b7e1d3a5", "from": "me@work.example",
+       "to": ["paul@vendor.example"], "subject": "Re: Quick question about your card renewals",
+       "body": "Unsubscribe, thanks."},
+      {"type": "archive", "account": "work", "thread_id": "19a4f0c2b7e1d3a5"}
+    ]
+  }
+
+`thread_key` is Gmail's thread ID as it is, with no prefix: the account is its own field. `to` and `cc` are lists.
+`section`: actions, archive_list, suggestion, later or sent. Action types: archive, mark_read, label, forward,
+draft, reply, story, task, calendar, resume, new_session, lease, watch."#;
 
 #[derive(Args)]
 struct SessionsArgs {
@@ -327,6 +357,9 @@ enum RulesCommand {
 
 #[derive(Subcommand)]
 enum RoundCommand {
+    /// Where the runner's mail watch is: since when it watches each mailbox (older mail never woke you), what's
+    /// waiting for the next wake-up, and whether it's waiting for `round done`.
+    Status,
     /// The round is finished: the runner may send the next wake-up.
     Done,
 }
@@ -472,7 +505,13 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 q.push(("account", a));
             }
             let cards: Vec<quietdeck_types::card::Card> = c.get("/api/cards", &q).await?;
-            print::out(json, &cards, |cs| cs.iter().map(print::card_line).collect::<Vec<_>>().join("\n"))
+            print::out(json, &cards, |cs| {
+                if cs.is_empty() {
+                    "No cards.".to_string()
+                } else {
+                    cs.iter().map(print::card_line).collect::<Vec<_>>().join("\n")
+                }
+            })
         }
         Command::Sessions(args) => {
             let c = Client::connect().await?;
@@ -583,13 +622,17 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Command::Rules { command: RulesCommand::Match { file, grant } } => {
             let c = Client::connect().await?;
-            let card: CardInput =
-                serde_json::from_str(&read_file_arg(&file)?).map_err(|e| anyhow::anyhow!("the card's JSON: {e}"))?;
+            let card = CardInput::from_json(&read_file_arg(&file)?).map_err(anyhow::Error::msg)?;
             let req = quietdeck_types::rules::MatchRequest { card, grant_id: parse_id(&grant)? };
             let r: quietdeck_types::rules::MatchResult = c.post("/api/rules/match", &req).await?;
             print::out(json, &r, |m| {
                 format!("{} under rule {}: {}", if m.allow { "Allowed" } else { "Denied" }, m.grant_id, m.reason)
             })
+        }
+        Command::Round { command: RoundCommand::Status } => {
+            let c = Client::connect().await?;
+            let r: quietdeck_types::api::RoundStatus = c.get("/api/round", &[]).await?;
+            print::out(json, &r, print::round_status)
         }
         Command::Round { command: RoundCommand::Done } => {
             let c = Client::connect().await?;
@@ -640,12 +683,15 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
 }
 
 async fn card(json: bool, command: CardCommand) -> anyhow::Result<()> {
+    if let CardCommand::Schema = command {
+        println!("{}", serde_json::to_string_pretty(&CardInput::schema())?);
+        return Ok(());
+    }
     let c = Client::connect().await?;
     match command {
         CardCommand::Add { file, needs_agent, grant, auto } => {
             let text = read_file_arg(&file)?;
-            let mut input: CardInput =
-                serde_json::from_str(&text).map_err(|e| anyhow::anyhow!("the card's JSON: {e}"))?;
+            let mut input = CardInput::from_json(&text).map_err(anyhow::Error::msg)?;
             if needs_agent {
                 input.needs_agent = true;
             }
@@ -669,6 +715,7 @@ async fn card(json: bool, command: CardCommand) -> anyhow::Result<()> {
                 c.post(&format!("/api/cards/{}/resolve", parse_id(&id)?), &how).await?;
             print::out(json, &card, print::card_line)
         }
+        CardCommand::Schema => unreachable!("answered before connecting"),
         CardCommand::Show { id } => {
             let card: quietdeck_types::card::Card = c.get(&format!("/api/cards/{}", parse_id(&id)?), &[]).await?;
             print::out(json, &card, print::card_full)

@@ -259,6 +259,10 @@ async fn answer(node: &Node, request: DeckRequest) -> Reply {
             }
             None => Reply::Err { error: "this node's runner is off".into() },
         },
+        DeckRequest::RoundStatus => match node.runner.get() {
+            Some(r) => Reply::ok(&r.runner.round_status().await),
+            None => Reply::Err { error: "this node's runner is off".into() },
+        },
         DeckRequest::SendAs { account, from } => match node.runner.get() {
             Some(r) => match r.runner.send_as_check(&account, &from).await {
                 Ok(c) => Reply::ok(&c),

@@ -553,6 +553,10 @@ impl Runner {
         state.save(&self.mail_state_path);
     }
 
+    pub async fn round_status(&self) -> quietdeck_types::api::RoundStatus {
+        self.mail.lock().await.status(&self.cfg)
+    }
+
     async fn wake_if_due(&self, state: &mut MailState) {
         if state.waiting {
             return;
@@ -563,6 +567,7 @@ impl Runner {
             Ok(()) => {
                 tracing::info!(%counts, "woke the triage agent for new mail");
                 state.waiting = true;
+                state.woke_at = Some(jiff::Timestamp::now());
                 state.pending.clear();
             }
             // Kept: the next check tries again, with anything newer added.

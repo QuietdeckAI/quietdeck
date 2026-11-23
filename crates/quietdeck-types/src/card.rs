@@ -52,6 +52,7 @@ impl CardState {
 /// The sender as the agent read it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
 #[ts(export)]
+#[serde(deny_unknown_fields)]
 pub struct Sender {
     #[serde(default)]
     #[garde(inner(length(max = 300)))]
@@ -69,6 +70,7 @@ impl Sender {
 /// What the agent read in the message's authentication results. Strict sender rules need one of them to pass.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[ts(export)]
+#[serde(deny_unknown_fields)]
 pub struct SenderAuth {
     #[serde(default)]
     pub dmarc_pass: bool,
@@ -79,6 +81,7 @@ pub struct SenderAuth {
 /// One fact on a card: an amount, a date, a reference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
 #[ts(export)]
+#[serde(deny_unknown_fields)]
 pub struct Fact {
     #[garde(length(min = 1, max = 100))]
     pub label: String,
@@ -89,11 +92,14 @@ pub struct Fact {
 /// `quietdeck card add`: what an agent posts. The posting session comes from its token.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema, Validate)]
 #[ts(export)]
+#[serde(deny_unknown_fields)]
 pub struct CardInput {
     /// An account label from deck config.
     #[garde(length(min = 1, max = 100))]
     pub account: String,
-    /// The agent's reference for the thread (a Gmail thread ID). Opaque to the deck; one card per thread.
+    /// The thread's ID as the mail service gives it: Gmail's thread ID, exactly (`19a4f0c2b7e1d3a5`), with no account
+    /// or service prefix (the account is its own field). One card per account and thread; a forward without a
+    /// `source` names the thread by it.
     #[garde(length(min = 1, max = 300))]
     pub thread_key: String,
     /// The newest message the card was prepared on, for freshness checks.
@@ -161,6 +167,51 @@ pub struct CardInput {
 }
 
 impl CardInput {
+    /// A card from its JSON, naming every missing and unknown field at the top level in one error, each missing one
+    /// with what it's for. Problems inside an action come from serde, one at a time.
+    pub fn from_json(text: &str) -> Result<CardInput, String> {
+        let v: serde_json::Value = serde_json::from_str(text).map_err(|e| format!("the card's JSON: {e}"))?;
+        let Some(obj) = v.as_object() else { return Err("the card's JSON must be an object".into()) };
+        let schema = Self::schema();
+        let props = schema["properties"].as_object().expect("CardInput's schema has properties");
+        let mut problems: Vec<String> = vec![];
+        for name in schema["required"].as_array().into_iter().flatten().filter_map(|n| n.as_str()) {
+            if !obj.contains_key(name) {
+                let about = props[name]["description"]
+                    .as_str()
+                    .map(|d| format!(": {}", d.split_whitespace().collect::<Vec<_>>().join(" ")))
+                    .unwrap_or_default();
+                problems.push(format!("missing `{name}`{about}"));
+            }
+        }
+        // Sorted: with serde_json's preserve_order (another crate in the build may turn it on), keys keep their order.
+        let mut unknown: Vec<&str> = obj.keys().map(String::as_str).filter(|k| !props.contains_key(*k)).collect();
+        unknown.sort_unstable();
+        if !unknown.is_empty() {
+            let mut known: Vec<&str> = props.keys().map(String::as_str).collect();
+            known.sort_unstable();
+            problems.push(format!(
+                "unknown field{} {} (a card's fields: {})",
+                if unknown.len() == 1 { "" } else { "s" },
+                unknown.iter().map(|k| format!("`{k}`")).collect::<Vec<_>>().join(", "),
+                known.join(", ")
+            ));
+        }
+        if !problems.is_empty() {
+            return Err(format!(
+                "the card's JSON:\n- {}\n`quietdeck card add --help` has an example; `quietdeck card schema` prints \
+                 every field.",
+                problems.join("\n- ")
+            ));
+        }
+        serde_json::from_value(v).map_err(|e| format!("the card's JSON: {e}"))
+    }
+
+    /// The JSON Schema of a card, with every field's doc comment as its description.
+    pub fn schema() -> serde_json::Value {
+        schemars::schema_for!(CardInput).to_value()
+    }
+
     /// Field rules, then every action's own rules.
     pub fn check(&self) -> Result<(), String> {
         self.validate().map_err(|e| e.to_string())?;
@@ -361,6 +412,38 @@ mod tests {
         json!({"account": "personal", "thread_key": "t1", "subject": "Invoice", "summary": "Your invoice is ready",
                "section": "actions", "reason": "Invoices are archived after a look",
                "actions": [{"type": "archive", "account": "personal", "thread_id": "t1"}]})
+    }
+
+    #[test]
+    fn every_missing_and_unknown_field_is_named_at_once() {
+        let e = CardInput::from_json(r#"{"account": "personal", "title": "x", "from": "a@b.c"}"#).unwrap_err();
+        for f in [
+            "missing `thread_key`",
+            "missing `subject`",
+            "missing `summary`",
+            "missing `section`",
+            "missing `reason`",
+            "unknown fields `from`, `title`",
+        ] {
+            assert!(e.contains(f), "{f} in {e}");
+        }
+        assert!(e.contains("Gmail's thread ID"), "missing fields say what they are: {e}");
+        assert!(!e.contains("missing `facts`"), "defaulted fields aren't required: {e}");
+    }
+
+    #[test]
+    fn unknown_fields_in_an_action_are_refused() {
+        let mut v = card();
+        v["actions"][0]["thread"] = json!("t1");
+        assert!(CardInput::from_json(&v.to_string()).unwrap_err().contains("unknown field `thread`"));
+        let mut v = card();
+        v["actions"] = json!([{"type": "draft", "account": "personal", "thread_id": "t1", "reply_to_message_id": "m1",
+            "from": "me@example.com", "to": ["you@example.com"], "subject": "Re: x", "body": "Thanks", "bcc": []}]);
+        assert!(CardInput::from_json(&v.to_string()).unwrap_err().contains("unknown field `bcc`"));
+        v["actions"][0].as_object_mut().unwrap().remove("bcc");
+        CardInput::from_json(&v.to_string()).unwrap();
+        v["actions"] = json!([{"type": "story", "op": "comment", "story_id": "sc-1", "text": "x"}]);
+        CardInput::from_json(&v.to_string()).unwrap();
     }
 
     #[test]

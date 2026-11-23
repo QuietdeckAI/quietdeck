@@ -8,6 +8,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -26,6 +27,13 @@ pub struct MailState {
     /// New messages since the last wake-up, per account. `None`: some, but the history ran out, so how many isn't
     /// known.
     pub pending: BTreeMap<String, Option<u64>>,
+    /// When the watch started, per account: mail from before then is the agent's own first round.
+    #[serde(default)]
+    pub since: BTreeMap<String, Timestamp>,
+    #[serde(default)]
+    pub checked_at: Option<Timestamp>,
+    #[serde(default)]
+    pub woke_at: Option<Timestamp>,
 }
 
 impl MailState {
@@ -53,6 +61,27 @@ impl MailState {
             (Some(a), Some(b)) => Some(a + b),
             _ => None,
         };
+    }
+
+    /// `quietdeck round status`'s answer, accounts in config order.
+    pub fn status(&self, cfg: &RunnerConfig) -> quietdeck_types::api::RoundStatus {
+        quietdeck_types::api::RoundStatus {
+            runner: true,
+            waiting: self.waiting,
+            woke_at: self.woke_at,
+            checked_at: self.checked_at,
+            accounts: cfg
+                .accounts
+                .keys()
+                .map(|id| quietdeck_types::api::WatchedAccount {
+                    id: id.clone(),
+                    label: cfg.account_label(id),
+                    watching_since: self.since.get(id).copied(),
+                    history_id: self.history.get(id).cloned(),
+                    new_since_wakeup: self.pending.get(id).copied().unwrap_or(Some(0)),
+                })
+                .collect(),
+        }
     }
 
     /// "New mail: 2 Personal, 1 Work." in config order, or None when there's nothing to say.
@@ -90,6 +119,7 @@ fn expired(error: &str) -> bool {
 
 /// One check of every account. Updates the history IDs and pending counts in `state`.
 pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tools, state: &mut MailState) {
+    state.checked_at = Some(Timestamp::now());
     for (id, account) in &cfg.accounts {
         let acct = json!({"id": id, "address": account.address, "label": cfg.account_label(id)});
         let mut acct = acct;
@@ -101,6 +131,7 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
             match profile(watch, tools, &acct).await {
                 Ok(h) => {
                     state.history.insert(id.clone(), h);
+                    state.since.insert(id.clone(), Timestamp::now());
                 }
                 Err(e) => tracing::warn!(account = %id, error = %e, "reading the mailbox's history ID"),
             }

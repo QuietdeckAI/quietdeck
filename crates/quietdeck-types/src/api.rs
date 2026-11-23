@@ -193,6 +193,41 @@ pub struct RoundDone {
     pub runner_told: bool,
 }
 
+/// `quietdeck round status`: where the runner's mail watch is, for the agent it wakes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct RoundStatus {
+    /// No runner on the caller's machine runs for this session, or it isn't connected: nothing else is set.
+    pub runner: bool,
+    /// A wake-up went and `round done` hasn't come yet, so no other goes.
+    pub waiting: bool,
+    #[ts(type = "string | null")]
+    #[schemars(with = "Option<String>")]
+    pub woke_at: Option<jiff::Timestamp>,
+    /// The last time the watch read the mailboxes' history.
+    #[ts(type = "string | null")]
+    #[schemars(with = "Option<String>")]
+    pub checked_at: Option<jiff::Timestamp>,
+    pub accounts: Vec<WatchedAccount>,
+}
+
+/// One mailbox the runner watches.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct WatchedAccount {
+    pub id: String,
+    pub label: String,
+    /// When the watch started on it. Mail from before then never woke anyone: it's the agent's own to sweep, or
+    /// to leave. None when the watch started before this was recorded.
+    #[ts(type = "string | null")]
+    #[schemars(with = "Option<String>")]
+    pub watching_since: Option<jiff::Timestamp>,
+    /// Gmail's history ID the watch has read up to.
+    pub history_id: Option<String>,
+    /// Messages since the last wake-up, waiting for the next one. None: some, but how many isn't known.
+    pub new_since_wakeup: Option<u64>,
+}
+
 /// Web push on this deck: the VAPID public key a browser subscribes with, or none when push is off.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[ts(export)]

@@ -207,6 +207,8 @@ pub enum DeckRequest {
     },
     /// To the runner: its agent finished its round (`quietdeck round done`), so the next wake-up can go.
     RoundDone,
+    /// To the runner: where its mail watch is. Answers [`crate::api::RoundStatus`].
+    RoundStatus,
     /// To the runner: may this account send as `from`? Answers [`SendAsCheck`].
     SendAs {
         account: String,

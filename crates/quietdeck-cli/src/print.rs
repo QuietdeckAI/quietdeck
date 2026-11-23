@@ -333,3 +333,35 @@ pub fn report_answers(a: &[quietdeck_types::report::ReportAnswer]) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
+
+fn local(t: jiff::Timestamp) -> String {
+    t.to_zoned_datetime(jiff::tz::TimeZone::system()).strftime("%Y-%m-%d %H:%M").to_string()
+}
+
+pub fn round_status(r: &quietdeck_types::api::RoundStatus) -> String {
+    if !r.runner {
+        return "No runner watches mail for this session (or it isn't connected).".into();
+    }
+    let mut out = vec![match (r.waiting, r.woke_at) {
+        (true, Some(t)) => format!("Woke you at {}: waiting for `quietdeck round done`.", local(t)),
+        (true, None) => "Woke you: waiting for `quietdeck round done`.".into(),
+        (false, _) => "Not waiting on you: the next new mail wakes you.".into(),
+    }];
+    if let Some(t) = r.checked_at {
+        out.push(format!("Last checked the mailboxes at {}.", local(t)));
+    }
+    for a in &r.accounts {
+        let since = a
+            .watching_since
+            .map_or("since an earlier start (its date wasn't recorded)".into(), |t| format!("since {}", local(t)));
+        let waiting = match a.new_since_wakeup {
+            Some(0) => String::new(),
+            Some(n) => format!(", {n} new for the next wake-up"),
+            None => ", some new for the next wake-up (how many isn't known)".into(),
+        };
+        let history = a.history_id.as_deref().map_or("not started".into(), |h| format!("history ID {h}"));
+        out.push(format!("{} ({}): watching {since}, {history}{waiting}", a.label, a.id));
+    }
+    out.push("Mail from before the watch started never woke you.".into());
+    out.join("\n")
+}

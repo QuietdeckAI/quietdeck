@@ -31,6 +31,7 @@ impl SessionRef {
 /// A message in a mail thread: what a forward is about.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
 #[ts(export)]
+#[serde(deny_unknown_fields)]
 pub struct MessageRef {
     #[garde(length(min = 1, max = 100))]
     pub account: String,
@@ -43,6 +44,7 @@ pub struct MessageRef {
 /// A draft or a reply in a thread.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
 #[ts(export)]
+#[serde(deny_unknown_fields)]
 pub struct Compose {
     #[garde(length(min = 1, max = 100))]
     pub account: String,
@@ -72,7 +74,7 @@ pub struct Compose {
 /// A tracker story: create one, or comment on one. Boards are names from deck config; the runner's and the skill's
 /// own config map them to the tracker's IDs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
-#[serde(tag = "op", rename_all = "snake_case")]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 #[ts(export)]
 pub enum StoryOp {
     Create {
@@ -108,7 +110,7 @@ pub enum TaskOp {
 
 /// One proposed action. The `type` tag is also the name `runner.eligible` uses.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema, Validate)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 #[ts(export)]
 pub enum Action {
     Archive {

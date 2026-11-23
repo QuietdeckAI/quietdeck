@@ -21,7 +21,9 @@ action_records: Array<ActionRecord>,
  */
 account: string, 
 /**
- * The agent's reference for the thread (a Gmail thread ID). Opaque to the deck; one card per thread.
+ * The thread's ID as the mail service gives it: Gmail's thread ID, exactly (`19a4f0c2b7e1d3a5`), with no account
+ * or service prefix (the account is its own field). One card per account and thread; a forward without a
+ * `source` names the thread by it.
  */
 thread_key: string, 
 /**
