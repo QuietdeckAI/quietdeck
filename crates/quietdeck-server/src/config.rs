@@ -88,6 +88,14 @@ impl Default for PingsConfig {
 pub struct LeasesConfig {
     /// Who cleans up a lease when there's no runner and the holder doesn't answer.
     pub fallback: Option<FallbackHolder>,
+    /// heavy-build slots per machine, by node name. A machine not listed has 2.
+    pub heavy_build_slots: BTreeMap<String, i64>,
+}
+
+impl LeasesConfig {
+    pub fn heavy_build_slots(&self, node: &str) -> i64 {
+        self.heavy_build_slots.get(node).copied().unwrap_or(2).max(1)
+    }
 }
 
 /// Also where comments on the deck's own timeline entries go.

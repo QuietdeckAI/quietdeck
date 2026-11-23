@@ -54,6 +54,18 @@ pub struct SessionsArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct LeaseIdArgs {
+    pub id: i64,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct LeaseRegisterArgs {
+    pub id: i64,
+    /// The Gmail filter's id.
+    pub filter_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct SessionShowArgs {
     /// A session ID, `tab@machine`, or a tab name.
     pub session: String,
@@ -345,6 +357,99 @@ impl Mcp {
         ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
         let r = async { ops::actions_report(&self.state, &self.agent(&ctx).await?, args.reports).await }.await;
+        tool_try!(r)
+    }
+
+    #[tool(description = "Ask for a lease. gmail-filter (resource: the account, params: {query} with a from: of a \
+        full address or domain) waits on a card unless the person approved the same filter on the same account before. \
+        heavy-build (resource: the machine, default yours) takes a slot or queues. Propose every new filter.")]
+    async fn lease_propose(
+        &self,
+        Parameters(req): Parameters<quietdeck_types::lease::LeaseRequest>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async {
+            let me = self.agent(&ctx).await?;
+            crate::leases::propose(&self.state, &me, req).await
+        }
+        .await;
+        tool_try!(r)
+    }
+
+    #[tool(description = "Take a lease without a card: a heavy-build slot, or a gmail-filter the person already \
+        approved (any other filter needs lease_propose while \"Require a proposal for every new filter\" is on).")]
+    async fn lease_acquire(
+        &self,
+        Parameters(req): Parameters<quietdeck_types::lease::LeaseRequest>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async {
+            let me = self.agent(&ctx).await?;
+            crate::leases::acquire(&self.state, &me, req).await
+        }
+        .await;
+        tool_try!(r)
+    }
+
+    #[tool(description = "Every lease: held, queued, waiting, overdue and recently ended, and the approved filters.")]
+    async fn leases(
+        &self,
+        _: Parameters<NoArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async {
+            self.caller(&ctx).await?;
+            Ok::<_, AppError>(crate::leases::view(&self.state.db).await?)
+        }
+        .await;
+        tool_try!(r)
+    }
+
+    #[tool(description = "End your lease: a heavy-build slot frees for the next in line, a filter is removed.")]
+    async fn lease_release(
+        &self,
+        Parameters(args): Parameters<LeaseIdArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async {
+            let caller = self.caller(&ctx).await?;
+            crate::leases::release(&self.state, &caller, args.id).await
+        }
+        .await;
+        tool_try!(r)
+    }
+
+    #[tool(description = "You created an approved lease's Gmail filter yourself (no runner did): register its id.")]
+    async fn lease_register(
+        &self,
+        Parameters(args): Parameters<LeaseRegisterArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async {
+            self.agent(&ctx).await?;
+            crate::leases::activate(&self.state, args.id, serde_json::json!({ "filter_id": args.filter_id })).await
+        }
+        .await;
+        tool_try!(r)
+    }
+
+    #[tool(description = "You deleted an ended lease's Gmail filter, as the deck asked: confirm it.")]
+    async fn lease_cleaned(
+        &self,
+        Parameters(args): Parameters<LeaseIdArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async {
+            let me = self.agent(&ctx).await?;
+            let lease = crate::leases::get(&self.state.db, args.id).await?;
+            let by = if me.node == lease.holder.node && me.tab == lease.holder.tab {
+                quietdeck_types::lease::CleanupBy::Holder
+            } else {
+                quietdeck_types::lease::CleanupBy::Fallback
+            };
+            crate::leases::cleaned(&self.state, args.id, by).await
+        }
+        .await;
         tool_try!(r)
     }
 

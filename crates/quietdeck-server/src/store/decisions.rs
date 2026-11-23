@@ -300,8 +300,10 @@ async fn release_one(
     .bind(version)
     .execute(&mut *tx)
     .await?;
-    if released.rows_affected() == 0 {
-        // Nothing to run (a sent row he only looked at): seen, so done.
+    // Lease actions are the deck's own to carry out: approving one approves its lease.
+    let leases = crate::leases::approve_released(&mut *tx, card_id, version, now).await?;
+    if released.rows_affected() == leases {
+        // Nothing left to run (a sent row he only looked at, or a lease proposal): done.
         sqlx::query("UPDATE cards SET state = 'done', updated_at = ? WHERE id = ?")
             .bind(now)
             .bind(card_id)

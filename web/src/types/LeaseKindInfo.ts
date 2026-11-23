@@ -3,4 +3,8 @@
 /**
  * What a lease kind says about itself, for the CLI's help and the Settings screen.
  */
-export type LeaseKindInfo = { kind: string, exclusive: boolean, needs_approval: boolean, describe: string, };
+export type LeaseKindInfo = { kind: string, 
+/**
+ * Slots per resource with a queue, or none for a kind any number of sessions can hold at once.
+ */
+slots: number | null, needs_approval: boolean, describe: string, };

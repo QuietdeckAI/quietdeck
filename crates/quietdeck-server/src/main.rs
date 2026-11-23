@@ -9,6 +9,7 @@ mod error;
 mod events;
 mod hooks;
 mod hub;
+mod leases;
 mod mcp;
 mod ops;
 mod passkeys;
@@ -135,6 +136,7 @@ async fn serve(env: Env) -> anyhow::Result<()> {
         tracing::warn!("QUIETDECK_DEV_TRUST_LOCAL is on: every browser request counts as the signed-in owner");
     }
     tokio::spawn(ops::releaser(state.clone()));
+    tokio::spawn(leases::ticker(state.clone()));
     ready.store(true, Ordering::SeqCst);
 
     let health = {

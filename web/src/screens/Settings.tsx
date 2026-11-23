@@ -11,6 +11,9 @@ import { createPasskey, guessDeviceName } from "@/lib/webauthn";
 import type { AuthState } from "@/types/AuthState";
 import type { Ceremony } from "@/types/Ceremony";
 import type { EnrolmentCode } from "@/types/EnrolmentCode";
+import type { Lease } from "@/types/Lease";
+import type { LeasesView } from "@/types/LeasesView";
+import type { LeaseState } from "@/types/LeaseState";
 import type { NodeRow } from "@/types/NodeRow";
 import type { PasskeyInfo } from "@/types/PasskeyInfo";
 import type { Settings } from "@/types/Settings";
@@ -21,6 +24,7 @@ export function SettingsScreen() {
       <DeckSettings />
       <Passkeys />
       <Nodes />
+      <Leases />
       <SignOut />
     </main>
   );
@@ -268,6 +272,131 @@ function Nodes() {
       {(nodes.error ?? newCode.error ?? revoke.error) && (
         <p role="alert" className="mt-2 text-sm text-danger">
           {(nodes.error ?? newCode.error ?? revoke.error)?.message}
+        </p>
+      )}
+    </Section>
+  );
+}
+
+const LEASE_STATE: Record<LeaseState, string> = {
+  proposed: "Waiting for your approval",
+  queued: "Queued",
+  approved: "Approved, being set up",
+  active: "Active",
+  expiring: "Ending",
+  cleanup_requested: "Ended, filter being removed",
+  overdue: "Filter removal overdue",
+  released: "Ended",
+  rejected: "Not approved",
+};
+
+function leaseWhat(l: Lease): string {
+  const query = typeof l.params.query === "string" ? l.params.query : null;
+  return query ? `Filter on ${l.resource}: ${query}` : `Heavy build on ${l.resource}`;
+}
+
+function Leases() {
+  const qc = useQueryClient();
+  const view = useQuery({ queryKey: ["leases"], queryFn: () => api<LeasesView>("/api/leases") });
+  const end = useMutation({
+    mutationFn: (id: number) => api<Lease>(`/api/leases/${id}/release`, { method: "POST", body: {} }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["leases"] }),
+  });
+  const cleaned = useMutation({
+    mutationFn: (id: number) => api<Lease>(`/api/leases/${id}/cleaned`, { method: "POST", body: {} }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["leases"] }),
+  });
+  const revoke = useMutation({
+    mutationFn: (id: number) => api<LeasesView>(`/api/lease-patterns/${id}/revoke`, { method: "POST", body: {} }),
+    onSuccess: (v) => qc.setQueryData(["leases"], v),
+  });
+  const leases = view.data?.leases ?? [];
+  const current = leases.filter((l) => !l.ended_at);
+  const ended = leases.filter((l) => l.ended_at);
+  const approved = (view.data?.patterns ?? []).filter((p) => !p.revoked_at);
+  const error = view.error ?? end.error ?? cleaned.error ?? revoke.error;
+  return (
+    <Section title="Leases">
+      <p className="mb-3 text-sm text-neutral">
+        Temporary Gmail filters your sessions hold while they work, and heavy-build slots on each machine. Each ends
+        when its session releases it, goes idle or closes.
+      </p>
+      {view.data && current.length === 0 && <p className="mb-3 text-neutral">Nothing is held right now.</p>}
+      {current.length > 0 && (
+        <ul className="flex flex-col divide-y divide-rule rounded-lg border border-rule bg-paper-2">
+          {current.map((l) => (
+            <li key={l.id} className="flex flex-wrap items-center gap-3 p-4">
+              <div className="min-w-0 flex-1">
+                <p className="break-words [overflow-wrap:anywhere]">{leaseWhat(l)}</p>
+                <p className="text-sm text-neutral">
+                  {LEASE_STATE[l.state]}
+                  {l.queue_position != null && <> · position {l.queue_position}</>} · {l.holder.tab}@{l.holder.node}
+                  {l.expires_at && l.state === "active" && <> · until {when(l.expires_at)}</>}
+                </p>
+                {l.reason && <p className="text-sm text-neutral">{l.reason}</p>}
+                {l.state === "overdue" && (
+                  <p className="text-sm text-neutral">
+                    Nobody confirmed removing it. Delete the filter in Gmail, then mark it removed.
+                  </p>
+                )}
+              </div>
+              {(l.state === "overdue" || l.state === "cleanup_requested") ? (
+                <Button size="sm" loading={cleaned.isPending && cleaned.variables === l.id} onClick={() => cleaned.mutate(l.id)}>
+                  Mark removed
+                </Button>
+              ) : (
+                <Button variant="quiet" size="sm" loading={end.isPending && end.variables === l.id} onClick={() => end.mutate(l.id)}>
+                  End
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {ended.length > 0 && (
+        <>
+          <h3 className="mt-6 mb-2 text-neutral">Ended today</h3>
+          <ul className="flex flex-col divide-y divide-rule rounded-lg border border-rule">
+            {ended.map((l) => (
+              <li key={l.id} className="p-4">
+                <p className="break-words text-neutral [overflow-wrap:anywhere]">{leaseWhat(l)}</p>
+                <p className="text-sm text-neutral">
+                  {LEASE_STATE[l.state]} {l.ended_at && when(l.ended_at)} · {l.holder.tab}@{l.holder.node}
+                  {l.end_reason && <> · {l.end_reason}</>}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <h3 className="mt-6 mb-2">Approved filters</h3>
+      <p className="mb-3 text-sm text-neutral">
+        Any session may re-create one of these on the same account without asking again. Revoke one to need a new
+        approval.
+      </p>
+      {view.data && approved.length === 0 && <p className="text-neutral">None yet.</p>}
+      {approved.length > 0 && (
+        <ul className="flex flex-col divide-y divide-rule rounded-lg border border-rule bg-paper-2">
+          {approved.map((p) => (
+            <li key={p.id} className="flex flex-wrap items-center gap-3 p-4">
+              <div className="min-w-0 flex-1">
+                <p className="break-words font-mono text-sm [overflow-wrap:anywhere]">{p.pattern}</p>
+                <p className="text-sm text-neutral">
+                  {p.resource}
+                  {p.confirmed_at && <> · approved {when(p.confirmed_at)}</>}
+                  {!p.confirmed_by_card_id && <> · made without a proposal</>}
+                </p>
+              </div>
+              <Button variant="danger" size="sm" loading={revoke.isPending && revoke.variables === p.id} onClick={() => revoke.mutate(p.id)}>
+                Revoke
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-danger">
+          {error.message}
         </p>
       )}
     </Section>

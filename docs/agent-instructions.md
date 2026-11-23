@@ -22,6 +22,11 @@ machine, as `<tab>@<machine>`.
 - **When you finish work that came from an email, tell the triage agent** (the `email triage` tab), with the thread
   ID and what happened, so it can archive the thread or draft the reply. `SendMessage` on the same machine,
   `quietdeck msg send` across machines.
+- **Leases.** To keep notification emails out of my inbox while you watch something yourself (CI runs you're
+  fixing), ask with `quietdeck lease propose gmail-filter --account <id> --query 'from:<sender> …' --reason "…"`. I
+  approve new filters; one I approved before starts at once. Never create a Gmail filter any other way. Before a big
+  build or a full test run, take a slot with `quietdeck lease acquire heavy-build --reason "…" --wait`, and
+  `quietdeck lease release <id>` when it's done.
 ```
 
 ## Why each line is there
@@ -35,3 +40,6 @@ machine, as `<tab>@<machine>`.
   recorded the draft's text as what you promised would be wrong whenever you changed it.
 - **Work from an email.** The triage agent forwarded the email to the session that does the work; telling it when
   the work is done closes the loop, without the agent watching every session.
+- **Leases.** A filter an agent creates on its own outlives the session and keeps hiding mail nobody reads. A lease
+  ends with its session, and approving each new filter once keeps you in charge of what leaves your inbox. Build slots
+  stop several sessions from compiling at once and slowing every one of them down.

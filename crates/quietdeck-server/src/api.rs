@@ -59,6 +59,14 @@ pub fn router() -> Router<AppState> {
         .route("/api/rules/match", post(rules_match))
         .route("/api/rules/{id}", axum::routing::put(rule_update))
         .route("/api/rules/{id}/status", post(rule_status))
+        .route("/api/leases", get(leases_view))
+        .route("/api/leases/propose", post(lease_propose))
+        .route("/api/leases/acquire", post(lease_acquire))
+        .route("/api/leases/{id}", get(lease_get))
+        .route("/api/leases/{id}/register", post(lease_register))
+        .route("/api/leases/{id}/release", post(lease_release))
+        .route("/api/leases/{id}/cleaned", post(lease_cleaned))
+        .route("/api/lease-patterns/{id}/revoke", post(lease_pattern_revoke))
         .route("/api/comments", post(comment_add))
 }
 
@@ -90,6 +98,82 @@ async fn rule_status(
     Json(change): Json<RuleStatusChange>,
 ) -> AppResult<Json<Rule>> {
     Ok(Json(ops::rule_status(&state, id, change).await?))
+}
+
+async fn leases_view(
+    State(state): State<AppState>,
+    Authed(_): Authed,
+) -> AppResult<Json<quietdeck_types::lease::LeasesView>> {
+    Ok(Json(crate::leases::view(&state.db).await?))
+}
+
+async fn lease_propose(
+    State(state): State<AppState>,
+    Agent(me): Agent,
+    Json(req): Json<quietdeck_types::lease::LeaseRequest>,
+) -> AppResult<Json<quietdeck_types::lease::LeaseAnswer>> {
+    Ok(Json(crate::leases::propose(&state, &me, req).await?))
+}
+
+async fn lease_acquire(
+    State(state): State<AppState>,
+    Agent(me): Agent,
+    Json(req): Json<quietdeck_types::lease::LeaseRequest>,
+) -> AppResult<Json<quietdeck_types::lease::LeaseAnswer>> {
+    Ok(Json(crate::leases::acquire(&state, &me, req).await?))
+}
+
+async fn lease_get(
+    State(state): State<AppState>,
+    Authed(_): Authed,
+    Path(id): Path<i64>,
+) -> AppResult<Json<quietdeck_types::lease::Lease>> {
+    Ok(Json(crate::leases::get(&state.db, id).await?))
+}
+
+/// The holder created the filter itself (no runner): the lease becomes active.
+async fn lease_register(
+    State(state): State<AppState>,
+    Agent(_): Agent,
+    Path(id): Path<i64>,
+    Json(r): Json<quietdeck_types::lease::LeaseRegister>,
+) -> AppResult<Json<quietdeck_types::lease::Lease>> {
+    Ok(Json(crate::leases::activate(&state, id, r.kind_state).await?))
+}
+
+async fn lease_release(
+    State(state): State<AppState>,
+    Authed(caller): Authed,
+    Path(id): Path<i64>,
+) -> AppResult<Json<quietdeck_types::lease::Lease>> {
+    Ok(Json(crate::leases::release(&state, &caller, id).await?))
+}
+
+/// Whoever removed the filter (the holder, the fallback tab, the person) confirms it.
+async fn lease_cleaned(
+    State(state): State<AppState>,
+    Authed(caller): Authed,
+    Path(id): Path<i64>,
+) -> AppResult<Json<quietdeck_types::lease::Lease>> {
+    let lease = crate::leases::get(&state.db, id).await?;
+    let by = match &caller {
+        quietdeck_types::api::Caller::Session { session }
+            if session.node == lease.holder.node && session.tab == lease.holder.tab =>
+        {
+            quietdeck_types::lease::CleanupBy::Holder
+        }
+        quietdeck_types::api::Caller::Node { .. } => quietdeck_types::lease::CleanupBy::Runner,
+        _ => quietdeck_types::lease::CleanupBy::Fallback,
+    };
+    Ok(Json(crate::leases::cleaned(&state, id, by).await?))
+}
+
+async fn lease_pattern_revoke(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(id): Path<i64>,
+) -> AppResult<Json<quietdeck_types::lease::LeasesView>> {
+    Ok(Json(crate::leases::revoke_pattern(&state, id).await?))
 }
 
 async fn rules_match(

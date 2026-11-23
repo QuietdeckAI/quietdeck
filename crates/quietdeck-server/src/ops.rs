@@ -171,6 +171,7 @@ pub async fn rules_match(state: &AppState, req: MatchRequest) -> AppResult<Match
 /// A session closed: archive the grants tied to it, each with an entry he sees.
 pub async fn session_closed(state: &AppState, node: &str, session_id: &str) -> AppResult<()> {
     let tab = sessions::tab_of(&state.db, node, session_id).await?;
+    crate::leases::session_closed(state, node, session_id, tab.as_deref()).await?;
     let archived = rules::archive_for_session(&state.db, node, session_id, tab.as_deref()).await?;
     for r in &archived {
         let entry = TimelineAdd {
@@ -540,7 +541,9 @@ pub async fn releaser(state: AppState) {
             Ok(waiting) => {
                 state.changed(Changed::Cards);
                 state.changed(Changed::Timeline);
+                state.changed(Changed::Leases);
                 announce(&state, &waiting).await;
+                crate::leases::dispatch_creates(&state).await;
             }
             Err(e) => {
                 tracing::error!(error = %e, "releaser: releasing");

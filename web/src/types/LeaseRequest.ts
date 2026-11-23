@@ -5,11 +5,11 @@
  */
 export type LeaseRequest = { kind: string, 
 /**
- * What's leased. For a gmail-filter, the account; for a lock, its name.
+ * What's leased. For a gmail-filter, the account; for a heavy-build slot, the machine (default: the holder's).
  */
 resource: string | null, 
 /**
- * Kind-specific: a gmail-filter's `{account, query}`.
+ * Kind-specific: a gmail-filter's `{query}`.
  */
 params: Record<string, unknown>, reason: string, 
 /**

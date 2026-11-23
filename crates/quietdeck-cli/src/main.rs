@@ -80,6 +80,11 @@ enum Command {
         #[command(subcommand)]
         command: DecisionsCommand,
     },
+    /// Leases: a temporary Gmail filter (proposed to the person) or a heavy-build slot on a machine.
+    Lease {
+        #[command(subcommand)]
+        command: LeaseCommand,
+    },
     /// Auto-approve rules: list the ones the person granted, or check a card against one.
     Rules {
         #[command(subcommand)]
@@ -190,6 +195,56 @@ struct SessionsArgs {
 enum DecisionsCommand {
     /// Claim every released decision on your cards, with the actions exactly as approved.
     Take,
+}
+
+#[derive(Args)]
+struct LeaseArgs {
+    /// gmail-filter or heavy-build.
+    kind: String,
+    /// gmail-filter: the account (by the deck's account IDs).
+    #[arg(long)]
+    account: Option<String>,
+    /// gmail-filter: the Gmail query, with a from: of a full address or domain.
+    #[arg(long)]
+    query: Option<String>,
+    /// heavy-build: the machine (default: yours).
+    #[arg(long)]
+    resource: Option<String>,
+    /// Why you need it, which the person sees.
+    #[arg(long)]
+    reason: String,
+    /// A hard limit, like 2h (default 24h).
+    #[arg(long)]
+    ttl: Option<String>,
+    /// End it once your session has been idle or offline this long, like 30m (the default).
+    #[arg(long)]
+    idle: Option<String>,
+    /// Wait until there's an answer: approved, refused, or a slot.
+    #[arg(long)]
+    wait: bool,
+}
+
+#[derive(Subcommand)]
+enum LeaseCommand {
+    /// Ask for a lease. A new Gmail filter waits on a card; the same filter on the same account, approved before,
+    /// is approved at once. A heavy-build slot needs no approval.
+    Propose(LeaseArgs),
+    /// Take a lease without a card: a heavy-build slot, or a filter the person already approved.
+    Acquire(LeaseArgs),
+    /// Every lease, and the approved filters.
+    List,
+    /// One lease.
+    Show { id: i64 },
+    /// You created an approved lease's Gmail filter yourself: register its id.
+    Register {
+        id: i64,
+        #[arg(long)]
+        filter_id: String,
+    },
+    /// End your lease.
+    Release { id: i64 },
+    /// You deleted an ended lease's Gmail filter, as the deck asked.
+    Cleaned { id: i64 },
 }
 
 #[derive(Subcommand)]
@@ -413,6 +468,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             let r: Vec<Released> = c.post("/api/decisions/take", &serde_json::json!({})).await?;
             print::out(json, &r, |r| print::released(r))
         }
+        Command::Lease { command } => lease(json, command).await,
         Command::Rules { command: RulesCommand::List } => {
             let c = Client::connect().await?;
             let r: quietdeck_types::rules::RulesView = c.get("/api/rules", &[]).await?;
@@ -558,6 +614,80 @@ fn hostname() -> anyhow::Result<String> {
     Ok(h.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '.' { c } else { '-' }).collect())
 }
 
+/// `30m`, `2h`, `1d` or seconds, as seconds.
+fn duration_secs(s: &str) -> anyhow::Result<i64> {
+    let s = s.trim();
+    let (n, unit) = s.split_at(s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len()));
+    let n: i64 = n.parse().map_err(|_| anyhow::anyhow!("{s:?} isn't a duration like 30m, 2h or 1d"))?;
+    Ok(n * match unit {
+        "" | "s" => 1,
+        "m" => 60,
+        "h" => 3600,
+        "d" => 86_400,
+        _ => anyhow::bail!("{s:?} isn't a duration like 30m, 2h or 1d"),
+    })
+}
+
+async fn lease(json: bool, command: LeaseCommand) -> anyhow::Result<()> {
+    use quietdeck_types::lease::{Lease, LeaseRegister, LeasesView};
+    let c = Client::connect().await?;
+    match command {
+        LeaseCommand::Propose(a) => lease_request(json, &c, a, "/api/leases/propose").await,
+        LeaseCommand::Acquire(a) => lease_request(json, &c, a, "/api/leases/acquire").await,
+        LeaseCommand::List => {
+            let v: LeasesView = c.get("/api/leases", &[]).await?;
+            print::out(json, &v, print::leases)
+        }
+        LeaseCommand::Show { id } => {
+            let l: Lease = c.get(&format!("/api/leases/{id}"), &[]).await?;
+            print::out(json, &l, print::lease_line)
+        }
+        LeaseCommand::Register { id, filter_id } => {
+            let body = LeaseRegister { kind_state: serde_json::json!({ "filter_id": filter_id }) };
+            let l: Lease = c.post(&format!("/api/leases/{id}/register"), &body).await?;
+            print::out(json, &l, print::lease_line)
+        }
+        LeaseCommand::Release { id } => {
+            let l: Lease = c.post(&format!("/api/leases/{id}/release"), &serde_json::json!({})).await?;
+            print::out(json, &l, print::lease_line)
+        }
+        LeaseCommand::Cleaned { id } => {
+            let l: Lease = c.post(&format!("/api/leases/{id}/cleaned"), &serde_json::json!({})).await?;
+            print::out(json, &l, print::lease_line)
+        }
+    }
+}
+
+async fn lease_request(json: bool, c: &Client, a: LeaseArgs, path: &str) -> anyhow::Result<()> {
+    use quietdeck_types::lease::{Lease, LeaseAnswer, LeaseRequest, LeaseState};
+    let params = match &a.query {
+        Some(q) => serde_json::json!({ "query": q }),
+        None => serde_json::json!({}),
+    };
+    let req = LeaseRequest {
+        kind: a.kind.clone(),
+        resource: a.account.clone().or(a.resource.clone()),
+        params,
+        reason: a.reason.clone(),
+        ttl_seconds: a.ttl.as_deref().map(duration_secs).transpose()?,
+        idle_minutes: a.idle.as_deref().map(duration_secs).transpose()?.map(|s| (s / 60).max(1)),
+    };
+    let answer: LeaseAnswer = c.post(path, &req).await?;
+    if !a.wait || !matches!(answer.lease.state, LeaseState::Proposed | LeaseState::Queued) {
+        return print::out(json, &answer, |a| format!("Lease {}: {}.", a.lease.id, a.message));
+    }
+    if !json {
+        println!("Lease {}: {}. Waiting…", answer.lease.id, answer.message);
+    }
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        let l: Lease = c.get(&format!("/api/leases/{}", answer.lease.id), &[]).await?;
+        if !matches!(l.state, LeaseState::Proposed | LeaseState::Queued) {
+            return print::out(json, &l, print::lease_line);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -571,5 +701,14 @@ mod tests {
     fn the_cli_parses() {
         use clap::CommandFactory;
         super::Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn durations_take_units() {
+        assert_eq!(super::duration_secs("30m").unwrap(), 1800);
+        assert_eq!(super::duration_secs("2h").unwrap(), 7200);
+        assert_eq!(super::duration_secs("1d").unwrap(), 86_400);
+        assert_eq!(super::duration_secs("90").unwrap(), 90);
+        assert!(super::duration_secs("2 weeks").is_err());
     }
 }

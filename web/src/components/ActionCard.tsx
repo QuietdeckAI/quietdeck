@@ -234,7 +234,7 @@ export function ActionCard({
         </div>
       )}
 
-      {!suggestion && decidable && card.actions.length > 0 && !ruling && (
+      {!suggestion && decidable && card.actions.some((a) => a.type !== "lease") && !ruling && (
         <Button
           variant="quiet"
           size="sm"

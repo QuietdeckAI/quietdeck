@@ -570,3 +570,72 @@ async fn a_story_for_a_board_the_runner_doesnt_know_goes_to_the_agent() {
     assert_eq!(h.reason(101), "board marketing isn't in the runner's config");
     assert!(h.paths().is_empty());
 }
+
+// --- Lease steps ----------------------------------------------------------------------------------------------------
+
+const FILTERS: &str = r#"
+labels: { path: gm.labels.list, input: { accountId: "${account.executor_account}" } }
+gmail_filters:
+  create_label: { path: gm.labels.create, input: { accountId: "${account.executor_account}", body: { name: "${lease.label}" } } }
+  create: { path: gm.filters.create, input: { accountId: "${account.executor_account}", body: { criteria: { query: "${lease.query}" }, action: { addLabelIds: ["${lease.label_id}"], removeLabelIds: [INBOX, UNREAD] } } } }
+  delete: { path: gm.filters.delete, input: { accountId: "${account.executor_account}", id: "${lease.filter_id}" } }
+  inbox: { path: gm.threads.list, input: { q: "${lease.query} in:inbox" } }
+  move: { path: tools.google.gmail.modify, input: { account: "${account.address}", threadIds: "${thread_ids}", addLabels: ["${lease.label}"], archive: true, read: true } }
+"#;
+
+fn filter_lease(kind_state: Option<Value>) -> quietdeck_types::lease::Lease {
+    serde_json::from_value(json!({
+        "id": 9, "kind": "gmail-filter", "resource": "personal", "params": {"query": "from:ci.example.com"},
+        "holder": {"node": "laptop", "tab": "api", "session_id": null}, "reason": "watching CI", "state": "approved",
+        "ttl_seconds": 86400, "idle_minutes": 30, "created_at": "2026-11-23T08:00:00Z", "activated_at": null,
+        "last_renewed_at": null, "expires_at": null, "cleanup_requested_at": null, "cleanup_by": null, "ended_at": null,
+        "end_reason": null, "pattern_id": 1, "kind_state": kind_state, "card_id": null, "queue_position": null
+    }))
+    .unwrap()
+}
+
+#[tokio::test]
+async fn a_filter_lease_is_created_with_its_label_moves_inbox_mail_and_is_removed() {
+    let script: Script = Arc::new(|path: &str, _input: &Value| match path {
+        "gm.labels.list" => Ok(json!({"labels": [{"id": "INBOX", "name": "INBOX"}]})),
+        "gm.labels.create" => Ok(json!({"id": "Label_7"})),
+        "gm.filters.create" => Ok(json!({"id": "filter_1"})),
+        "gm.threads.list" => Ok(json!({"threads": [{"id": "t1"}, {"id": "t2"}]})),
+        "gm.filters.delete" => Err("Executor error 404: Filter not found".into()),
+        _ => Ok(json!({})),
+    });
+    let (url, calls) = executor(script).await;
+    let cfg = config(&url, FILTERS);
+    let dir = tempfile::tempdir().unwrap();
+    let tools = ConfiguredTools::new(Some((cfg.executor.clone().unwrap(), "test-token".into())));
+    let runner = Runner::new(
+        cfg,
+        Arc::new(FakeDeck::default()),
+        Arc::new(tools),
+        Arc::new(FakeAgent::default()),
+        dir.path().into(),
+    );
+
+    let state = runner.lease_step(&filter_lease(None), quietdeck_types::lease::LeaseStep::Create).await.unwrap();
+    assert_eq!(state["filter_id"], "filter_1");
+    assert_eq!(state["moved"], 2);
+    let log = calls.lock().unwrap().clone();
+    let paths: Vec<&str> = log.iter().map(|(p, _)| p.as_str()).collect();
+    assert_eq!(
+        paths,
+        ["gm.labels.list", "gm.labels.create", "gm.filters.create", "gm.threads.list", "tools.google.gmail.modify"]
+    );
+    assert_eq!(log[1].1["body"]["name"], "Quietdeck/Lease/api");
+    assert_eq!(log[2].1["body"]["action"]["addLabelIds"], json!(["Label_7"]));
+    assert_eq!(log[2].1["body"]["criteria"]["query"], "from:ci.example.com");
+    assert_eq!(log[3].1["q"], "from:ci.example.com in:inbox");
+    assert_eq!(log[4].1["threadIds"], json!(["t1", "t2"]));
+
+    // Deleted by hand already: removal still counts as done.
+    let removed = runner
+        .lease_step(&filter_lease(Some(json!({"filter_id": "filter_1"}))), quietdeck_types::lease::LeaseStep::Remove)
+        .await
+        .unwrap();
+    assert_eq!(removed["already_gone"], true);
+    assert_eq!(calls.lock().unwrap().last().unwrap().1["id"], "filter_1");
+}

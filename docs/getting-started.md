@@ -262,6 +262,12 @@ Every timeline entry and History row takes a **Comment**. It goes to the session
 card, or the fallback tab in `deck.yaml` for the deck's own entries) as a message. A session that isn't running gets
 it from `quietdeck history --since last` on its next round, and anything it proposes comes back as a card.
 
+## Leases: temporary filters and build slots
+
+A session watching CI can ask for a temporary Gmail filter that keeps those emails out of your inbox while it works,
+and sessions on one machine take turns for big builds. Both end on their own when the session goes idle or closes.
+How they work, what you approve, and the runner's filter tools: [Leases](leases.md).
+
 ## Session summaries
 
 Each node keeps a short, current summary of every Claude Code and Codex session on its machine, and sends it to the

@@ -32,8 +32,15 @@ export function actionLine(a: Action): { verb: string; detail?: string } {
       return { verb: `Resume ${a.tab}@${a.node}` };
     case "new_session":
       return { verb: `Start ${a.tab}@${a.node}`, detail: a.prompt };
-    case "lease":
+    case "lease": {
+      const query = typeof a.params.query === "string" ? a.params.query : null;
+      if (a.kind === "gmail-filter" && query)
+        return {
+          verb: `Keep mail matching ${query} out of the inbox while ${sessionName(a.holder)} works`,
+          detail: `${a.resource} · ${a.reason}`,
+        };
       return { verb: `Lease ${a.kind} for ${sessionName(a.holder)}`, detail: `${a.resource} · ${a.reason}` };
+    }
     case "watch":
       return { verb: a.on ? "Watch this thread" : "Stop watching this thread" };
   }

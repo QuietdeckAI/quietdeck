@@ -193,6 +193,12 @@ pub enum DeckRequest {
     },
     /// To the runner: decisions on its agent's cards were released. It takes them with `runner_take`.
     DecisionsReleased,
+    /// To the runner: carry out a lease's create or remove step. Answers the kind's state (`{filter_id, ...}`) for
+    /// create, anything for remove.
+    LeaseStep {
+        lease: Box<crate::lease::Lease>,
+        step: crate::lease::LeaseStep,
+    },
     /// To the runner: its agent finished its round (`quietdeck round done`), so the next wake-up can go.
     RoundDone,
     /// To the runner: may this account send as `from`? Answers [`SendAsCheck`].

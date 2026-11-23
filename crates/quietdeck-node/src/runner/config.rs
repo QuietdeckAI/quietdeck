@@ -38,6 +38,10 @@ pub struct RunnerConfig {
     /// `${board.<name>}` (a Shortcut workflow state and team, a Linear team, a Trello list).
     #[serde(default)]
     pub boards: BTreeMap<String, BTreeMap<String, serde_json::Value>>,
+    /// The tools behind gmail-filter leases: create and delete a filter, make the lease's label, and move mail
+    /// already in the inbox. Without it, the holder creates and removes its own filters.
+    #[serde(default)]
+    pub gmail_filters: Option<GmailFiltersConfig>,
     #[serde(default = "default_eligible")]
     pub eligible: Vec<ActionType>,
     /// The tool that carries out each action type. Forwards, resumes and new sessions go through the deck and herdr
@@ -104,6 +108,26 @@ pub struct ToolSpec {
     pub command: Option<Vec<String>>,
     #[serde(default)]
     pub input: serde_json::Value,
+}
+
+/// In each input, `${lease.query}`, `${lease.label}` (`Quietdeck/Lease/<tab>`), `${lease.label_id}` (create),
+/// `${lease.filter_id}` (delete) and `${thread_ids}` (move) name the lease's values, beside `${account.*}`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GmailFiltersConfig {
+    /// Gmail's `users.settings.filters.create`: the query, add the label, remove INBOX and UNREAD. Returns `{id}`.
+    pub create: ToolSpec,
+    /// Gmail's `users.settings.filters.delete`.
+    pub delete: ToolSpec,
+    /// Gmail's `users.labels.create`, for the lease's label the first time. Returns `{id}`. (`runner.labels` finds
+    /// it after that.)
+    pub create_label: ToolSpec,
+    /// Gmail's `users.threads.list` with `q: "${lease.query} in:inbox"`. Optional, with `move`.
+    #[serde(default)]
+    pub inbox: Option<ToolSpec>,
+    /// Takes `${thread_ids}` out of the inbox, marked read, with the lease's label. Optional, with `inbox`.
+    #[serde(default, rename = "move")]
+    pub move_threads: Option<ToolSpec>,
 }
 
 impl ToolSpec {

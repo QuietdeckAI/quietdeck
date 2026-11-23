@@ -65,6 +65,17 @@ runner:
   send_as:
     path: tools.google.api.gmail.users.gmailUsersSettingsSendAsList
     input: { accountId: "${account.executor_account}", input: { path: { userId: me }, query: { fields: "sendAs(sendAsEmail)" } } }
+  labels:                                       # lists an account's labels; a label that doesn't exist yet goes to the agent
+    path: tools.google.api.gmail.users.gmailUsersLabelsList
+    input: { accountId: "${account.executor_account}", input: { path: { userId: me }, query: { fields: "labels(id,name)" } } }
+  gmail_filters:                                # gmail-filter leases; without this, each holder makes its own filter
+    create_label: { path: tools.google.api.gmail.users.gmailUsersLabelsCreate, input: { accountId: "${account.executor_account}", input: { path: { userId: me }, body: { name: "${lease.label}" } } } }
+    create:
+      path: tools.google.api.gmail.users.gmailUsersSettingsFiltersCreate
+      input: { accountId: "${account.executor_account}", input: { path: { userId: me }, body: { criteria: { query: "${lease.query}" }, action: { addLabelIds: ["${lease.label_id}"], removeLabelIds: [INBOX, UNREAD] } } } }
+    delete: { path: tools.google.api.gmail.users.gmailUsersSettingsFiltersDelete, input: { accountId: "${account.executor_account}", input: { path: { userId: me, id: "${lease.filter_id}" } } } }
+    inbox: { path: tools.google.api.gmail.users.gmailUsersThreadsList, input: { accountId: "${account.executor_account}", input: { path: { userId: me }, query: { q: "${lease.query} in:inbox", maxResults: 100, fields: "threads(id)" } } } }
+    move: { path: tools.google.gmail.modify, input: { account: "${account.address}", threadIds: "${thread_ids}", addLabels: ["${lease.label}"], archive: true, read: true } }
   boards:                                       # the board names from the deck's config, with the tracker's IDs
     engineering: { workflow_state_id: 500000001 }
   eligible: [archive, mark_read, label, draft, forward, watch, lease, story, task, calendar, resume, new_session]

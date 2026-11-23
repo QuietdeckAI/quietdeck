@@ -51,6 +51,7 @@ test("nothing is reachable before sign-in", async ({ request }) => {
     "/api/settings",
     "/api/passkeys",
     "/api/nodes",
+    "/api/leases",
     "/api/events",
   ]) {
     expect((await request.get(path)).status(), path).toBe(401);

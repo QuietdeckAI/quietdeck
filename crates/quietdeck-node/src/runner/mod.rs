@@ -11,6 +11,7 @@
 
 mod config;
 mod deck;
+mod leases;
 mod mail;
 mod tools;
 
@@ -198,6 +199,15 @@ impl Runner {
         }
         self.send_as.lock().await.insert(account.to_string(), (Instant::now(), list.clone()));
         Ok(list)
+    }
+
+    /// A lease's create or remove step, from the deck.
+    pub async fn lease_step(
+        &self,
+        lease: &quietdeck_types::lease::Lease,
+        step: quietdeck_types::lease::LeaseStep,
+    ) -> Result<serde_json::Value, String> {
+        leases::step(self, lease, step).await
     }
 
     /// The deck's question when a card with a draft or reply is posted.
