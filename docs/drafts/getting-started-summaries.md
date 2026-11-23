@@ -107,8 +107,12 @@ your deck private: it's served only on your tailnet, behind your passkey.
 
 ### Coming from claude-summarizer
 
-If you ran claude-summarizer, import its history once on each machine that ran it. Do this before the node's first
-sweep: until the import has run, the node holds the sweep, so it doesn't summarise six months of history again.
+If you ran claude-summarizer, the node picks up where it stopped. The first time the node starts on a machine that
+ran claude-summarizer, it adopts claude-summarizer's byte offsets (from `~/.local/state/claude-summarizer/state.json`)
+and each session's latest page, so it summarises only what's new since claude-summarizer's last run, and doesn't
+summarise six months of history again.
+
+To bring claude-summarizer's history onto the deck, import it once on each machine that ran it:
 
 ```sh
 quietdeck-node import-summaries <claude-summarizer vault>
@@ -116,8 +120,7 @@ quietdeck-node import-summaries <claude-summarizer vault>
 
 The vault is the `vault_dir` in `~/.config/claude-summarizer/config.json`, or `~/.local/share/claude-summarizer` if
 you never set one. The import sends every update to the deck as a point on its session's timeline, with its original
-hour, so each session's history and timeline carry over. It also copies claude-summarizer's byte offsets from
-`~/.local/state/claude-summarizer/state.json`, so the node starts where claude-summarizer stopped.
+hour, so each session's history and timeline carry over. Running it again sends nothing new.
 
 Then stop claude-summarizer. On a Mac:
 
