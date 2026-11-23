@@ -317,7 +317,38 @@ impl Mcp {
         tool_try!(r)
     }
 
-    #[tool(description = "What happened since you last asked: timeline entries and cards that changed.")]
+    #[tool(description = "The auto-approve rules the person granted (active, archived and off), and each project's \
+        autonomy policy. Ask for an automatic action with card_add's auto_grant set to an active rule's id.")]
+    async fn rules_list(
+        &self,
+        _: Parameters<NoArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async {
+            self.agent(&ctx).await?;
+            ops::rules_view(&self.state).await
+        }
+        .await;
+        tool_try!(r)
+    }
+
+    #[tool(description = "Check whether a card may be carried out without the person under a rule, without posting \
+        it: allow or deny, with the reason. card_add with auto_grant runs the same check for real.")]
+    async fn rules_match(
+        &self,
+        Parameters(req): Parameters<quietdeck_types::rules::MatchRequest>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async {
+            self.agent(&ctx).await?;
+            ops::rules_match(&self.state, req).await
+        }
+        .await;
+        tool_try!(r)
+    }
+
+    #[tool(description = "What happened since you last asked: timeline entries, cards that changed, and the \
+        person's comments for you.")]
     async fn history(
         &self,
         Parameters(args): Parameters<HistoryArgs>,

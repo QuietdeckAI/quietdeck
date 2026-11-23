@@ -7,16 +7,26 @@ import { usePath } from "@/lib/route";
 import { HistoryScreen } from "@/screens/History";
 import { InboxScreen } from "@/screens/Inbox";
 import { LaterScreen } from "@/screens/Later";
+import { RulesScreen } from "@/screens/Rules";
 import { SettingsScreen } from "@/screens/Settings";
 import { SignInScreen } from "@/screens/SignIn";
 import type { AuthState } from "@/types/AuthState";
 
 export function App() {
   const qc = useQueryClient();
-  const auth = useQuery({ queryKey: ["auth"], queryFn: () => api<AuthState>("/api/auth/state") });
+  const auth = useQuery({
+    queryKey: ["auth"],
+    queryFn: () => api<AuthState>("/api/auth/state"),
+  });
   const signedIn = auth.data?.signed_in === true;
 
-  useEffect(() => setSignedOutHandler(() => void qc.invalidateQueries({ queryKey: ["auth"] })), [qc]);
+  useEffect(
+    () =>
+      setSignedOutHandler(
+        () => void qc.invalidateQueries({ queryKey: ["auth"] }),
+      ),
+    [qc],
+  );
   useDeckEvents(signedIn);
 
   if (auth.isPending) return null;
@@ -41,6 +51,7 @@ function Screen() {
   const path = usePath();
   if (path.startsWith("/history")) return <HistoryScreen />;
   if (path.startsWith("/later")) return <LaterScreen />;
+  if (path.startsWith("/rules")) return <RulesScreen />;
   if (path.startsWith("/settings")) return <SettingsScreen />;
   return <InboxScreen />;
 }

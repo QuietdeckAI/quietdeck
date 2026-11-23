@@ -120,9 +120,63 @@ pub fn history(h: &History) -> String {
     for c in &h.cards {
         lines.push(format!("  {}", card_line(c)));
     }
-    if h.entries.is_empty() && h.cards.is_empty() {
+    for c in &h.comments {
+        lines.push(format!("  The person commented on \"{}\": {}", c.on, c.text));
+    }
+    if h.entries.is_empty() && h.cards.is_empty() && h.comments.is_empty() {
         lines.push("  nothing".into());
     }
+    lines.join("\n")
+}
+
+pub fn rules(v: &quietdeck_types::rules::RulesView) -> String {
+    use quietdeck_types::rules::{RuleMode, RuleStatus};
+    let mut lines = Vec::new();
+    for r in &v.rules {
+        let what = match r.mode {
+            RuleMode::Fuzzy => format!("fuzzy: {}", r.instruction.as_deref().unwrap_or("")),
+            RuleMode::Strict => {
+                let c = &r.criteria;
+                let mut parts = vec![];
+                parts.extend(c.account.as_ref().map(|a| format!("account {a}")));
+                parts.extend(c.from_address.as_ref().map(|a| format!("from {a}")));
+                parts.extend(c.from_domain.as_ref().map(|d| format!("from @{d}")));
+                parts.extend(c.subject_contains.as_ref().map(|s| format!("subject contains {s:?}")));
+                parts.extend(c.list_id.as_ref().map(|l| format!("List-Id {l}")));
+                format!("strict: {}", parts.join(", "))
+            }
+        };
+        let types: Vec<&str> = r.action_template.types.iter().map(|t| t.as_str()).collect();
+        let target = r.action_template.target.as_ref().map(|t| format!(" to {}", t.address())).unwrap_or_default();
+        let status = match r.status {
+            RuleStatus::Active => String::new(),
+            RuleStatus::Disabled => " [off]".into(),
+            RuleStatus::Archived => format!(" [archived: {}]", r.archived_reason.as_deref().unwrap_or("")),
+        };
+        let domains = if r.known_sender_domains.is_empty() {
+            String::new()
+        } else {
+            format!(" (senders: {})", r.known_sender_domains.join(", "))
+        };
+        lines.push(format!("g_{} {what}{domains} -> {}{target}{status}", r.id, types.join(", ")));
+    }
+    if lines.is_empty() {
+        lines.push("No rules yet: the person grants them on the deck's Rules screen.".into());
+    }
+    lines.push(String::new());
+    lines.push("Autonomy policies:".into());
+    for p in &v.policies {
+        let types: Vec<&str> = p.automatic.iter().map(|t| t.as_str()).collect();
+        let scope: Vec<String> =
+            p.dirs.iter().cloned().chain(p.accounts.iter().map(|a| format!("account {a}"))).collect();
+        lines.push(format!(
+            "  {} ({}): {}",
+            p.name,
+            scope.join(", "),
+            if types.is_empty() { "nothing".into() } else { types.join(", ") }
+        ));
+    }
+    lines.push(format!("Automatic resumes and new sessions: at most {} a day.", v.session_starts_per_day));
     lines.join("\n")
 }
 

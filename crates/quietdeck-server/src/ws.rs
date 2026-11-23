@@ -127,7 +127,14 @@ async fn handle(state: &AppState, node: &str, reg: &crate::hub::Registration, fr
         NodeFrame::Sessions { sessions } => sessions::replace_snapshot(&state.db, &state.config, node, &sessions).await,
         NodeFrame::Session { session } => sessions::upsert(&state.db, &state.config, node, &session).await,
         NodeFrame::SessionClosed { session_id, at, ended } => {
-            sessions::closed(&state.db, node, &session_id, at, ended.as_ref()).await
+            match sessions::closed(&state.db, node, &session_id, at, ended.as_ref()).await {
+                // A tab closed or an agent exited: its grants are archived. A herdr restart or a sleeping machine
+                // sends no close event, so they stay.
+                Ok(()) if ended.is_some() => {
+                    crate::ops::session_closed(state, node, &session_id).await.map_err(|e| anyhow::anyhow!("{e}"))
+                }
+                other => other,
+            }
         }
         NodeFrame::Summary { event } => sessions::apply_summary(&state.db, node, &event).await,
         NodeFrame::Usage { .. } => Ok(()),
@@ -136,8 +143,13 @@ async fn handle(state: &AppState, node: &str, reg: &crate::hub::Registration, fr
             Ok(())
         }
         NodeFrame::Request { id, request } => {
-            let reply = answer(state, node, request).await;
-            let _ = reg.tx.send(DeckFrame::Response { id, reply }).await;
+            // In its own task: answering can take a request back to this same node (a runner's relay delivers
+            // through it), and that answer arrives on this read loop.
+            let (state, node, tx) = (state.clone(), node.to_string(), reg.tx.clone());
+            tokio::spawn(async move {
+                let reply = answer(&state, &node, request).await;
+                let _ = tx.send(DeckFrame::Response { id, reply }).await;
+            });
             Ok(())
         }
     };
@@ -175,4 +187,85 @@ async fn mint_for(state: &AppState, node: &str, session: Option<TokenSession>) -
         expires_at: jiff::Timestamp::from_second(exp)?,
         caller: caller_ref(&claims),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use futures::{SinkExt, StreamExt};
+    use quietdeck_types::directory::SessionInfo;
+    use quietdeck_types::node::{
+        DeckFrame, DeckRequest, Delivered, NodeFrame, NodeRequest, PROTOCOL_VERSION, Reply, RunnerInfo,
+    };
+    use quietdeck_types::relay::DeliveryKind;
+    use quietdeck_types::{ActionType, AgentKind, AgentStatus};
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+    use crate::state::AppState;
+    use crate::store::nodes;
+
+    fn text(frame: &NodeFrame) -> Message {
+        Message::Text(serde_json::to_string(frame).unwrap().into())
+    }
+
+    /// A runner's relay to a session on its own node: the deck asks that node to deliver while the node's own
+    /// request is still open. Both must be answered.
+    #[tokio::test]
+    async fn a_runner_relays_to_a_session_on_its_own_node() {
+        let state = AppState::for_tests().await;
+        let code = nodes::create_enrolment_code(&state.db).await.unwrap();
+        let enrolled = nodes::enrol(&state.db, &code.code, "server").await.unwrap();
+        let app =
+            axum::Router::new().route("/api/nodes/ws", axum::routing::get(super::upgrade)).with_state(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let mut req = format!("ws://{addr}/api/nodes/ws").into_client_request().unwrap();
+        req.headers_mut().insert("Authorization", format!("Bearer {}", enrolled.token).parse().unwrap());
+        let (ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+        let (mut sink, mut stream) = ws.split();
+        let runner = RunnerInfo { eligible: vec![ActionType::Forward], agent_tab: "triage".into(), accounts: vec![] };
+        sink.send(text(&NodeFrame::Hello { protocol: PROTOCOL_VERSION, version: "t".into(), runner: Some(runner) }))
+            .await
+            .unwrap();
+        let session = SessionInfo {
+            session_id: "s-target".into(),
+            agent: AgentKind::Claude,
+            workspace: None,
+            tab: Some("target".into()),
+            pane: Some("p1".into()),
+            cwd: None,
+            status: AgentStatus::Idle,
+            status_changed_at: jiff::Timestamp::now(),
+            resume_command: None,
+            running: true,
+        };
+        sink.send(text(&NodeFrame::Sessions { sessions: vec![session] })).await.unwrap();
+        let relay = NodeRequest::Relay { to: "target@server".into(), kind: DeliveryKind::Deck, body: "hello".into() };
+        sink.send(text(&NodeFrame::Request { id: 7, request: relay })).await.unwrap();
+
+        let mut delivered = false;
+        let answered = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            while let Some(msg) = stream.next().await {
+                let Message::Text(t) = msg.unwrap() else { continue };
+                match serde_json::from_str::<DeckFrame>(&t).unwrap() {
+                    DeckFrame::Request { id, request: DeckRequest::Deliver { delivery } } => {
+                        assert_eq!(delivery.target.session_id.as_deref(), Some("s-target"));
+                        delivered = true;
+                        let reply = Reply::ok(&Delivered::Socket);
+                        sink.send(text(&NodeFrame::Response { id, reply })).await.unwrap();
+                    }
+                    DeckFrame::Response { id: 7, reply } => return reply,
+                    DeckFrame::Refused { reason } => panic!("refused: {reason}"),
+                    _ => {}
+                }
+            }
+            panic!("the deck closed the connection");
+        })
+        .await
+        .expect("the deck answers the relay while it waits on this node's delivery");
+        assert!(delivered);
+        assert!(answered.into_result::<serde_json::Value>().is_ok());
+    }
 }

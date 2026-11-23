@@ -18,20 +18,46 @@ const EMPTY: Draft = { text: "", include: false };
 const key = (c: Card) => `${c.id}:${c.version}`;
 
 /** Unmentioned means yes: every card he didn't change goes in as approved, and a typed note makes it an adjustment. */
-function approveAllRequest(inbox: Inbox, drafts: Record<string, Draft>): ApproveAll {
+function approveAllRequest(
+  inbox: Inbox,
+  drafts: Record<string, Draft>,
+): ApproveAll {
   const cards: CardDecision[] = [];
   const add = (c: Card, includeIfUntouched: boolean) => {
-    if (c.state !== "open" && c.state !== "handed_off" && c.state !== "handled_elsewhere") return;
+    if (
+      c.state !== "open" &&
+      c.state !== "handed_off" &&
+      c.state !== "handled_elsewhere"
+    )
+      return;
     const d = drafts[key(c)] ?? EMPTY;
     const text = d.text.trim();
     if (!text && !includeIfUntouched) return;
     if (!text && c.section === "actions" && c.actions.length === 0) return;
     cards.push(
       text
-        ? { card_id: c.id, version: c.version, kind: "adjust", fields: null, text }
+        ? {
+            card_id: c.id,
+            version: c.version,
+            kind: "adjust",
+            fields: null,
+            text,
+          }
         : c.section === "suggestion"
-          ? { card_id: c.id, version: c.version, kind: "edit", fields: c.actions, text: null }
-          : { card_id: c.id, version: c.version, kind: "approve", fields: null, text: null },
+          ? {
+              card_id: c.id,
+              version: c.version,
+              kind: "edit",
+              fields: c.actions,
+              text: null,
+            }
+          : {
+              card_id: c.id,
+              version: c.version,
+              kind: "approve",
+              fields: null,
+              text: null,
+            },
     );
   };
   for (const c of inbox.actions) add(c, true);
@@ -58,9 +84,16 @@ export function InboxScreen() {
             {inbox.error.message}
           </p>
         )}
-        {inbox.data && <InboxBody inbox={inbox.data} drafts={drafts} setDrafts={setDrafts} />}
+        {inbox.data && (
+          <InboxBody inbox={inbox.data} drafts={drafts} setDrafts={setDrafts} />
+        )}
       </main>
-      {inbox.data && <ApproveAllBar inbox={inbox.data} request={approveAllRequest(inbox.data, drafts)} />}
+      {inbox.data && (
+        <ApproveAllBar
+          inbox={inbox.data}
+          request={approveAllRequest(inbox.data, drafts)}
+        />
+      )}
     </>
   );
 }
@@ -75,24 +108,44 @@ function InboxBody({
   setDrafts: React.Dispatch<React.SetStateAction<Record<string, Draft>>>;
 }) {
   const draftFor = (c: Card) => drafts[key(c)] ?? EMPTY;
-  const setDraft = (c: Card) => (d: Draft) => setDrafts((all) => ({ ...all, [key(c)]: d }));
+  const setDraft = (c: Card) => (d: Draft) =>
+    setDrafts((all) => ({ ...all, [key(c)]: d }));
   const quietSince =
-    inbox.last_agent_at && Date.now() - new Date(inbox.last_agent_at).getTime() > 3_600_000
+    inbox.last_agent_at &&
+    Date.now() - new Date(inbox.last_agent_at).getTime() > 3_600_000
       ? inbox.last_agent_at
       : null;
   const empty =
-    inbox.actions.length + inbox.suggestions.length + inbox.archive_list.length + inbox.timeline.length === 0;
+    inbox.actions.length +
+      inbox.suggestions.length +
+      inbox.archive_list.length +
+      inbox.timeline.length ===
+    0;
 
   return (
     <>
-      {quietSince && <p className="mt-6 text-sm text-neutral">The triage agent last checked in {ago(quietSince)}.</p>}
+      {quietSince && (
+        <p className="mt-6 text-sm text-neutral">
+          The triage agent last checked in {ago(quietSince)}.
+        </p>
+      )}
 
-      {empty && <p className="mt-16 text-center font-display text-xl text-neutral">Nothing waiting.</p>}
+      {empty && (
+        <p className="mt-16 text-center font-display text-xl text-neutral">
+          Nothing waiting.
+        </p>
+      )}
 
       {inbox.actions.length > 0 && (
         <section className="mt-6 flex flex-col gap-4" aria-label="Actions">
           {inbox.actions.map((c) => (
-            <ActionCard key={key(c)} card={c} draft={draftFor(c)} onDraft={setDraft(c)} />
+            <ActionCard
+              key={key(c)}
+              card={c}
+              draft={draftFor(c)}
+              onDraft={setDraft(c)}
+              offer={inbox.rule_offers.find((o) => o.card_id === c.id)}
+            />
           ))}
         </section>
       )}
@@ -102,7 +155,13 @@ function InboxBody({
           <h2 className="mb-3 text-lg text-muted">Suggestions</h2>
           <div className="flex flex-col gap-4">
             {inbox.suggestions.map((c) => (
-              <ActionCard key={key(c)} card={c} draft={draftFor(c)} onDraft={setDraft(c)} suggestion />
+              <ActionCard
+                key={key(c)}
+                card={c}
+                draft={draftFor(c)}
+                onDraft={setDraft(c)}
+                suggestion
+              />
             ))}
           </div>
         </section>
@@ -132,7 +191,10 @@ function InboxBody({
 
       {inbox.has_later && (
         <p className="mt-10">
-          <Link to="/later" className="text-sm text-neutral underline-offset-4 hover:text-ink hover:underline">
+          <Link
+            to="/later"
+            className="text-sm text-neutral underline-offset-4 hover:text-ink hover:underline"
+          >
             Later
           </Link>
         </p>

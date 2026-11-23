@@ -74,6 +74,46 @@ fn home_of(cwd: Option<&str>) -> Option<String> {
     matches!(root, "Users" | "home").then(|| format!("/{root}/{user}"))
 }
 
+/// The project a working directory belongs to, for a path from any node.
+pub fn project_for_cwd(config: &DeckConfig, cwd: &str) -> Option<String> {
+    config.project_for_dir(cwd, home_of(Some(cwd)).as_deref())
+}
+
+/// The project of a session the deck knows.
+pub async fn project_of_session(db: &Db, node: &str, session_id: &str) -> anyhow::Result<Option<String>> {
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT project FROM sessions WHERE node = ? AND session_id = ?")
+            .bind(node)
+            .bind(session_id)
+            .fetch_optional(db)
+            .await?;
+    Ok(row.and_then(|r| r.0))
+}
+
+/// The running session in a tab, if one is.
+pub async fn running_in_tab(db: &Db, node: &str, tab: &str) -> anyhow::Result<Option<String>> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT session_id FROM sessions WHERE node = ? AND tab = ? AND running = 1 ORDER BY pushed_at DESC LIMIT 1",
+    )
+    .bind(node)
+    .bind(tab)
+    .fetch_optional(db)
+    .await?;
+    Ok(row.map(|r| r.0))
+}
+
+/// The project of the session in a tab: the running one, else the latest.
+pub async fn project_of_tab(db: &Db, node: &str, tab: &str) -> anyhow::Result<Option<String>> {
+    let row: Option<(Option<String>,)> = sqlx::query_as(
+        "SELECT project FROM sessions WHERE node = ? AND tab = ? ORDER BY running DESC, pushed_at DESC LIMIT 1",
+    )
+    .bind(node)
+    .bind(tab)
+    .fetch_optional(db)
+    .await?;
+    Ok(row.and_then(|r| r.0))
+}
+
 /// One session pushed by its node.
 pub async fn upsert(db: &Db, config: &DeckConfig, node: &str, s: &SessionInfo) -> anyhow::Result<()> {
     let project = s.cwd.as_deref().and_then(|cwd| config.project_for_dir(cwd, home_of(Some(cwd)).as_deref()));

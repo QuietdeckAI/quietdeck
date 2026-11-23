@@ -139,6 +139,9 @@ pub struct Inbox {
     /// When an agent last posted a card or took decisions. The Inbox shows it only when it's over an hour ago.
     #[ts(type = "string | null")]
     pub last_agent_at: Option<Timestamp>,
+    /// Cards whose target's tab had grants archived when its earlier session closed.
+    #[serde(default)]
+    pub rule_offers: Vec<crate::rules::RuleOffer>,
 }
 
 #[cfg(test)]

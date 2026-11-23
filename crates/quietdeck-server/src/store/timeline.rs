@@ -1,5 +1,6 @@
 //! The automatic-actions timeline.
 
+use quietdeck_types::SessionRef;
 use quietdeck_types::timeline::{EntrySource, TimelineAdd, TimelineEntry, TimelineKind};
 
 use crate::db::{Db, enum_str, from_json, json, now_ms, parse_enum, ts, ts_opt};
@@ -35,9 +36,16 @@ impl Row {
 
 const COLUMNS: &str = "id, account, kind, source, refs, text, count, created_at, read_at";
 
-pub async fn add(db: &Db, source: EntrySource, e: &TimelineAdd) -> anyhow::Result<TimelineEntry> {
+/// An unread entry. `posted_by` is the session behind it, which the person's comments on it go to.
+pub async fn add(
+    db: &Db,
+    source: EntrySource,
+    posted_by: Option<&SessionRef>,
+    e: &TimelineAdd,
+) -> anyhow::Result<TimelineEntry> {
     let id = sqlx::query(
-        "INSERT INTO timeline_entries (account, kind, source, refs, text, lease_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO timeline_entries (account, kind, source, refs, text, lease_id, posted_node, posted_tab, created_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&e.account)
     .bind(enum_str(&e.kind))
@@ -45,6 +53,8 @@ pub async fn add(db: &Db, source: EntrySource, e: &TimelineAdd) -> anyhow::Resul
     .bind(json(&e.refs))
     .bind(&e.text)
     .bind(e.lease_id)
+    .bind(posted_by.map(|p| p.node.clone()))
+    .bind(posted_by.map(|p| p.tab.clone()))
     .bind(now_ms())
     .execute(db)
     .await?

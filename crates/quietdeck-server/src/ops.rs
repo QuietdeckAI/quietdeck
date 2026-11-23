@@ -12,13 +12,15 @@ use quietdeck_types::decision::{ApproveAll, Approving, Decide, Inbox, ReportRece
 use quietdeck_types::directory::{HitSource, PartialSearch, TranscriptHit, WhoHas, WhoHasHit};
 use quietdeck_types::node::{DeckRequest, Delivered, TranscriptSearch};
 use quietdeck_types::relay::{DeliveryError, DeliveryKind, MsgSend};
-use quietdeck_types::rules::MatchResult;
-use quietdeck_types::timeline::{EntrySource, History, TimelineAdd, TimelineEntry};
+use quietdeck_types::rules::{
+    MatchRequest, MatchResult, ProjectPolicy, Rule, RuleInput, RuleOffer, RuleStatus, RuleStatusChange, RulesView,
+};
+use quietdeck_types::timeline::{Comment, CommentAdd, EntrySource, History, TimelineAdd, TimelineEntry, TimelineKind};
 
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult, bad};
 use crate::state::{AppState, VERSION};
-use crate::store::{cards, decisions, sessions, timeline};
+use crate::store::{cards, comments, decisions, rules, sessions, timeline};
 
 pub async fn info(state: &AppState, caller: Caller) -> AppResult<DeckInfo> {
     Ok(DeckInfo {
@@ -47,16 +49,175 @@ pub async fn add_card(state: &AppState, me: &SessionRef, input: CardInput) -> Ap
         }
     }
     crate::runner::check_send_as(state, me, &input.actions).await?;
-    // Automatic cards go through `rules match`, which arrives with the rules (build step 6). Until then every card
-    // waits for the person.
-    let auto = input.auto_grant.map(|grant_id| MatchResult {
-        allow: false,
-        grant_id,
-        reason: "no automatic actions on this deck yet: stored as a normal card".into(),
-    });
-    let added = cards::add(&state.db, me, &input, CardState::Open, None).await?;
+    // An automatic card goes through `rules match`. Allowed, it's released at once; denied, it waits for the person
+    // like any card.
+    let (auto, starts) = match input.auto_grant {
+        Some(grant_id) => {
+            let (m, starts) = crate::rules::check(&state.db, &state.config, &input, grant_id).await?;
+            (Some(m), starts)
+        }
+        None => (None, 0),
+    };
+    let allowed = auto.as_ref().filter(|m| m.allow).map(|m| m.grant_id);
+    let state_now = if allowed.is_some() { CardState::Automatic } else { CardState::Open };
+    let added = cards::add(&state.db, me, &input, state_now, allowed).await?;
+    let mut card = added.card;
+    if let Some(grant_id) = allowed {
+        let waiting = decisions::release_automatic(&state.db, card.id, card.version, grant_id, starts).await?;
+        let entry = TimelineAdd {
+            kind: TimelineKind::AutoAction,
+            account: Some(card.input.account.clone()),
+            refs: vec![format!("c_{}", card.id), format!("g_{grant_id}")],
+            text: format!("{}: {} (rule {grant_id})", card.input.subject, describe_actions(&card.input.actions)),
+            lease_id: None,
+        };
+        timeline::add(&state.db, EntrySource::Deck, Some(me), &entry).await?;
+        state.changed(Changed::Timeline);
+        announce(state, &[waiting]).await;
+        card = cards::get(&state.db, card.id).await?.ok_or_else(|| anyhow::anyhow!("card {} vanished", card.id))?;
+    }
     state.changed(Changed::Cards);
-    Ok(CardAdded { card: added.card, replaced: added.replaced, auto })
+    Ok(CardAdded { card, replaced: added.replaced, auto })
+}
+
+/// The actions in a few words, for a timeline entry.
+fn describe_actions(actions: &[quietdeck_types::Action]) -> String {
+    use quietdeck_types::Action;
+    let words: Vec<String> = actions
+        .iter()
+        .map(|a| match a {
+            Action::Forward { to, .. } => format!("forward to {}", to.tab),
+            Action::Resume { tab, .. } => format!("resume {tab}"),
+            Action::NewSession { tab, .. } => format!("start a session in {tab}"),
+            other => other.action_type().as_str().replace('_', " "),
+        })
+        .collect();
+    words.join(", ")
+}
+
+// Rules and comments.
+
+pub async fn rules_view(state: &AppState) -> AppResult<RulesView> {
+    let policies = state
+        .config
+        .projects
+        .iter()
+        .map(|(name, p)| ProjectPolicy {
+            name: name.clone(),
+            dirs: p.dirs.clone(),
+            accounts: p.accounts.clone(),
+            automatic: p.automatic.clone(),
+        })
+        .collect();
+    Ok(RulesView {
+        rules: rules::list(&state.db).await?,
+        policies,
+        session_starts_per_day: crate::rules::SESSION_STARTS_PER_DAY,
+    })
+}
+
+/// Fill in the session a rule is tied to with the running session in that tab, so a later session in the same tab
+/// isn't covered by it.
+async fn with_session_id(state: &AppState, mut input: RuleInput) -> AppResult<RuleInput> {
+    input.check().map_err(bad)?;
+    if let Some(p) = &input.project
+        && !state.config.projects.contains_key(p)
+    {
+        return Err(AppError::BadRequest(format!("project {p} isn't in deck.yaml")));
+    }
+    if let Some(a) = &input.criteria.account
+        && !state.config.knows_account(a)
+    {
+        return Err(AppError::BadRequest(format!("unknown account {a:?}")));
+    }
+    let tie = input.session_ref.clone().or_else(|| input.action_template.target.clone());
+    if let Some(mut r) = tie {
+        if r.session_id.is_none() {
+            r.session_id = sessions::running_in_tab(&state.db, &r.node, &r.tab).await?;
+        }
+        input.session_ref = Some(r);
+    }
+    Ok(input)
+}
+
+pub async fn rule_create(state: &AppState, input: RuleInput) -> AppResult<Rule> {
+    let input = with_session_id(state, input).await?;
+    let r = rules::create(&state.db, &input).await?;
+    state.changed(Changed::Rules);
+    Ok(r)
+}
+
+pub async fn rule_update(state: &AppState, id: i64, input: RuleInput) -> AppResult<Rule> {
+    let input = with_session_id(state, input).await?;
+    let r = rules::update(&state.db, id, &input).await?;
+    state.changed(Changed::Rules);
+    Ok(r)
+}
+
+pub async fn rule_status(state: &AppState, id: i64, change: RuleStatusChange) -> AppResult<Rule> {
+    garde::Validate::validate(&change).map_err(bad)?;
+    let reason = (change.status != RuleStatus::Active).then_some("by the person");
+    let r = rules::set_status(&state.db, id, change.status, reason, change.move_to.as_ref()).await?;
+    state.changed(Changed::Rules);
+    Ok(r)
+}
+
+/// `quietdeck rules match` on its own: the answer card add --auto would get, without posting or counting anything.
+pub async fn rules_match(state: &AppState, req: MatchRequest) -> AppResult<MatchResult> {
+    req.card.check().map_err(bad)?;
+    Ok(crate::rules::check(&state.db, &state.config, &req.card, req.grant_id).await?.0)
+}
+
+/// A session closed: archive the grants tied to it, each with an entry he sees.
+pub async fn session_closed(state: &AppState, node: &str, session_id: &str) -> AppResult<()> {
+    let tab = sessions::tab_of(&state.db, node, session_id).await?;
+    let archived = rules::archive_for_session(&state.db, node, session_id, tab.as_deref()).await?;
+    for r in &archived {
+        let entry = TimelineAdd {
+            kind: TimelineKind::GrantArchived,
+            account: r.criteria.account.clone(),
+            refs: vec![format!("g_{}", r.id)],
+            text: format!(
+                "Rule {} archived: {}. It moves to a new session from the Rules screen, or from a card that forwards there.",
+                r.id,
+                r.archived_reason.as_deref().unwrap_or("its session closed")
+            ),
+            lease_id: None,
+        };
+        timeline::add(&state.db, EntrySource::Deck, None, &entry).await?;
+    }
+    if !archived.is_empty() {
+        state.changed(Changed::Rules);
+        state.changed(Changed::Timeline);
+    }
+    Ok(())
+}
+
+/// The person comments on a timeline entry or a History row: it goes to the session behind it (the triage tab for
+/// the deck's own entries) as a message, and waits in that session's `history` if the message can't be delivered.
+pub async fn comment_add(state: &AppState, c: CommentAdd) -> AppResult<Comment> {
+    garde::Validate::validate(&c).map_err(bad)?;
+    let fallback = state.config.leases.fallback.as_ref().map(|f| SessionRef {
+        node: f.node.clone(),
+        tab: f.tab.clone(),
+        session_id: None,
+    });
+    let mut comment = comments::add(&state.db, c.target, &c.text, fallback.as_ref()).await?;
+    if let Some(to) = &comment.to {
+        let body = format!(
+            "The person commented on \"{}\": {}\n\nPropose anything it asks for as a card.",
+            comment.on, comment.text
+        );
+        match crate::relay::send(&state.db, &state.hub, &to.address(), DeliveryKind::Deck, body).await {
+            Ok(_) => {
+                comments::mark_picked_up(&state.db, comment.id).await?;
+                comment = comments::get(&state.db, comment.id).await?.unwrap_or(comment);
+            }
+            Err(e) => tracing::info!(to = %to.address(), error = %e, "a comment waits for its session's history"),
+        }
+    }
+    state.changed(Changed::Timeline);
+    Ok(comment)
 }
 
 /// "Who has this ID?": the summaries on the deck, and the raw transcripts on every connected node.
@@ -135,14 +296,21 @@ pub async fn msg_send(state: &AppState, me: &SessionRef, msg: MsgSend) -> AppRes
 
 pub async fn timeline_add(state: &AppState, caller: &Caller, e: TimelineAdd) -> AppResult<TimelineEntry> {
     garde::Validate::validate(&e).map_err(bad)?;
-    let source = match caller {
-        Caller::Session { .. } => EntrySource::Agent,
-        Caller::Node { .. } => EntrySource::Runner,
+    let (source, posted_by) = match caller {
+        Caller::Session { session } => (EntrySource::Agent, Some(session.clone())),
+        Caller::Node { node } => {
+            let agent = crate::store::nodes::runner_info(&state.db, node).await?.map(|r| SessionRef {
+                node: node.clone(),
+                tab: r.agent_tab,
+                session_id: None,
+            });
+            (EntrySource::Runner, agent)
+        }
         Caller::Owner { .. } => {
             return Err(AppError::Forbidden("timeline entries come from agents and runners".into()));
         }
     };
-    let entry = timeline::add(&state.db, source, &e).await?;
+    let entry = timeline::add(&state.db, source, posted_by.as_ref(), &e).await?;
     state.changed(Changed::Timeline);
     Ok(entry)
 }
@@ -170,6 +338,7 @@ pub async fn history(state: &AppState, me: &SessionRef, since: &str) -> AppResul
     };
     let entries = timeline::between(&state.db, since_ms, until).await?;
     let cards = cards::changed_since(&state.db, since_ms, until).await?;
+    let comments = comments::take(&state.db, me).await?;
     sqlx::query(
         "INSERT INTO history_cursors (node, session_key, read_until) VALUES (?, ?, ?) \
          ON CONFLICT (node, session_key) DO UPDATE SET read_until = MAX(read_until, excluded.read_until)",
@@ -179,7 +348,7 @@ pub async fn history(state: &AppState, me: &SessionRef, since: &str) -> AppResul
     .bind(until)
     .execute(&state.db)
     .await?;
-    Ok(History { since: crate::db::ts(since_ms), until: crate::db::ts(until), entries, cards })
+    Ok(History { since: crate::db::ts(since_ms), until: crate::db::ts(until), entries, cards, comments })
 }
 
 // Decisions, the Inbox and History.
@@ -256,6 +425,7 @@ pub async fn inbox(state: &AppState, account: Option<&str>) -> AppResult<Inbox> 
         approving: decisions::approving(&state.db).await?,
         running: decisions::running(&state.db).await?,
         last_agent_at: decisions::last_agent_at(&state.db).await?.map(crate::db::ts),
+        rule_offers: vec![],
     };
     if let Some(a) = account {
         inbox.timeline.retain(|e| e.account.as_deref() == Some(a));
@@ -267,6 +437,29 @@ pub async fn inbox(state: &AppState, account: Option<&str>) -> AppResult<Inbox> 
             CardSection::ArchiveList => inbox.archive_list.push(card),
             CardSection::Sent => inbox.sent.push(card),
             CardSection::Later => {}
+        }
+    }
+    for card in inbox.actions.iter().chain(&inbox.suggestions) {
+        if !matches!(card.state, CardState::Open | CardState::HandedOff) {
+            continue;
+        }
+        let target = card.input.actions.iter().find_map(|a| match a {
+            quietdeck_types::Action::Forward { to, .. } => Some(to.clone()),
+            quietdeck_types::Action::Resume { node, tab, session_id, .. } => {
+                Some(SessionRef { node: node.clone(), tab: tab.clone(), session_id: Some(session_id.clone()) })
+            }
+            quietdeck_types::Action::NewSession { node, tab, .. } => {
+                Some(SessionRef { node: node.clone(), tab: tab.clone(), session_id: None })
+            }
+            _ => None,
+        });
+        let Some(mut to) = target else { continue };
+        if to.session_id.is_none() {
+            to.session_id = sessions::running_in_tab(&state.db, &to.node, &to.tab).await?;
+        }
+        let rule_ids = rules::archived_for_tab(&state.db, &to).await?;
+        if !rule_ids.is_empty() {
+            inbox.rule_offers.push(RuleOffer { card_id: card.id, rule_ids, to });
         }
     }
     Ok(inbox)
@@ -292,7 +485,8 @@ pub async fn owner_history(
     cards.retain(|c| {
         (c.state.is_finished() || c.state == CardState::Automatic) && account.is_none_or(|a| c.input.account == a)
     });
-    Ok(History { since: crate::db::ts(since_ms), until: crate::db::ts(until_ms), entries, cards })
+    let comments = comments::between(&state.db, since_ms, until_ms).await?;
+    Ok(History { since: crate::db::ts(since_ms), until: crate::db::ts(until_ms), entries, cards, comments })
 }
 
 pub async fn later(state: &AppState, account: Option<&str>) -> AppResult<Vec<Card>> {
@@ -346,16 +540,24 @@ pub async fn releaser(state: AppState) {
             Ok(waiting) => {
                 state.changed(Changed::Cards);
                 state.changed(Changed::Timeline);
-                for w in waiting {
-                    if !crate::runner::notify(&state, &w.node, &w.tab).await {
-                        tell_agent(&state, &w).await;
-                    }
-                }
+                announce(&state, &waiting).await;
             }
             Err(e) => {
                 tracing::error!(error = %e, "releaser: releasing");
                 tokio::time::sleep(Duration::from_secs(5)).await;
             }
+        }
+    }
+}
+
+/// Tell each agent's runner it has released decisions, or the agent itself when no runner takes them.
+async fn announce(state: &AppState, waiting: &[decisions::Waiting]) {
+    for w in waiting {
+        if w.decisions == 0 {
+            continue;
+        }
+        if !crate::runner::notify(state, &w.node, &w.tab).await {
+            tell_agent(state, w).await;
         }
     }
 }

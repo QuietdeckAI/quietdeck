@@ -317,6 +317,45 @@ async fn release_one(
     Ok(Some((node, tab)))
 }
 
+/// A card `rules match` allowed: approved and released at once, with no undo window, to the posting agent's runner
+/// or the agent, like any approval. The match is counted on the rule, and its session starts against the cap.
+pub async fn release_automatic(
+    db: &Db,
+    card_id: i64,
+    version: i64,
+    grant_id: i64,
+    session_starts: usize,
+) -> anyhow::Result<Waiting> {
+    let now = now_ms();
+    let mut tx = db.begin().await?;
+    sqlx::query(
+        "INSERT INTO decisions (card_id, card_version, kind, release_after, released_at, at) \
+         VALUES (?, ?, 'approve', ?, ?, ?)",
+    )
+    .bind(card_id)
+    .bind(version)
+    .bind(now)
+    .bind(now)
+    .bind(now)
+    .execute(&mut *tx)
+    .await?;
+    let released = sqlx::query(
+        "UPDATE actions SET status = 'released' WHERE card_id = ? AND card_version = ? AND status = 'pending'",
+    )
+    .bind(card_id)
+    .bind(version)
+    .execute(&mut *tx)
+    .await?;
+    crate::store::rules::record_match(&mut tx, grant_id).await?;
+    crate::store::rules::record_session_starts(&mut tx, card_id, session_starts).await?;
+    let (node, tab): (String, String) = sqlx::query_as("SELECT posted_node, posted_tab FROM cards WHERE id = ?")
+        .bind(card_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(Waiting { node, tab, decisions: released.rows_affected().min(1) as usize })
+}
+
 #[derive(sqlx::FromRow)]
 struct DecisionRow {
     id: i64,
@@ -1033,6 +1072,7 @@ mod tests {
         let e = crate::store::timeline::add(
             &db,
             quietdeck_types::timeline::EntrySource::Runner,
+            None,
             &quietdeck_types::timeline::TimelineAdd {
                 kind: quietdeck_types::timeline::TimelineKind::AutoAction,
                 account: Some("personal".into()),

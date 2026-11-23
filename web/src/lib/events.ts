@@ -9,6 +9,7 @@ const STALE: Record<Changed, string[][]> = {
   sessions: [["sessions"]],
   settings: [["settings"], ["info"]],
   nodes: [["nodes"]],
+  rules: [["rules"], ["inbox"]],
   all: [[]],
 };
 
@@ -20,7 +21,8 @@ export function useDeckEvents(enabled: boolean) {
     const source = new EventSource("/api/events");
     source.addEventListener("changed", (e) => {
       const what = JSON.parse((e as MessageEvent<string>).data) as Changed;
-      for (const key of STALE[what] ?? [[]]) void qc.invalidateQueries({ queryKey: key });
+      for (const key of STALE[what] ?? [[]])
+        void qc.invalidateQueries({ queryKey: key });
     });
     // After a reconnect, anything may have changed while the stream was down.
     source.addEventListener("open", () => void qc.invalidateQueries());

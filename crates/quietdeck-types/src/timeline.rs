@@ -85,6 +85,48 @@ pub struct History {
     pub entries: Vec<TimelineEntry>,
     /// Cards whose state or actions changed in that time.
     pub cards: Vec<crate::card::Card>,
+    /// The person's comments on this session's timeline entries and History rows, not picked up before. Empty on
+    /// the History screen.
+    #[serde(default)]
+    pub comments: Vec<Comment>,
+}
+
+/// What a comment is on: a timeline entry, or a card in History.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[serde(tag = "type", content = "id", rename_all = "snake_case")]
+#[ts(export)]
+pub enum CommentTarget {
+    Timeline(i64),
+    Card(i64),
+}
+
+/// The person comments on a timeline entry or a History row. It reaches the agent like an adjustment, and anything
+/// it proposes comes back as a card.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
+#[ts(export)]
+pub struct CommentAdd {
+    #[garde(skip)]
+    pub target: CommentTarget,
+    #[garde(length(min = 1, max = 4000))]
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct Comment {
+    pub id: i64,
+    pub target: CommentTarget,
+    /// What it's on, in a line: the entry's text, or the card's subject.
+    pub on: String,
+    pub text: String,
+    /// The session it went to.
+    pub to: Option<SessionRef>,
+    #[ts(type = "string")]
+    #[schemars(with = "String")]
+    pub created_at: Timestamp,
+    #[ts(type = "string | null")]
+    #[schemars(with = "Option<String>")]
+    pub picked_up_at: Option<Timestamp>,
 }
 
 /// `quietdeck ping`.

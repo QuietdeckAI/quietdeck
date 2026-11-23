@@ -80,6 +80,11 @@ enum Command {
         #[command(subcommand)]
         command: DecisionsCommand,
     },
+    /// Auto-approve rules: list the ones the person granted, or check a card against one.
+    Rules {
+        #[command(subcommand)]
+        command: RulesCommand,
+    },
     /// The triage round: say it's finished, so the runner may wake you again.
     Round {
         #[command(subcommand)]
@@ -142,7 +147,7 @@ enum CardCommand {
         grant: Option<String>,
         /// Try it as an automatic action under `--grant`: the deck checks the rules and, if they allow it, carries it
         /// out without asking. Otherwise it's stored as a normal card.
-        #[arg(long)]
+        #[arg(long, requires = "grant")]
         auto: bool,
     },
     /// Report your recheck of a card.
@@ -179,6 +184,21 @@ struct SessionsArgs {
 enum DecisionsCommand {
     /// Claim every released decision on your cards, with the actions exactly as approved.
     Take,
+}
+
+#[derive(Subcommand)]
+enum RulesCommand {
+    /// Every rule (active, archived and off) and each project's autonomy policy.
+    List,
+    /// Would this card be carried out without the person under this rule? Posts nothing; `card add --auto
+    /// --grant` runs the same check for real.
+    Match {
+        /// The card as JSON (the CardInput shape), or - for stdin.
+        file: String,
+        /// The rule (`g_3` or `3`).
+        #[arg(long)]
+        grant: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -367,6 +387,21 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             let c = Client::connect().await?;
             let r: Vec<Released> = c.post("/api/decisions/take", &serde_json::json!({})).await?;
             print::out(json, &r, |r| print::released(r))
+        }
+        Command::Rules { command: RulesCommand::List } => {
+            let c = Client::connect().await?;
+            let r: quietdeck_types::rules::RulesView = c.get("/api/rules", &[]).await?;
+            print::out(json, &r, print::rules)
+        }
+        Command::Rules { command: RulesCommand::Match { file, grant } } => {
+            let c = Client::connect().await?;
+            let card: CardInput =
+                serde_json::from_str(&read_file_arg(&file)?).map_err(|e| anyhow::anyhow!("the card's JSON: {e}"))?;
+            let req = quietdeck_types::rules::MatchRequest { card, grant_id: parse_id(&grant)? };
+            let r: quietdeck_types::rules::MatchResult = c.post("/api/rules/match", &req).await?;
+            print::out(json, &r, |m| {
+                format!("{} under rule {}: {}", if m.allow { "Allowed" } else { "Denied" }, m.grant_id, m.reason)
+            })
         }
         Command::Round { command: RoundCommand::Done } => {
             let c = Client::connect().await?;

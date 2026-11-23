@@ -1,32 +1,57 @@
-import { useMutation } from "@tanstack/react-query";
-import { ArrowDown, Clock, ExternalLink, MoreHorizontal, RotateCcw } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  ArrowDown,
+  Clock,
+  ExternalLink,
+  MoreHorizontal,
+  RotateCcw,
+} from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/input";
 import { actionLine, sessionName } from "@/components/actionText";
+import { RuleEditor, ruleFromCard } from "@/components/RuleEditor";
 import { api } from "@/lib/api";
 import { when } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Approving } from "@/types/Approving";
 import type { Card } from "@/types/Card";
 import type { DecisionKind } from "@/types/DecisionKind";
+import type { RuleOffer } from "@/types/RuleOffer";
 
 export type Draft = { text: string; include: boolean };
 
 /** What the card's state means to him, when it isn't simply waiting for a decision. */
-function stateLine(card: Card): { text: string; tone: "quiet" | "danger" } | null {
+function stateLine(
+  card: Card,
+): { text: string; tone: "quiet" | "danger" } | null {
   switch (card.state) {
     case "revising":
-      return { text: `${card.posted_by.tab} is revising this after your note.`, tone: "quiet" };
+      return {
+        text: `${card.posted_by.tab} is revising this after your note.`,
+        tone: "quiet",
+      };
     case "approved":
       return { text: "Approved. Waiting to run.", tone: "quiet" };
     case "executing":
       return { text: "Running.", tone: "quiet" };
     case "handed_off":
-      return { text: `With ${card.posted_by.tab}${card.handoff_reason ? `: ${card.handoff_reason}` : "."}`, tone: "quiet" };
+      return {
+        text: `With ${card.posted_by.tab}${card.handoff_reason ? `: ${card.handoff_reason}` : "."}`,
+        tone: "quiet",
+      };
     case "failed": {
       const err = card.action_records.find((a) => a.status === "failed")?.error;
-      return { text: err ? `Failed: ${err}` : "An action failed.", tone: "danger" };
+      return {
+        text: err ? `Failed: ${err}` : "An action failed.",
+        tone: "danger",
+      };
     }
     default:
       return null;
@@ -34,7 +59,10 @@ function stateLine(card: Card): { text: string; tone: "quiet" | "danger" } | nul
 }
 
 export function decide(card: Card, kind: DecisionKind) {
-  return api<Card>(`/api/cards/${card.id}/decide`, { method: "POST", body: { version: card.version, kind } });
+  return api<Card>(`/api/cards/${card.id}/decide`, {
+    method: "POST",
+    body: { version: card.version, kind },
+  });
 }
 
 export function ActionCard({
@@ -42,18 +70,39 @@ export function ActionCard({
   draft,
   onDraft,
   suggestion,
+  offer,
 }: {
   card: Card;
   draft: Draft;
   onDraft: (d: Draft) => void;
   suggestion?: boolean;
+  offer?: RuleOffer;
 }) {
+  const qc = useQueryClient();
+  const [ruling, setRuling] = useState(false);
+  const move = useMutation({
+    mutationFn: async (o: RuleOffer) => {
+      for (const id of o.rule_ids) {
+        await api(`/api/rules/${id}/status`, {
+          method: "POST",
+          body: { status: "active", move_to: o.to },
+        });
+      }
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["rules"] });
+      void qc.invalidateQueries({ queryKey: ["inbox"] });
+    },
+  });
   const later = useMutation({ mutationFn: () => decide(card, "later") });
   const down = useMutation({ mutationFn: () => decide(card, "move_down") });
-  const retry = useMutation({ mutationFn: () => api<Approving>(`/api/cards/${card.id}/retry`, { method: "POST" }) });
+  const retry = useMutation({
+    mutationFn: () =>
+      api<Approving>(`/api/cards/${card.id}/retry`, { method: "POST" }),
+  });
   const status = stateLine(card);
   const decidable = card.state === "open" || card.state === "handed_off";
-  const error = later.error ?? down.error ?? retry.error;
+  const error = later.error ?? down.error ?? retry.error ?? move.error;
 
   return (
     <article
@@ -66,11 +115,16 @@ export function ActionCard({
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-baseline gap-x-2 text-sm text-neutral">
-            <span className="text-muted">{card.sender?.name ?? card.sender?.address ?? card.account}</span>
+            <span className="text-muted">
+              {card.sender?.name ?? card.sender?.address ?? card.account}
+            </span>
             <span aria-hidden>·</span>
             <span>{card.account}</span>
             <span aria-hidden>·</span>
-            <time className="font-mono text-xs" dateTime={card.last_message_at ?? card.prepared_at}>
+            <time
+              className="font-mono text-xs"
+              dateTime={card.last_message_at ?? card.prepared_at}
+            >
               {when(card.last_message_at ?? card.prepared_at)}
             </time>
           </p>
@@ -92,11 +146,17 @@ export function ActionCard({
                 </a>
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem disabled={!decidable} onSelect={() => later.mutate()}>
+            <DropdownMenuItem
+              disabled={!decidable}
+              onSelect={() => later.mutate()}
+            >
               <Clock /> Leave for later
             </DropdownMenuItem>
             {!suggestion && (
-              <DropdownMenuItem disabled={!decidable} onSelect={() => down.mutate()}>
+              <DropdownMenuItem
+                disabled={!decidable}
+                onSelect={() => down.mutate()}
+              >
                 <ArrowDown /> Move to the archive list
               </DropdownMenuItem>
             )}
@@ -125,13 +185,24 @@ export function ActionCard({
             return (
               <li key={i} className="text-sm">
                 <span className="text-ink">{line.verb}</span>
-                {record && record.status !== "pending" && record.status !== "released" && (
-                  <span className={cn("ml-2 text-xs", record.status === "failed" ? "text-danger" : "text-neutral")}>
-                    {record.status}
-                  </span>
-                )}
+                {record &&
+                  record.status !== "pending" &&
+                  record.status !== "released" && (
+                    <span
+                      className={cn(
+                        "ml-2 text-xs",
+                        record.status === "failed"
+                          ? "text-danger"
+                          : "text-neutral",
+                      )}
+                    >
+                      {record.status}
+                    </span>
+                  )}
                 {line.detail && (
-                  <p className="mt-0.5 line-clamp-3 whitespace-pre-line text-neutral">{line.detail.replace(/\n\s*\n/g, "\n")}</p>
+                  <p className="mt-0.5 line-clamp-3 whitespace-pre-line text-neutral">
+                    {line.detail.replace(/\n\s*\n/g, "\n")}
+                  </p>
                 )}
               </li>
             );
@@ -141,15 +212,65 @@ export function ActionCard({
 
       <p className="mt-3 text-xs text-neutral">
         {card.reason}
-        {card.rule_ref && <> · {card.rule_ref}</>} · from {sessionName(card.posted_by)}
+        {card.rule_ref && <> · {card.rule_ref}</>} · from{" "}
+        {sessionName(card.posted_by)}
       </p>
 
+      {offer && decidable && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted">
+          <span className="min-w-0 flex-1">
+            {offer.rule_ids.length === 1
+              ? "A rule"
+              : `${offer.rule_ids.length} rules`}{" "}
+            for {offer.to.tab} were archived when its earlier session closed.
+          </span>
+          <Button
+            size="sm"
+            loading={move.isPending}
+            onClick={() => move.mutate(offer)}
+          >
+            Move {offer.rule_ids.length === 1 ? "it" : "them"} to this session
+          </Button>
+        </div>
+      )}
+
+      {!suggestion && decidable && card.actions.length > 0 && !ruling && (
+        <Button
+          variant="quiet"
+          size="sm"
+          className="mt-2 -ml-3"
+          onClick={() => setRuling(true)}
+        >
+          Auto-approve matches in future
+        </Button>
+      )}
+      {ruling && (
+        <div className="mt-3 rounded-md border border-rule bg-paper p-3 sm:p-4">
+          <RuleEditor
+            initial={ruleFromCard(card)}
+            onDone={() => setRuling(false)}
+          />
+        </div>
+      )}
+
       {status && (
-        <p className={cn("mt-3 text-sm", status.tone === "danger" ? "text-danger" : "text-muted")}>{status.text}</p>
+        <p
+          className={cn(
+            "mt-3 text-sm",
+            status.tone === "danger" ? "text-danger" : "text-muted",
+          )}
+        >
+          {status.text}
+        </p>
       )}
 
       {card.state === "failed" ? (
-        <Button className="mt-3" size="sm" loading={retry.isPending} onClick={() => retry.mutate()}>
+        <Button
+          className="mt-3"
+          size="sm"
+          loading={retry.isPending}
+          onClick={() => retry.mutate()}
+        >
           <RotateCcw aria-hidden /> Retry
         </Button>
       ) : (
@@ -161,7 +282,9 @@ export function ActionCard({
                   type="checkbox"
                   className="size-4 accent-(--color-accent)"
                   checked={draft.include}
-                  onChange={(e) => onDraft({ ...draft, include: e.target.checked })}
+                  onChange={(e) =>
+                    onDraft({ ...draft, include: e.target.checked })
+                  }
                 />
                 Include this suggestion in Approve All
               </label>

@@ -166,6 +166,7 @@ pub enum Changed {
     Sessions,
     Settings,
     Nodes,
+    Rules,
     /// The stream fell behind: refetch everything.
     All,
 }

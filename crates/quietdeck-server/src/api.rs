@@ -11,7 +11,8 @@ use quietdeck_types::decision::{ApproveAll, Approving, Decide, Inbox, ReportRece
 use quietdeck_types::directory::{NodeRow, SessionRow, SessionStart, SessionStarted, SessionTarget, WhoHas};
 use quietdeck_types::node::Delivered;
 use quietdeck_types::relay::MsgSend;
-use quietdeck_types::timeline::{History, TimelineAdd, TimelineEntry};
+use quietdeck_types::rules::{MatchRequest, MatchResult, Rule, RuleInput, RuleStatusChange, RulesView};
+use quietdeck_types::timeline::{Comment, CommentAdd, History, TimelineAdd, TimelineEntry};
 use serde::Deserialize;
 
 use crate::auth::{Agent, Authed, Owner};
@@ -53,6 +54,57 @@ pub fn router() -> Router<AppState> {
         .route("/api/cards/{id}/retry", post(retry))
         .route("/api/actions/{id}/start", post(action_start))
         .route("/api/actions/report", post(actions_report))
+        .route("/api/rules", get(rules_view).post(rule_create))
+        .route("/api/rules/match", post(rules_match))
+        .route("/api/rules/{id}", axum::routing::put(rule_update))
+        .route("/api/rules/{id}/status", post(rule_status))
+        .route("/api/comments", post(comment_add))
+}
+
+async fn rules_view(State(state): State<AppState>, Authed(_): Authed) -> AppResult<Json<RulesView>> {
+    Ok(Json(ops::rules_view(&state).await?))
+}
+
+async fn rule_create(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(input): Json<RuleInput>,
+) -> AppResult<Json<Rule>> {
+    Ok(Json(ops::rule_create(&state, input).await?))
+}
+
+async fn rule_update(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(id): Path<i64>,
+    Json(input): Json<RuleInput>,
+) -> AppResult<Json<Rule>> {
+    Ok(Json(ops::rule_update(&state, id, input).await?))
+}
+
+async fn rule_status(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(id): Path<i64>,
+    Json(change): Json<RuleStatusChange>,
+) -> AppResult<Json<Rule>> {
+    Ok(Json(ops::rule_status(&state, id, change).await?))
+}
+
+async fn rules_match(
+    State(state): State<AppState>,
+    Agent(_): Agent,
+    Json(req): Json<MatchRequest>,
+) -> AppResult<Json<MatchResult>> {
+    Ok(Json(ops::rules_match(&state, req).await?))
+}
+
+async fn comment_add(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(c): Json<CommentAdd>,
+) -> AppResult<Json<Comment>> {
+    Ok(Json(ops::comment_add(&state, c).await?))
 }
 
 async fn info(State(state): State<AppState>, Authed(caller): Authed) -> AppResult<Json<DeckInfo>> {

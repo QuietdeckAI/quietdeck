@@ -400,13 +400,27 @@ async fn stop_unstarted(db: &Db, card_id: i64) -> anyhow::Result<()> {
 /// A card's state from its current version's actions, after something changed them (a release, a start, a report,
 /// Stop). Cards that are revising, left for later or finished keep their state.
 pub fn state_from_actions(current: CardState, actions: &[ActionRecord]) -> CardState {
+    let has = |s: ActionStatus| actions.iter().any(|a| a.status == s);
+    if current == CardState::Automatic {
+        // An automatic card stays out of the Inbox while it runs and once it's done. A failure, or Stop before it
+        // ran, brings it to the Inbox like any card.
+        if has(ActionStatus::Started) || has(ActionStatus::Released) {
+            return current;
+        }
+        if has(ActionStatus::Failed) {
+            return CardState::Failed;
+        }
+        if has(ActionStatus::Stopped) || has(ActionStatus::Pending) {
+            return CardState::Open;
+        }
+        return current;
+    }
     if !matches!(
         current,
         CardState::Approved | CardState::HandedOff | CardState::Executing | CardState::Failed | CardState::Open
     ) {
         return current;
     }
-    let has = |s: ActionStatus| actions.iter().any(|a| a.status == s);
     if has(ActionStatus::Started) {
         CardState::Executing
     } else if has(ActionStatus::Released) {

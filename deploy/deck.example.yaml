@@ -16,7 +16,8 @@ tasks: { label: "My Tasks" }
 # Pings a week before the Rules screen shows you're over. Nothing is ever suppressed.
 pings: { weekly_budget: 10 }
 
-# Who cleans up a lease when no runner is connected and the holder doesn't answer.
+# Who cleans up a lease when no runner is connected and the holder doesn't answer, and who gets your comments on
+# the deck's own timeline entries: your triage tab.
 leases:
   fallback: { node: server, tab: email triage }
 

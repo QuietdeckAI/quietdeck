@@ -208,6 +208,50 @@ sessions:
 A session that went away because herdr stopped or the machine shut down shows as not running, without a close time:
 herdr sends no close events while it stops. A tab someone closed, or an agent that exited, shows how it ended.
 
+## Automatic actions: rules and policies
+
+Nothing happens without your approval until you grant it, rule by rule. Two things must both allow an automatic
+action:
+
+- **A rule you made**, on the **Rules** screen or from a card's **Auto-approve matches in future**. A rule says what
+  counts as a match and which actions it allows. **The agent judges** (the default) leaves the match to the triage
+  agent, for mail from the sender domains you list and no others. **Exact match** has the deck check the account, the
+  sender's address or domain and, optionally, the subject. It needs the message to have passed DMARC or DKIM, which
+  the agent reports on the card, so a forged sender can't use it. A rule that forwards to, resumes or starts a session
+  names that session.
+- **The project's policy**, in `deck.yaml`. A project is a set of working directories, or of accounts for actions on
+  no session, with the action types it allows automatically:
+
+  ```yaml
+  projects:
+    app:      { dirs: [~/code/app], automatic: [forward, archive, story, task] }
+    personal: { accounts: [personal], automatic: [forward, archive] }
+  ```
+
+  A forward or resume is judged by the project of the session it goes to, and anything else by its account's
+  project. Replies are in no policy unless you add them. The Rules screen shows the policies; change them in
+  `deck.yaml` and restart the deck.
+
+The triage agent asks for an automatic action when it posts a card:
+
+```sh
+quietdeck rules list
+quietdeck card add card.json --auto --grant g_3
+```
+
+Allowed, the card is carried out at once, by the runner or the agent, and appears in the Inbox's timeline of
+automatic actions. Approve All marks those seen and moves them to History. Denied, it waits for you like any card,
+with the reason. `quietdeck rules match card.json --grant g_3` gives the same answer without posting anything.
+Automatic resumes and new sessions are limited to 3 in any 24 hours.
+
+A rule tied to a session is archived when that session ends: its tab closes or the agent exits (not when herdr
+restarts or a machine sleeps). The timeline says so. When a later card forwards to a new session in the same tab, it
+offers to move those rules there. Archived rules can also be restored from the Rules screen.
+
+Every timeline entry and History row takes a **Comment**. It goes to the session behind it (the agent that posted the
+card, or the fallback tab in `deck.yaml` for the deck's own entries) as a message. A session that isn't running gets
+it from `quietdeck history --since last` on its next round, and anything it proposes comes back as a card.
+
 ## Session summaries
 
 Each node keeps a short, current summary of every Claude Code and Codex session on its machine, and sends it to the

@@ -90,9 +90,9 @@ pub struct LeasesConfig {
     pub fallback: Option<FallbackHolder>,
 }
 
+/// Also where comments on the deck's own timeline entries go.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-#[expect(dead_code, reason = "leases read it (build step 8)")]
 pub struct FallbackHolder {
     pub node: String,
     pub tab: String,
