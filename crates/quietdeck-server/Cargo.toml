@@ -1,5 +1,5 @@
 [package]
-name = "quietdeck-deck"
+name = "quietdeck-server"
 description = "Quietdeck's deck: the REST API, MCP endpoint, node WebSocket, webhook receiver and web app"
 version.workspace = true
 edition.workspace = true
@@ -8,7 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "quietdeck-deck"
+name = "quietdeck-server"
 path = "src/main.rs"
 
 [dependencies]

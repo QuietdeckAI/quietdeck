@@ -20,6 +20,8 @@ pub enum TimelineKind {
     LeaseCleanupOverdue,
     FilterWithoutProposal,
     SessionStarted,
+    SessionResumed,
+    SessionClosed,
     WebhookDelivered,
     GrantArchived,
 }

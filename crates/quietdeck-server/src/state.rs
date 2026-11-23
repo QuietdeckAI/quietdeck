@@ -31,7 +31,6 @@ impl AppState {
     }
 
     #[cfg(test)]
-    #[expect(dead_code, reason = "the API tests use it (build step 2)")]
     pub async fn for_tests() -> AppState {
         let db = crate::db::memory().await;
         let signing_key = crate::auth::signing_key(&db).await.unwrap();

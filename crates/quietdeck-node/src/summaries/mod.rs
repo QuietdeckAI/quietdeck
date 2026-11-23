@@ -35,6 +35,8 @@ pub mod schedule;
 pub mod state;
 pub mod transcript;
 
+pub use transcript::set_auto_continue_message;
+
 #[cfg(test)]
 mod tests;
 

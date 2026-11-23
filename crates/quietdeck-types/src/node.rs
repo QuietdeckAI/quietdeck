@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::action::{ActionType, SessionRef};
-use crate::directory::{SessionInfo, TranscriptHit};
+use crate::directory::{SessionEnd, SessionInfo, SessionResume, SessionStart, TranscriptHit};
 use crate::relay::Delivery;
 use crate::summary::{Catchup, SummaryEvent};
 use crate::usage::{AccountUsage, UsageCommand};
@@ -39,11 +39,14 @@ pub enum NodeFrame {
     Session {
         session: SessionInfo,
     },
-    /// The tab closed or the agent's process exited.
+    /// The tab closed or the agent's process exited (herdr's close events). A session that goes away without one
+    /// (herdr stopped) comes as a `session` with `running: false` instead.
     SessionClosed {
         session_id: String,
         #[ts(type = "string")]
         at: Timestamp,
+        #[serde(default)]
+        ended: Option<SessionEnd>,
     },
     Summary {
         event: SummaryEvent,
@@ -134,6 +137,18 @@ pub enum DeckRequest {
     },
     Usage {
         command: UsageCommand,
+    },
+    /// Start a session in a new tab. Answers [`crate::directory::SessionStarted`].
+    StartSession {
+        spec: SessionStart,
+    },
+    /// Resume a session in a new tab. Answers [`crate::directory::SessionStarted`].
+    ResumeSession {
+        spec: SessionResume,
+    },
+    /// Close a running session's tab.
+    CloseSession {
+        session_id: String,
     },
 }
 

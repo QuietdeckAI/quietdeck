@@ -3,7 +3,7 @@
 
 node:
   name: laptop                                  # this machine's name on the deck
-  deck: https://quietdeck.example.com        # the deck's URL (QUIETDECK_PUBLIC_URL)
+  deck: https://quietdeck.example.com           # the deck's URL (QUIETDECK_PUBLIC_URL)
   token_file: ~/.config/quietdeck/node-token    # mode 600; or token_env: QUIETDECK_NODE_TOKEN
 
 # Session summaries (headless Claude Code on this machine). Every key is optional; these are the defaults.
@@ -22,7 +22,13 @@ usage:
   codex: true
   serve_coordinator_api: true   # keeps the account rotator's plugin working
 
-# Programs the node runs, if they aren't on PATH as herdr and claude.
+# Sessions the deck starts or resumes here. Permission flags come only from this file, never from the deck.
+sessions:
+  claude_args: []                 # e.g. [--dangerously-skip-permissions]
+  codex_args: [--no-daemon]
+
+# Programs the node runs, if they aren't on PATH under these names.
 programs:
   herdr: herdr
   claude: claude
+  codex: codex

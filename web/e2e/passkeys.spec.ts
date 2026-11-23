@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { type CDPSession, expect, type Page, test } from "@playwright/test";
 
-const deckBin = process.env.QUIETDECK_DECK_BIN ?? new URL("../../target/release/quietdeck-deck", import.meta.url).pathname;
+const deckBin = process.env.QUIETDECK_SERVER_BIN ?? new URL("../../target/release/quietdeck-server", import.meta.url).pathname;
 
 function setupCode(): string {
   return execFileSync(deckBin, ["setup-code"], {

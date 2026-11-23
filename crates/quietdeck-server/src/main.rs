@@ -1,8 +1,9 @@
-//! quietdeck-deck: the deck. `serve` runs it; the other subcommands are for setting it up.
+//! quietdeck-server: the deck. `serve` runs it; the other subcommands are for setting it up.
 
 mod api;
 mod auth;
 mod config;
+mod control;
 mod db;
 mod error;
 mod events;
@@ -32,7 +33,7 @@ use crate::config::{DataEnv, DeckConfig, Env};
 use crate::state::AppState;
 
 #[derive(Parser)]
-#[command(name = "quietdeck-deck", version, about = "Quietdeck's deck")]
+#[command(name = "quietdeck-server", version, about = "Quietdeck's server: the deck, its web app and API")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

@@ -55,6 +55,11 @@ enum Command {
     },
     /// Every session on every machine. `sessions search <words>` searches their summaries.
     Sessions(SessionsArgs),
+    /// One session: resume it.
+    Session {
+        #[command(subcommand)]
+        command: SessionCommand,
+    },
     /// Who has this ID? Summaries on the deck, raw transcripts on every connected machine.
     WhoHas {
         /// The ID or words to look for.
@@ -95,7 +100,7 @@ enum Command {
 
 #[derive(Subcommand)]
 enum NodeCommand {
-    /// Enrol this machine with a one-time code from the deck's Settings (or `quietdeck-deck enrolment-code`).
+    /// Enrol this machine with a one-time code from the deck's Settings (or `quietdeck-server enrolment-code`).
     Enroll {
         code: String,
         /// The deck's URL.
@@ -198,6 +203,15 @@ enum ActionsCommand {
 enum SessionsCommand {
     /// Search every session's summaries.
     Search { words: Vec<String> },
+}
+
+#[derive(Subcommand)]
+enum SessionCommand {
+    /// Resume a session that isn't running, in a new tab on its machine, in its own working directory.
+    Resume {
+        /// tab@machine, a tab name (the session that ended last in it), or a session ID.
+        session: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -311,6 +325,12 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 }
             };
             print::out(json, &rows, |rs| rs.iter().map(print::session_line).collect::<Vec<_>>().join("\n"))
+        }
+        Command::Session { command: SessionCommand::Resume { session } } => {
+            let c = Client::connect().await?;
+            let r: quietdeck_types::directory::SessionStarted =
+                c.post("/api/sessions/resume", &quietdeck_types::directory::SessionTarget { session }).await?;
+            print::out(json, &r, |r| format!("Resumed {} on {} (pane {}).", r.tab, r.node, r.pane))
         }
         Command::WhoHas { query } => {
             let c = Client::connect().await?;

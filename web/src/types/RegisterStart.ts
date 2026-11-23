@@ -2,7 +2,7 @@
 
 /**
  * Start registering a passkey. Signed in, it adds one for this device; with a setup code (from
- * `quietdeck-deck setup-code`), it registers the first one, or recovers a deck whose passkeys are all lost.
+ * `quietdeck-server setup-code`), it registers the first one, or recovers a deck whose passkeys are all lost.
  */
 export type RegisterStart = { setup_code: string | null, 
 /**

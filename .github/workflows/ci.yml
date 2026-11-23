@@ -51,7 +51,7 @@ jobs:
       - run: pnpm build
       # The browser tests run the real deck, with this build embedded.
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release --locked -p quietdeck-deck
+      - run: cargo build --release --locked -p quietdeck-server
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm exec playwright test
       - uses: actions/upload-artifact@v4
@@ -65,4 +65,4 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -f deploy/Dockerfile -t quietdeck-deck .
+      - run: docker build -f deploy/Dockerfile -t quietdeck .

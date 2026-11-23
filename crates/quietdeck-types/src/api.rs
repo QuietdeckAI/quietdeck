@@ -101,7 +101,7 @@ pub struct AuthState {
 }
 
 /// Start registering a passkey. Signed in, it adds one for this device; with a setup code (from
-/// `quietdeck-deck setup-code`), it registers the first one, or recovers a deck whose passkeys are all lost.
+/// `quietdeck-server setup-code`), it registers the first one, or recovers a deck whose passkeys are all lost.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
 #[ts(export)]
 pub struct RegisterStart {

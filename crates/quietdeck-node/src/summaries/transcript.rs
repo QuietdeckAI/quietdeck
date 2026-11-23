@@ -15,7 +15,7 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 use std::time::SystemTime;
 
 use jiff::Timestamp;
@@ -310,10 +310,41 @@ static PEER_BODY: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap()
 });
 
+/// herdr's default `[session.auto_continue]` message. `{reason}` is why the session stopped.
+pub const HERDR_AUTO_CONTINUE: &str = "Please continue where you left off. ({reason})";
+static AUTO_CONTINUE: OnceLock<String> = OnceLock::new();
+
+/// The auto-continue message herdr is configured with, when it isn't the default. Set once, at the node's start.
+pub fn set_auto_continue_message(template: &str) {
+    let _ = AUTO_CONTINUE.set(template.to_string());
+}
+
+/// herdr types its auto-continue message into a session after a restart or a usage limit, the way a person would.
+/// It isn't a person's message: it holds nothing worth summarising and doesn't move the catch-up's anchor.
+pub fn is_auto_continue(text: &str) -> bool {
+    let template = AUTO_CONTINUE.get().map(String::as_str).unwrap_or(HERDR_AUTO_CONTINUE);
+    matches_template(template, text.trim())
+}
+
+fn matches_template(template: &str, text: &str) -> bool {
+    match template.split_once("{reason}") {
+        Some((before, after)) => {
+            text.len() > before.len() + after.len()
+                && text.starts_with(before)
+                && text.ends_with(after)
+                && !text[before.len()..text.len() - after.len()].contains('\n')
+        }
+        None => text == template.trim(),
+    }
+}
+
 fn user_text(text: &str) -> Option<String> {
     let cleaned = SYSTEM_REMINDER.replace_all(text, "");
     let text = cleaned.trim();
     if text.is_empty() || text.starts_with("This session is being continued from a previous conversation") {
+        return None;
+    }
+    if is_auto_continue(text) {
         return None;
     }
     if ["<local-command-", "<artifact-content-authored-by-others", "<task-notification"]
@@ -514,7 +545,10 @@ pub fn codex_record(record: &Value) -> Vec<(Kind, String)> {
             match p.get("role").and_then(Value::as_str) {
                 Some("user") => {
                     let text = text.trim();
-                    if !text.is_empty() && !CODEX_SKIP_PREFIXES.iter().any(|x| text.starts_with(x)) {
+                    if !text.is_empty()
+                        && !CODEX_SKIP_PREFIXES.iter().any(|x| text.starts_with(x))
+                        && !is_auto_continue(text)
+                    {
                         out.push((Kind::Human, text.to_owned()));
                     }
                 }
@@ -612,6 +646,27 @@ mod tests {
         assert_eq!(short(&json!("abcdef"), 4), "abc…");
         assert_eq!(short(&json!("a  b\n c"), 10), "a b c");
         assert_eq!(short(&json!("ééé"), 3), "ééé");
+    }
+
+    #[test]
+    fn herdrs_auto_continue_prompt_is_not_a_persons_message() {
+        for reason in ["herdr restarted", "the computer restarted", "your usage limit reset"] {
+            let text = format!("Please continue where you left off. ({reason})");
+            assert!(kinds(json!({"type": "user", "message": {"content": text}})).is_empty(), "{reason}");
+            let codex = json!({"type": "response_item", "payload": {"type": "message", "role": "user",
+                "content": [{"type": "input_text", "text": text}]}});
+            assert_eq!(codex_record(&codex), vec![]);
+        }
+        let person = "Please continue where you left off. (herdr restarted) And then fix the build.";
+        assert_eq!(
+            kinds(json!({"type": "user", "message": {"content": person}})).len(),
+            1,
+            "a person's words after it"
+        );
+        assert!(matches_template("Keep going ({reason}), thanks", "Keep going (herdr restarted), thanks"));
+        assert!(!matches_template("Keep going ({reason}), thanks", "Keep going (), thanks"));
+        assert!(matches_template("carry on", "carry on"));
+        assert!(!matches_template(HERDR_AUTO_CONTINUE, "Please continue where you left off. (a\nb)"));
     }
 
     #[test]

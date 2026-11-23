@@ -1,6 +1,6 @@
 //! The automatic-actions timeline.
 
-use quietdeck_types::timeline::{EntrySource, TimelineAdd, TimelineEntry};
+use quietdeck_types::timeline::{EntrySource, TimelineAdd, TimelineEntry, TimelineKind};
 
 use crate::db::{Db, enum_str, from_json, json, now_ms, parse_enum, ts, ts_opt};
 
@@ -46,6 +46,25 @@ pub async fn add(db: &Db, source: EntrySource, e: &TimelineAdd) -> anyhow::Resul
     .bind(&e.text)
     .bind(e.lease_id)
     .bind(now_ms())
+    .execute(db)
+    .await?
+    .last_insert_rowid();
+    get(db, id).await?.ok_or_else(|| anyhow::anyhow!("timeline entry {id} vanished"))
+}
+
+/// Something the person did that History should show, already read so it never waits on the Inbox: a session
+/// started, resumed or closed from the deck.
+pub async fn log(db: &Db, kind: TimelineKind, refs: &[String], text: &str) -> anyhow::Result<TimelineEntry> {
+    let now = now_ms();
+    let id = sqlx::query(
+        "INSERT INTO timeline_entries (kind, source, refs, text, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(enum_str(&kind))
+    .bind(enum_str(&EntrySource::Deck))
+    .bind(json(&refs))
+    .bind(text)
+    .bind(now)
+    .bind(now)
     .execute(db)
     .await?
     .last_insert_rowid();

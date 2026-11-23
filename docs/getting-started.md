@@ -45,7 +45,7 @@ That puts `quietdeck-node` and `quietdeck` in `~/.cargo/bin`. Do this on every m
 The deck is one container. Build its image from the repository root (it builds the web app too):
 
 ```sh
-docker build -f deploy/Dockerfile -t quietdeck-deck .
+docker build -f deploy/Dockerfile -t quietdeck .
 ```
 
 Then run it, with port 8080 published only on the host's loopback address, and give it an HTTPS name. With Tailscale
@@ -57,7 +57,7 @@ docker run -d --name quietdeck --restart unless-stopped \
   -v quietdeck-data:/data \
   -e QUIETDECK_PUBLIC_URL=https://<deck address> \
   -p 127.0.0.1:8080:8080 \
-  quietdeck-deck
+  quietdeck
 tailscale serve --bg --https=443 http://127.0.0.1:8080
 ```
 
@@ -81,7 +81,7 @@ Nothing on the deck works until you've signed in, and you sign in only with a pa
 setup code from the deck's container:
 
 ```sh
-docker exec quietdeck /quietdeck-deck setup-code
+docker exec quietdeck quietdeck-server setup-code
 ```
 
 Open `https://<deck address>` in your browser, enter the code, name the device and create the passkey (Touch ID,
@@ -97,7 +97,7 @@ Each machine gets its own node token, from a one-time code. In the deck's **Sett
 shows the whole command with a fresh code. Or get a code on the deck's host:
 
 ```sh
-docker exec quietdeck /quietdeck-deck enrolment-code
+docker exec quietdeck quietdeck-server enrolment-code
 ```
 
 The code is good for 15 minutes, once. On the machine you're enrolling:
@@ -178,6 +178,35 @@ quietdeck who-has <some ID you've worked on>
 It finds the sessions that mention it: in their summaries on the deck, and in the raw transcripts on every connected
 machine. Transcripts never leave their machine; the deck only learns which sessions mention the ID and when they
 last did. Each machine searches its newest transcripts first, for a few seconds, and says how far back it got.
+
+## Starting, resuming and closing sessions
+
+The node follows herdr's event stream, so a session's status reaches the deck within a second of changing. A herdr
+without that stream (before its client contract) still works: the node reads its agents every 3 seconds instead,
+and says so once in its log.
+
+From the deck you can start a session on any connected machine, resume one that isn't running, and close one. Each
+opens or closes a herdr tab without moving anything on that machine's screen, and History lists it. From a shell or
+an agent:
+
+```sh
+quietdeck session resume <tab>@<machine>
+```
+
+That resumes the session in a new tab with its old name, in its own working directory. With a tab name that has had
+several sessions, it picks the one that ended last; a session ID picks exactly one.
+
+Permission flags such as `--dangerously-skip-permissions` never come from the deck. Each machine sets the arguments
+its sessions start with in the `sessions:` section of `node.yaml`:
+
+```yaml
+sessions:
+  claude_args: [--dangerously-skip-permissions]
+  codex_args: [--no-daemon]
+```
+
+A session that went away because herdr stopped or the machine shut down shows as not running, without a close time:
+herdr sends no close events while it stops. A tab someone closed, or an agent that exited, shows how it ended.
 
 ## Session summaries
 

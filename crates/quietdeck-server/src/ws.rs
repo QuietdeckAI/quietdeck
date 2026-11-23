@@ -126,7 +126,9 @@ async fn handle(state: &AppState, node: &str, reg: &crate::hub::Registration, fr
         NodeFrame::Hello { .. } => Ok(()),
         NodeFrame::Sessions { sessions } => sessions::replace_snapshot(&state.db, &state.config, node, &sessions).await,
         NodeFrame::Session { session } => sessions::upsert(&state.db, &state.config, node, &session).await,
-        NodeFrame::SessionClosed { session_id, at } => sessions::closed(&state.db, node, &session_id, at).await,
+        NodeFrame::SessionClosed { session_id, at, ended } => {
+            sessions::closed(&state.db, node, &session_id, at, ended.as_ref()).await
+        }
         NodeFrame::Summary { event } => sessions::apply_summary(&state.db, node, &event).await,
         NodeFrame::Usage { .. } => Ok(()),
         NodeFrame::Response { id, reply } => {

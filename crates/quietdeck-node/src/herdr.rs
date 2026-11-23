@@ -1,9 +1,15 @@
-//! herdr through its CLI (argv, never a shell): the agents on this machine, with their tabs.
+//! herdr on this machine: the agents and their tabs (`agent list`), its event stream (`events.subscribe` on its
+//! socket), and tabs started, resumed and closed for the deck. Commands run through herdr's CLI (argv, never a
+//! shell). The client contract this follows is in herdr's socket-api docs ("Client contract").
+
+use std::path::{Path, PathBuf};
 
 use jiff::Timestamp;
-use quietdeck_types::directory::SessionInfo;
+use quietdeck_types::directory::{SessionEnd, SessionInfo};
 use quietdeck_types::{AgentKind, AgentStatus};
 use serde::Deserialize;
+use serde_json::Value;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 #[derive(Debug, Deserialize)]
 struct Envelope<T> {
@@ -72,17 +78,21 @@ pub async fn snapshot(herdr: &str) -> anyhow::Result<Vec<SessionInfo>> {
     Ok(join(agents, tabs))
 }
 
+fn agent_kind(s: Option<&str>) -> Option<AgentKind> {
+    match s {
+        Some("claude") => Some(AgentKind::Claude),
+        Some("codex") => Some(AgentKind::Codex),
+        _ => None,
+    }
+}
+
 fn join(agents: AgentList, tabs: TabList) -> Vec<SessionInfo> {
     agents
         .agents
         .into_iter()
         .filter_map(|a| {
             let session_id = a.agent_session.and_then(|s| s.value)?;
-            let agent = match a.agent.as_deref() {
-                Some("claude") => AgentKind::Claude,
-                Some("codex") => AgentKind::Codex,
-                _ => return None,
-            };
+            let agent = agent_kind(a.agent.as_deref())?;
             let tab = a.tab_label.or_else(|| {
                 let id = a.tab_id.as_deref()?;
                 tabs.tabs.iter().find(|t| t.tab_id == id).and_then(|t| t.label.clone())
@@ -106,6 +116,289 @@ fn join(agents: AgentList, tabs: TabList) -> Vec<SessionInfo> {
         .collect()
 }
 
+/// The auto-continue message herdr's config.toml sets, if any (`[session.auto_continue] message`).
+pub fn auto_continue_message() -> Option<String> {
+    let dir =
+        std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|| crate::config::home().join(".config"));
+    let text = std::fs::read_to_string(dir.join("herdr/config.toml")).ok()?;
+    auto_continue_from(&text)
+}
+
+fn auto_continue_from(toml_text: &str) -> Option<String> {
+    let table: toml::Table = toml::from_str(toml_text).ok()?;
+    table.get("session")?.get("auto_continue")?.get("message")?.as_str().map(str::to_string)
+}
+
+// ---------------------------------------------------------------- events
+
+/// What the node subscribes to. Status changes for every pane, the two close events, and the lifecycle events after
+/// which `agent list` reads differently (a new agent, its session ID arriving, a rename or a move).
+const SUBSCRIPTIONS: &[&str] = &[
+    "pane.agent_status_changed",
+    "tab.closed",
+    "pane.agent_exited",
+    "pane.agent_detected",
+    "pane.updated",
+    "pane.moved",
+    "tab.renamed",
+    "tab.moved",
+];
+
+/// One line of herdr's event stream, as the node uses it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Event {
+    Status {
+        pane: String,
+        status: AgentStatus,
+    },
+    /// A tab closed, with the sessions of the agents that were running in it.
+    TabClosed {
+        sessions: Vec<String>,
+    },
+    AgentExited {
+        session: Option<String>,
+        end: SessionEnd,
+    },
+    /// A pane's record changed. The node re-reads `agent list` when it shows something the node doesn't know yet.
+    PaneUpdated {
+        pane: String,
+        session: Option<String>,
+        tab: Option<String>,
+        cwd: Option<String>,
+    },
+    /// Something `agent list` shows differently now.
+    Changed,
+    /// An event the node doesn't use, including new kinds herdr may add.
+    Other,
+}
+
+fn session_value(v: &Value) -> Option<String> {
+    v.get("agent_session")?.get("value")?.as_str().map(str::to_string)
+}
+
+fn str_field(v: &Value, key: &str) -> Option<String> {
+    v.get(key).and_then(Value::as_str).map(str::to_string)
+}
+
+pub fn parse_event(line: &str) -> Event {
+    let Ok(v) = serde_json::from_str::<Value>(line) else { return Event::Other };
+    let data = v.get("data").cloned().unwrap_or(Value::Null);
+    match v.get("event").and_then(Value::as_str).unwrap_or_default() {
+        "pane.agent_status_changed" => match str_field(&data, "pane_id") {
+            Some(pane) => {
+                Event::Status { pane, status: parse_status(data.get("agent_status").and_then(Value::as_str)) }
+            }
+            None => Event::Other,
+        },
+        "tab_closed" => Event::TabClosed {
+            sessions: data
+                .get("agents")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(session_value).collect())
+                .unwrap_or_default(),
+        },
+        "pane_agent_exited" => Event::AgentExited {
+            session: session_value(&data),
+            end: SessionEnd::AgentExited {
+                final_status: data.get("final_status").and_then(Value::as_str).map(|s| parse_status(Some(s))),
+                pane_exited: data.get("pane_exited").and_then(Value::as_bool).unwrap_or(false),
+            },
+        },
+        "pane_updated" => {
+            let pane = data.get("pane").cloned().unwrap_or(Value::Null);
+            match str_field(&pane, "pane_id") {
+                Some(id) => Event::PaneUpdated {
+                    pane: id,
+                    session: session_value(&pane),
+                    tab: str_field(&pane, "tab_label"),
+                    cwd: str_field(&pane, "cwd"),
+                },
+                None => Event::Changed,
+            }
+        }
+        "pane_agent_detected" | "pane_moved" | "tab_renamed" | "tab_moved" => Event::Changed,
+        _ => Event::Other,
+    }
+}
+
+/// herdr's API socket, as `herdr status server` reports it (it knows named sessions and dev builds).
+pub async fn socket_path(herdr: &str) -> anyhow::Result<PathBuf> {
+    let out = tokio::process::Command::new(herdr).args(["status", "server"]).output().await?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.lines()
+        .find_map(|l| l.strip_prefix("socket:").map(|p| PathBuf::from(p.trim())))
+        .filter(|_| text.lines().any(|l| l.trim() == "status: running"))
+        .ok_or_else(|| anyhow::anyhow!("herdr isn't running"))
+}
+
+/// Why a subscription ended.
+#[derive(Debug, thiserror::Error)]
+pub enum StreamError {
+    /// This herdr can't subscribe to every pane's status (before herdr's client contract).
+    #[error("herdr refused the subscription: {0}")]
+    Refused(String),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
+
+/// An open subscription: call [`Subscription::next`] for each event.
+pub struct Subscription {
+    lines: tokio::io::Lines<BufReader<tokio::net::UnixStream>>,
+}
+
+impl Subscription {
+    pub async fn open(socket: &Path) -> Result<Subscription, StreamError> {
+        let mut stream = tokio::net::UnixStream::connect(socket).await?;
+        let subs: Vec<Value> = SUBSCRIPTIONS.iter().map(|t| serde_json::json!({"type": t})).collect();
+        let req = serde_json::json!({"id": "quietdeck-node", "method": "events.subscribe",
+            "params": {"subscriptions": subs}});
+        stream.write_all(format!("{req}\n").as_bytes()).await?;
+        let mut lines = BufReader::new(stream).lines();
+        let first = lines.next_line().await?.ok_or_else(|| StreamError::Refused("herdr hung up".into()))?;
+        let v: Value = serde_json::from_str(&first).unwrap_or(Value::Null);
+        if v.pointer("/result/type").and_then(Value::as_str) == Some("subscription_started") {
+            return Ok(Subscription { lines });
+        }
+        let msg = v.pointer("/error/message").and_then(Value::as_str).unwrap_or(&first).to_string();
+        Err(StreamError::Refused(msg))
+    }
+
+    /// The next event, or None when herdr closed the stream (it stopped, restarted or handed off).
+    pub async fn next(&mut self) -> Result<Option<Event>, StreamError> {
+        Ok(self.lines.next_line().await?.map(|l| parse_event(&l)))
+    }
+}
+
+// ---------------------------------------------------------------- starting, resuming and closing
+
+/// A tab herdr created with an agent in it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Created {
+    pub tab_id: String,
+    pub pane_id: String,
+    pub session_id: Option<String>,
+}
+
+/// `herdr tab create --agent …`: answers once the agent takes input, or with herdr's own message for a start-up
+/// screen (the tab stays open for the person) or a failed start.
+pub async fn create_tab(herdr: &str, args: &[String]) -> Result<Created, String> {
+    let run = tokio::process::Command::new(herdr).args(args).output();
+    let out = tokio::time::timeout(std::time::Duration::from_secs(120), run)
+        .await
+        .map_err(|_| "herdr didn't answer within two minutes".to_string())?
+        .map_err(|e| format!("running {herdr}: {e}"))?;
+    if !out.status.success() {
+        return Err(herdr_error(&out.stderr));
+    }
+    let v: Value = serde_json::from_slice(&out.stdout).map_err(|e| format!("reading herdr's answer: {e}"))?;
+    let tab_id = v.pointer("/result/tab/tab_id").and_then(Value::as_str);
+    let pane_id = v.pointer("/result/root_pane/pane_id").and_then(Value::as_str);
+    match (tab_id, pane_id) {
+        (Some(t), Some(p)) => Ok(Created {
+            tab_id: t.into(),
+            pane_id: p.into(),
+            session_id: v.pointer("/result/agent").and_then(session_value),
+        }),
+        _ => Err("herdr's answer named no tab or pane".into()),
+    }
+}
+
+/// herdr's error as a sentence: its message, and for a failed start the agent's last line (`No conversation found
+/// with session ID: …`).
+fn herdr_error(stderr: &[u8]) -> String {
+    let text = String::from_utf8_lossy(stderr).trim().to_string();
+    let Ok(v) = serde_json::from_str::<Value>(&text) else { return text };
+    let Some(err) = v.get("error") else { return text };
+    let message = err.get("message").and_then(Value::as_str).unwrap_or(&text).to_string();
+    let last = err
+        .get("output")
+        .and_then(Value::as_array)
+        .and_then(|lines| lines.iter().rev().filter_map(Value::as_str).map(str::trim).find(|l| !l.is_empty()));
+    match last {
+        Some(l) if err.get("code").and_then(Value::as_str) == Some("agent_start_failed") => format!("{message}: {l}"),
+        _ => message,
+    }
+}
+
+/// The argv for a new session's tab.
+pub fn start_args(
+    agent: AgentKind,
+    tab: &str,
+    cwd: &str,
+    name: &str,
+    model: Option<&str>,
+    effort: Option<&str>,
+    agent_args: &[String],
+) -> Vec<String> {
+    let mut a = tab_create(agent, tab, cwd, agent_args);
+    match agent {
+        AgentKind::Claude => {
+            a.extend(["--name".into(), name.into()]);
+            if let Some(m) = model {
+                a.extend(["--model".into(), m.into()]);
+            }
+            if let Some(e) = effort {
+                a.extend(["--effort".into(), e.into()]);
+            }
+        }
+        AgentKind::Codex => {
+            if let Some(m) = model {
+                a.extend(["-m".into(), m.into()]);
+            }
+            if let Some(e) = effort {
+                a.extend(["-c".into(), format!("model_reasoning_effort={e}")]);
+            }
+        }
+    }
+    a
+}
+
+/// The argv that resumes a session in a new tab.
+pub fn resume_args(agent: AgentKind, tab: &str, cwd: &str, session_id: &str, agent_args: &[String]) -> Vec<String> {
+    let mut a = tab_create(agent, tab, cwd, agent_args);
+    match agent {
+        AgentKind::Claude => a.extend(["--name".into(), tab.into(), "--resume".into(), session_id.into()]),
+        AgentKind::Codex => a.extend(["resume".into(), session_id.into()]),
+    }
+    a
+}
+
+fn tab_create(agent: AgentKind, tab: &str, cwd: &str, agent_args: &[String]) -> Vec<String> {
+    let kind = match agent {
+        AgentKind::Claude => "claude",
+        AgentKind::Codex => "codex",
+    };
+    let mut a: Vec<String> =
+        ["tab", "create", "--label", tab, "--cwd", cwd, "--no-focus", "--agent", kind, "--"].map(String::from).into();
+    a.extend(agent_args.iter().cloned());
+    a
+}
+
+/// Close the tab a running session is in.
+pub async fn close_session(herdr: &str, session_id: &str) -> Result<(), String> {
+    let agents: AgentList = run_json(herdr, &["agent", "list"]).await.map_err(|e| e.to_string())?;
+    let tab = agents
+        .agents
+        .iter()
+        .find(|a| a.agent_session.as_ref().and_then(|s| s.value.as_deref()) == Some(session_id))
+        .and_then(|a| a.tab_id.clone())
+        .ok_or_else(|| format!("session {session_id} isn't running on this machine"))?;
+    let out = tokio::process::Command::new(herdr)
+        .args(["tab", "close", &tab])
+        .output()
+        .await
+        .map_err(|e| format!("running {herdr}: {e}"))?;
+    if out.status.success() { Ok(()) } else { Err(herdr_error(&out.stderr)) }
+}
+
+/// Whether a program can be run: a path that exists, or a name found on PATH.
+pub fn installed(program: &str) -> bool {
+    if program.contains('/') {
+        return Path::new(program).is_file();
+    }
+    std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|d| d.join(program).is_file()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,5 +419,90 @@ mod tests {
         assert_eq!(s.len(), 1, "no session ID, or not an agent: left out");
         assert_eq!(s[0].tab.as_deref(), Some("billing"));
         assert_eq!(s[0].status, AgentStatus::Blocked);
+    }
+
+    // Lines as a herdr server sent them (patched branch, 23 November 2026).
+    #[test]
+    fn herdr_events_parse() {
+        let status = r#"{"data":{"agent":"claude","agent_status":"working","pane_id":"w1:p3","tab_id":"w1:t3","tab_label":"qd probe","workspace_id":"w1"},"event":"pane.agent_status_changed"}"#;
+        assert_eq!(parse_event(status), Event::Status { pane: "w1:p3".into(), status: AgentStatus::Working });
+
+        let closed = r#"{"data":{"agents":[{"agent":"claude","agent_session":{"agent":"claude","kind":"id","source":"herdr:claude","value":"4f20528f"},"name":"qd-probe","pane_id":"w1:p3"}],"label":"qd probe","tab_id":"w1:t3","type":"tab_closed","workspace_id":"w1"},"event":"tab_closed"}"#;
+        assert_eq!(parse_event(closed), Event::TabClosed { sessions: vec!["4f20528f".into()] });
+
+        let exited = r#"{"data":{"agent":"claude","final_status":"done","name":"qd-probe","pane_exited":false,"pane_id":"w1:p2","tab_id":"w1:t2","tab_label":"qd probe","type":"pane_agent_exited","workspace_id":"w1"},"event":"pane_agent_exited"}"#;
+        assert_eq!(
+            parse_event(exited),
+            Event::AgentExited {
+                session: None,
+                end: SessionEnd::AgentExited { final_status: Some(AgentStatus::Done), pane_exited: false }
+            }
+        );
+
+        let updated = r#"{"data":{"pane":{"agent":"claude","agent_session":{"agent":"claude","kind":"id","source":"herdr:claude","value":"4f20528f"},"agent_status":"idle","cwd":"/Users/x/code/q","pane_id":"w1:p3","tab_id":"w1:t3","tab_label":"qd probe","workspace_id":"w1"},"type":"pane_updated"},"event":"pane_updated"}"#;
+        assert_eq!(
+            parse_event(updated),
+            Event::PaneUpdated {
+                pane: "w1:p3".into(),
+                session: Some("4f20528f".into()),
+                tab: Some("qd probe".into()),
+                cwd: Some("/Users/x/code/q".into())
+            }
+        );
+        assert_eq!(parse_event(r#"{"event":"tab_renamed","data":{"type":"tab_renamed"}}"#), Event::Changed);
+        assert_eq!(parse_event(r#"{"event":"some_new_kind","data":{}}"#), Event::Other);
+        assert_eq!(parse_event("not json"), Event::Other);
+    }
+
+    #[test]
+    fn starts_and_resumes_take_the_agents_own_flags() {
+        let claude = start_args(
+            AgentKind::Claude,
+            "esign cert",
+            "/w",
+            "esign cert",
+            Some("opus"),
+            Some("high"),
+            &["--dangerously-skip-permissions".into()],
+        );
+        assert_eq!(
+            claude.join(" "),
+            "tab create --label esign cert --cwd /w --no-focus --agent claude -- --dangerously-skip-permissions \
+             --name esign cert --model opus --effort high"
+        );
+        let codex = start_args(AgentKind::Codex, "b", "/w", "b", Some("gpt-6"), Some("xhigh"), &["--no-daemon".into()]);
+        assert_eq!(
+            codex.join(" "),
+            "tab create --label b --cwd /w --no-focus --agent codex -- --no-daemon -m gpt-6 -c model_reasoning_effort=xhigh"
+        );
+        assert_eq!(
+            resume_args(AgentKind::Claude, "b", "/w", "s1", &[]).join(" "),
+            "tab create --label b --cwd /w --no-focus --agent claude -- --name b --resume s1"
+        );
+        assert_eq!(
+            resume_args(AgentKind::Codex, "b", "/w", "s1", &["--no-daemon".into()]).join(" "),
+            "tab create --label b --cwd /w --no-focus --agent codex -- --no-daemon resume s1"
+        );
+    }
+
+    #[test]
+    fn the_auto_continue_message_comes_from_herdrs_config() {
+        let text =
+            "[ui]\nconfirm_close = true\n\n[session.auto_continue]\nenabled = true\nmessage = \"Go on ({reason})\"\n";
+        assert_eq!(auto_continue_from(text).as_deref(), Some("Go on ({reason})"));
+        assert_eq!(auto_continue_from("[session.auto_continue]\nenabled = true\n"), None);
+        assert_eq!(auto_continue_from("not = = toml"), None);
+    }
+
+    #[test]
+    fn herdr_errors_read_as_sentences() {
+        let screen = br#"{"error":{"code":"agent_startup_screen","message":"qd probe needs you in herdr: the agent stopped at the folder trust prompt while starting. The tab is left open.","pane_id":"w1:p2","screen":"trust","tab_closed":false,"tab_id":"w1:t2"},"id":"cli:tab:create"}"#;
+        assert!(herdr_error(screen).starts_with("qd probe needs you in herdr: the agent stopped at the folder trust"));
+        let failed = br#"{"error":{"code":"agent_start_failed","message":"agent process exited before becoming interactive","output":["claude --resume 0000","No conversation found with session ID: 0000",""],"tab_closed":true},"id":"cli:tab:create"}"#;
+        assert_eq!(
+            herdr_error(failed),
+            "agent process exited before becoming interactive: No conversation found with session ID: 0000"
+        );
+        assert_eq!(herdr_error(b"plain words"), "plain words");
     }
 }

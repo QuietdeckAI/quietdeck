@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use quietdeck_types::SessionRef;
 use quietdeck_types::api::Caller;
 use quietdeck_types::card::{ActionReport, CardInput, CardResolution};
+use quietdeck_types::directory::SessionTarget;
 use quietdeck_types::relay::MsgSend;
 use quietdeck_types::timeline::TimelineAdd;
 
@@ -207,6 +208,24 @@ impl Mcp {
         let r = async {
             self.caller(&ctx).await?;
             Ok::<_, AppError>(sessions::search(&self.state.db, &self.state.hub, &args.q, 20).await?)
+        }
+        .await;
+        tool_try!(r)
+    }
+
+    #[tool(description = "Resume a session that isn't running, in a new tab on its machine, in its own working \
+        directory. `session` is tab@machine, a tab name, or a session ID; with a tab name, the one that ended last.")]
+    async fn session_resume(
+        &self,
+        Parameters(target): Parameters<SessionTarget>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async {
+            let caller = self.caller(&ctx).await?;
+            if matches!(caller, Caller::Node { .. }) {
+                return Err(AppError::Forbidden("a node can't start sessions".into()));
+            }
+            crate::control::resume(&self.state, &caller, target).await
         }
         .await;
         tool_try!(r)

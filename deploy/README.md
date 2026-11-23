@@ -13,8 +13,9 @@ Quietdeck has two parts to deploy:
 
 - Built from `deploy/Dockerfile` (multi-stage: the Rust binary, then a distroless `nonroot` image holding that one
   binary, with the web app built in a Node stage and embedded). Build from the repository root:
-  `docker build -f deploy/Dockerfile -t quietdeck-deck .`
-- Binary `/quietdeck-deck`, entrypoint `["/quietdeck-deck", "serve"]`. Runs as uid and gid 65532.
+  `docker build -f deploy/Dockerfile -t quietdeck .`
+- Binary `quietdeck-server` (in `/usr/local/bin`, so `docker exec <container> quietdeck-server …` finds it), entrypoint
+  `["/usr/local/bin/quietdeck-server", "serve"]`. Runs as uid and gid 65532.
 - Push it to your own registry as `<registry>/quietdeck/deck:<git short SHA>`. No public image is published yet.
 - Root filesystem can be read-only. The deck writes only to the data volume and `/tmp` (an `emptyDir` is enough).
 
@@ -51,7 +52,7 @@ volume read-write and run as gid 65532. On a ReadWriteOnce volume, the backup po
 | `QUIETDECK_PUBLIC_URL` | yes | | The app's one stable HTTPS origin, e.g. `https://quietdeck.example.com`: a host name, not an IP address. It's the passkey relying party (its host is the RP ID), the only origin whose pages may act with the sign-in cookie, the origin push links open, and the URL nodes connect to. Changing it means registering passkeys and installing the web app again. `http://localhost:<port>` works for a deck on your own machine |
 | `QUIETDECK_HOOKS_PUBLIC_URL` | yes, for webhooks | | The public origin of the hooks port through the tunnel, e.g. `https://hooks.example.com`. Used to print endpoint URLs |
 | `QUIETDECK_VAPID_PUBLIC_KEY` | yes, for push | | Web Push VAPID public key, base64url (uncompressed P-256 point) |
-| `QUIETDECK_VAPID_PRIVATE_KEY` | yes, for push | | The matching private key, base64url. A secret. Generate a pair with `quietdeck-deck vapid-keys` |
+| `QUIETDECK_VAPID_PRIVATE_KEY` | yes, for push | | The matching private key, base64url. A secret. Generate a pair with `quietdeck-server vapid-keys` |
 | `QUIETDECK_VAPID_SUBJECT` | yes, for push | | `mailto:you@example.com` or an `https://` URL. Apple rejects localhost and `.local` addresses |
 | `QUIETDECK_DATA_DIR` | no | `/data` | |
 | `QUIETDECK_CONFIG` | no | `$QUIETDECK_DATA_DIR/deck.yaml` | |
@@ -65,7 +66,7 @@ every device's push subscription.
 
 ### Sign-in
 
-Passkeys only. The first passkey is registered with a one-time setup code (`quietdeck-deck setup-code`, run in the
+Passkeys only. The first passkey is registered with a one-time setup code (`quietdeck-server setup-code`, run in the
 container, valid 15 minutes, once); later ones are added in Settings while signed in. A browser session is an
 `HttpOnly`, `SameSite=Strict` cookie (`Secure` when the public URL is HTTPS) that ends after 30 days without use, and
 the deck refuses any state-changing request with it whose `Origin` isn't `QUIETDECK_PUBLIC_URL`. Nodes and the CLI

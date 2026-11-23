@@ -50,6 +50,104 @@ pub struct SessionRow {
     /// The node is connected now. When it isn't, everything above is as last pushed.
     pub node_online: bool,
     pub links: Vec<SessionLink>,
+    /// When herdr reported it closed. A session that isn't running and has no `closed_at` went away without a close
+    /// event: herdr stopped, or the machine shut down.
+    #[ts(type = "string | null")]
+    #[schemars(with = "Option<String>")]
+    pub closed_at: Option<Timestamp>,
+    pub ended: Option<SessionEnd>,
+}
+
+/// How a session ended, from herdr's close events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[serde(tag = "how", rename_all = "snake_case")]
+#[ts(export)]
+pub enum SessionEnd {
+    /// Its tab closed: a person closed it, or the last process in it exited.
+    TabClosed,
+    /// The agent's process exited. `pane_exited` is false when it went back to the pane's shell and the tab stayed.
+    AgentExited { final_status: Option<AgentStatus>, pane_exited: bool },
+}
+
+fn no_leading_dash(value: &str, _: &()) -> garde::Result {
+    // Model and effort become arguments to the agent's command line: a value that starts with `-` would be read as
+    // a flag, and the permission flags come only from node.yaml.
+    if value.starts_with('-') || value.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(garde::Error::new("can't start with - or hold spaces"));
+    }
+    Ok(())
+}
+
+fn printable(value: &str, _: &()) -> garde::Result {
+    if value.chars().any(char::is_control) {
+        return Err(garde::Error::new("can't hold control characters"));
+    }
+    Ok(())
+}
+
+/// Start a session on a machine (flow 3.15). The node checks it, then runs `herdr tab create --agent`, with the
+/// agent's permission flags from its own node.yaml.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
+#[ts(export)]
+pub struct SessionStart {
+    /// The machine (node) it runs on.
+    #[garde(length(min = 1, max = 100))]
+    pub on: String,
+    #[garde(length(min = 1, max = 100), custom(printable))]
+    pub tab: String,
+    /// The session's name. The tab name when absent.
+    #[serde(default)]
+    #[garde(inner(length(min = 1, max = 100), custom(printable)))]
+    pub name: Option<String>,
+    #[garde(skip)]
+    pub agent: AgentKind,
+    /// The agent's own default when absent.
+    #[serde(default)]
+    #[garde(inner(length(min = 1, max = 100), custom(no_leading_dash)))]
+    pub model: Option<String>,
+    #[serde(default)]
+    #[garde(inner(length(min = 1, max = 40), custom(no_leading_dash)))]
+    pub effort: Option<String>,
+    /// The working directory on that machine. `~/` is that machine's home.
+    #[garde(length(min = 1, max = 1000), custom(printable))]
+    pub cwd: String,
+    /// Sent with `herdr agent prompt` once the agent is ready.
+    #[serde(default)]
+    #[garde(inner(length(min = 1, max = 20000)))]
+    pub prompt: Option<String>,
+}
+
+/// Resume a session that isn't running, in a new tab on its machine, from what the deck knows about it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct SessionResume {
+    pub session_id: String,
+    pub agent: AgentKind,
+    /// Its last tab name; the new tab takes it.
+    pub tab: Option<String>,
+    pub cwd: String,
+}
+
+/// `quietdeck session resume <session>` and the registry's Resume and Close: a session by address (`tab@machine`,
+/// a tab name, or a session ID).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
+#[ts(export)]
+pub struct SessionTarget {
+    #[garde(length(min = 1, max = 300))]
+    pub session: String,
+}
+
+/// What the node did for a start or a resume.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct SessionStarted {
+    pub node: String,
+    pub tab: String,
+    pub pane: String,
+    /// Absent when the agent hadn't reported it yet (Codex before its first turn without `/status`).
+    pub session_id: Option<String>,
+    /// Set when the session started but its initial prompt couldn't be sent.
+    pub prompt_error: Option<String>,
 }
 
 impl SessionRow {

@@ -4,9 +4,9 @@ import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
 // The tests run a real deck: the release binary with the built web app embedded (`pnpm build`, then
-// `cargo build --release -p quietdeck-deck`), on a fresh data directory, signed in by passkey only.
+// `cargo build --release -p quietdeck-server`), on a fresh data directory, signed in by passkey only.
 const port = Number(process.env.QUIETDECK_E2E_PORT ?? 18990);
-const deckBin = process.env.QUIETDECK_DECK_BIN ?? path.resolve(import.meta.dirname, "../target/release/quietdeck-deck");
+const deckBin = process.env.QUIETDECK_SERVER_BIN ?? path.resolve(import.meta.dirname, "../target/release/quietdeck-server");
 const dataDir = process.env.QUIETDECK_E2E_DATA ?? mkdtempSync(path.join(tmpdir(), "quietdeck-e2e-"));
 process.env.QUIETDECK_E2E_DATA = dataDir;
 const baseURL = `http://localhost:${port}`;

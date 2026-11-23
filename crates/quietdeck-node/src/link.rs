@@ -213,6 +213,18 @@ async fn answer(node: &Node, request: DeckRequest) -> Reply {
             },
             None => Reply::Err { error: "summaries are off on this node".into() },
         },
+        DeckRequest::StartSession { spec } => match crate::control::start(node, spec).await {
+            Ok(started) => Reply::ok(&started),
+            Err(error) => Reply::Err { error },
+        },
+        DeckRequest::ResumeSession { spec } => match crate::control::resume(node, spec).await {
+            Ok(started) => Reply::ok(&started),
+            Err(error) => Reply::Err { error },
+        },
+        DeckRequest::CloseSession { session_id } => match crate::control::close(node, &session_id).await {
+            Ok(()) => Reply::ok(&serde_json::json!({})),
+            Err(error) => Reply::Err { error },
+        },
         DeckRequest::Usage { command } => match &node.usage {
             Some(u) => match u.command(command).await {
                 Ok(()) => Reply::ok(&serde_json::json!({})),

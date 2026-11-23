@@ -2,11 +2,13 @@
 
 use jiff::Timestamp;
 use quietdeck_types::AgentStatus;
-use quietdeck_types::directory::{HitSource, LinkKind, LinkState, SessionInfo, SessionLink, SessionRow, WhoHasHit};
+use quietdeck_types::directory::{
+    HitSource, LinkKind, LinkState, SessionEnd, SessionInfo, SessionLink, SessionRow, WhoHasHit,
+};
 use quietdeck_types::summary::{SummaryEvent, SummaryPeriod, SummaryRecord};
 
 use crate::config::DeckConfig;
-use crate::db::{Db, enum_str, json, now_ms, parse_enum, ts, ts_opt};
+use crate::db::{Db, enum_str, from_json, json, now_ms, parse_enum, ts, ts_opt};
 
 #[derive(sqlx::FromRow)]
 struct Row {
@@ -27,10 +29,12 @@ struct Row {
     page: Option<String>,
     last_activity: Option<i64>,
     pushed_at: i64,
+    closed_at: Option<i64>,
+    ended: Option<String>,
 }
 
 const COLUMNS: &str = "node, session_id, agent, workspace, tab, pane, cwd, project, status, status_changed_at, \
-    resume_command, running, sentence, paragraph, page, last_activity, pushed_at";
+    resume_command, running, sentence, paragraph, page, last_activity, pushed_at, closed_at, ended";
 
 impl Row {
     fn into_row(self, node_online: bool, links: Vec<SessionLink>) -> anyhow::Result<SessionRow> {
@@ -56,6 +60,8 @@ impl Row {
             pushed_at: ts(self.pushed_at),
             node_online,
             links,
+            closed_at: ts_opt(self.closed_at),
+            ended: self.ended.as_deref().map(from_json).transpose()?,
         })
     }
 }
@@ -83,6 +89,7 @@ pub async fn upsert(db: &Db, config: &DeckConfig, node: &str, s: &SessionInfo) -
            status = excluded.status, status_changed_at = excluded.status_changed_at, \
            resume_command = excluded.resume_command, running = excluded.running, pushed_at = excluded.pushed_at, \
            closed_at = CASE WHEN excluded.running = 1 THEN NULL ELSE sessions.closed_at END, \
+           ended = CASE WHEN excluded.running = 1 THEN NULL ELSE sessions.ended END, \
            blocked_since = CASE WHEN excluded.status = 'blocked' \
              THEN COALESCE(sessions.blocked_since, excluded.blocked_since) ELSE NULL END",
     )
@@ -132,12 +139,19 @@ pub async fn replace_snapshot(
     Ok(())
 }
 
-pub async fn closed(db: &Db, node: &str, session_id: &str, at: Timestamp) -> anyhow::Result<()> {
+pub async fn closed(
+    db: &Db,
+    node: &str,
+    session_id: &str,
+    at: Timestamp,
+    ended: Option<&SessionEnd>,
+) -> anyhow::Result<()> {
     sqlx::query(
-        "UPDATE sessions SET running = 0, closed_at = ?, status = 'unknown', blocked_since = NULL \
+        "UPDATE sessions SET running = 0, closed_at = ?, ended = ?, status = 'unknown', blocked_since = NULL \
          WHERE node = ? AND session_id = ?",
     )
     .bind(at.as_millisecond())
+    .bind(ended.map(json))
     .bind(node)
     .bind(session_id)
     .execute(db)
@@ -307,7 +321,7 @@ pub async fn list(db: &Db, hub: &crate::hub::Hub, f: &ListFilter) -> anyhow::Res
     hydrate(db, hub, rows).await
 }
 
-#[expect(dead_code, reason = "the Sessions screen uses it (build step 9)")]
+#[cfg_attr(not(test), expect(dead_code, reason = "the Sessions screen uses it (build step 9)"))]
 pub async fn get(db: &Db, hub: &crate::hub::Hub, node: &str, session_id: &str) -> anyhow::Result<Option<SessionRow>> {
     let rows = sqlx::query_as::<_, Row>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM sessions WHERE node = ? AND session_id = ?"
@@ -400,16 +414,25 @@ pub async fn summary_hits(db: &Db, text: &str) -> anyhow::Result<Vec<WhoHasHit>>
 
 /// The running sessions an address (`tab` or `tab@node`) names.
 pub async fn resolve_address(db: &Db, hub: &crate::hub::Hub, address: &str) -> anyhow::Result<Vec<SessionRow>> {
+    resolve(db, hub, address, true).await
+}
+
+/// Sessions that aren't running, by the same addresses, most recently ended first: what Resume looks for.
+pub async fn resolve_ended(db: &Db, hub: &crate::hub::Hub, address: &str) -> anyhow::Result<Vec<SessionRow>> {
+    resolve(db, hub, address, false).await
+}
+
+async fn resolve(db: &Db, hub: &crate::hub::Hub, address: &str, running: bool) -> anyhow::Result<Vec<SessionRow>> {
     let (tab, node) = match address.rsplit_once('@') {
         Some((t, n)) if !t.is_empty() && !n.is_empty() => (t.trim(), Some(n.trim())),
         _ => (address.trim(), None),
     };
-    let mut sql = format!("SELECT {COLUMNS} FROM sessions WHERE running = 1 AND (tab = ? OR session_id = ?)");
+    let mut sql = format!("SELECT {COLUMNS} FROM sessions WHERE running = ? AND (tab = ? OR session_id = ?)");
     if node.is_some() {
         sql.push_str(" AND node = ?");
     }
-    sql.push_str(" ORDER BY status_changed_at DESC");
-    let mut q = sqlx::query_as::<_, Row>(sqlx::AssertSqlSafe(sql)).bind(tab).bind(tab);
+    sql.push_str(" ORDER BY COALESCE(closed_at, status_changed_at) DESC");
+    let mut q = sqlx::query_as::<_, Row>(sqlx::AssertSqlSafe(sql)).bind(running as i64).bind(tab).bind(tab);
     if let Some(n) = node {
         q = q.bind(n);
     }

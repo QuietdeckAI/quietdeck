@@ -19,6 +19,26 @@ pub struct NodeConfig {
     pub usage: UsageConfig,
     #[serde(default)]
     pub programs: Programs,
+    #[serde(default)]
+    pub sessions: SessionsConfig,
+}
+
+/// Sessions the deck starts or resumes on this machine (flow 3.15).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SessionsConfig {
+    /// Arguments every Claude Code session gets, such as `--dangerously-skip-permissions`. Permission flags come
+    /// only from here, never from the deck or a card.
+    pub claude_args: Vec<String>,
+    /// Arguments every Codex session gets. `--no-daemon` keeps a Codex daemon started from another pane from
+    /// reporting this session under that pane.
+    pub codex_args: Vec<String>,
+}
+
+impl Default for SessionsConfig {
+    fn default() -> Self {
+        SessionsConfig { claude_args: vec![], codex_args: vec!["--no-daemon".into()] }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -42,11 +62,12 @@ pub struct NodeSection {
 pub struct Programs {
     pub herdr: String,
     pub claude: String,
+    pub codex: String,
 }
 
 impl Default for Programs {
     fn default() -> Self {
-        Programs { herdr: "herdr".into(), claude: "claude".into() }
+        Programs { herdr: "herdr".into(), claude: "claude".into(), codex: "codex".into() }
     }
 }
 

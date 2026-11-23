@@ -2,7 +2,7 @@
 //! it, except the sign-in screen itself.
 //!
 //! - The first passkey, and recovery when every passkey is lost, take a one-time setup code from the deck's
-//!   container (`quietdeck-deck setup-code`): access to the container is what proves it's the owner.
+//!   container (`quietdeck-server setup-code`): access to the container is what proves it's the owner.
 //! - Signed in, Settings adds a passkey per device.
 //! - A sign-in makes a browser session: a random token in an HttpOnly, SameSite=Strict cookie, stored hashed, good
 //!   while it's used at least once every 30 days.
@@ -184,7 +184,7 @@ async fn setup_code_valid(db: &Db, code: &str) -> Result<String, AppError> {
     match ok {
         Some(_) => Ok(hash),
         None => Err(AppError::Unauthorized(
-            "that setup code is unknown, used or expired: run `quietdeck-deck setup-code` in the deck's container"
+            "that setup code is unknown, used or expired: run `quietdeck-server setup-code` in the deck's container"
                 .into(),
         )),
     }
@@ -202,7 +202,7 @@ async fn register_start(
         None => {
             if owner_from_cookie(&state.db, &parts).await?.is_none() {
                 return Err(AppError::Unauthorized(
-                    "sign in first, or use a setup code from `quietdeck-deck setup-code`".into(),
+                    "sign in first, or use a setup code from `quietdeck-server setup-code`".into(),
                 ));
             }
             None

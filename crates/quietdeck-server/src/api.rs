@@ -8,7 +8,7 @@ use axum::routing::{delete, get, post};
 use quietdeck_types::api::{Caller, Changed, DeckInfo, EnrolRequest, Enrolled, EnrolmentCode, Settings};
 use quietdeck_types::card::{ActionRecord, ActionReport, Card, CardAdded, CardInput, CardResolution, Released};
 use quietdeck_types::decision::{ApproveAll, Approving, Decide, Inbox, ReportReceipt, StopResult, UndoBatch};
-use quietdeck_types::directory::{NodeRow, SessionRow, WhoHas};
+use quietdeck_types::directory::{NodeRow, SessionRow, SessionStart, SessionStarted, SessionTarget, WhoHas};
 use quietdeck_types::node::Delivered;
 use quietdeck_types::relay::MsgSend;
 use quietdeck_types::timeline::{History, TimelineAdd, TimelineEntry};
@@ -16,9 +16,9 @@ use serde::Deserialize;
 
 use crate::auth::{Agent, Authed, Owner};
 use crate::error::{AppError, AppResult, bad};
-use crate::ops;
 use crate::state::AppState;
 use crate::store::{cards, nodes, sessions};
+use crate::{control, ops};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -33,6 +33,9 @@ pub fn router() -> Router<AppState> {
         .route("/api/cards/{id}/resolve", post(resolve_card))
         .route("/api/sessions", get(list_sessions))
         .route("/api/sessions/search", get(search_sessions))
+        .route("/api/sessions/start", post(start_session))
+        .route("/api/sessions/resume", post(resume_session))
+        .route("/api/sessions/close", post(close_session))
         .route("/api/who-has", get(who_has))
         .route("/api/msg", post(msg_send))
         .route("/api/timeline", post(timeline_add))
@@ -125,6 +128,45 @@ async fn search_sessions(
     Query(q): Query<SearchQuery>,
 ) -> AppResult<Json<Vec<SessionRow>>> {
     Ok(Json(sessions::search(&state.db, &state.hub, &q.q, q.limit.unwrap_or(20)).await?))
+}
+
+/// The owner, or one of the owner's sessions: starting or resuming a session is something either may do, like
+/// running herdr. A node's own token can't.
+fn person_or_session(caller: Caller) -> AppResult<Caller> {
+    match caller {
+        Caller::Node { .. } => Err(AppError::Forbidden("a node can't start sessions".into())),
+        c => Ok(c),
+    }
+}
+
+async fn start_session(
+    State(state): State<AppState>,
+    Authed(caller): Authed,
+    Json(spec): Json<SessionStart>,
+) -> AppResult<Json<SessionStarted>> {
+    let caller = person_or_session(caller)?;
+    Ok(Json(control::start(&state, &caller, spec).await?))
+}
+
+async fn resume_session(
+    State(state): State<AppState>,
+    Authed(caller): Authed,
+    Json(target): Json<SessionTarget>,
+) -> AppResult<Json<SessionStarted>> {
+    let caller = person_or_session(caller)?;
+    Ok(Json(control::resume(&state, &caller, target).await?))
+}
+
+/// Closing a session is the owner's click on the registry.
+async fn close_session(
+    State(state): State<AppState>,
+    owner: Owner,
+    Json(target): Json<SessionTarget>,
+) -> AppResult<Json<serde_json::Value>> {
+    let _ = owner;
+    let caller = Caller::Owner { device: String::new() };
+    control::close(&state, &caller, target).await?;
+    Ok(Json(serde_json::json!({})))
 }
 
 async fn who_has(

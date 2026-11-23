@@ -3,6 +3,7 @@
 //! CLI over its local socket.
 
 mod config;
+mod control;
 mod deliver;
 mod herdr;
 mod link;
@@ -11,15 +12,15 @@ mod service;
 mod summaries;
 mod transcripts;
 mod usage;
+mod watch;
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use quietdeck_types::directory::SessionInfo;
 use quietdeck_types::node::{LocalRequest, LocalResponse, NodeFrame};
-use quietdeck_types::summary::{SessionFacts, SessionSignal};
+use quietdeck_types::summary::SessionSignal;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{Mutex, mpsc};
 
@@ -103,6 +104,10 @@ async fn ask_local(req: &LocalRequest) -> anyhow::Result<LocalResponse> {
 
 async fn run() -> anyhow::Result<()> {
     let config = NodeConfig::load(&config::config_path())?;
+    // herdr's auto-continue prompt is typed into a session like a person's message: it isn't one.
+    if let Some(message) = herdr::auto_continue_message() {
+        summaries::set_auto_continue_message(&message);
+    }
     // Check the token now, so a bad one stops the daemon at start instead of looping on reconnects.
     config.node_token()?;
     let home = config::home();
@@ -173,7 +178,7 @@ async fn run() -> anyhow::Result<()> {
         });
     }
 
-    tokio::spawn(watch_sessions(node.clone(), signal_tx));
+    tokio::spawn(watch::run(node.clone(), signal_tx));
     tokio::spawn(link::run(node.clone()));
     let socket = config::socket_path();
     tokio::select! {
@@ -188,45 +193,6 @@ fn rotator_dir(home: &std::path::Path) -> PathBuf {
     std::env::var_os("CLAUDE_ACCOUNT_ROTATOR_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".claude/account-rotator"))
-}
-
-/// herdr's sessions, pushed to the deck and to the summaries module whenever they change.
-async fn watch_sessions(node: Arc<Node>, signals: mpsc::Sender<SessionSignal>) {
-    let mut tick = tokio::time::interval(Duration::from_secs(3));
-    loop {
-        tick.tick().await;
-        let now = match herdr::snapshot(&node.config.programs.herdr).await {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::debug!(error = %e, "herdr snapshot");
-                continue;
-            }
-        };
-        let before = std::mem::replace(&mut *node.sessions.lock().await, now.clone());
-        for s in &now {
-            let old = before.iter().find(|b| b.session_id == s.session_id);
-            if old.is_none_or(|o| o.status != s.status || o.tab != s.tab || o.cwd != s.cwd || o.pane != s.pane) {
-                node.link.push(NodeFrame::Session { session: s.clone() }).await;
-                let facts = SessionFacts {
-                    session_id: s.session_id.clone(),
-                    agent: s.agent,
-                    tab: s.tab.clone(),
-                    cwd: s.cwd.clone(),
-                    transcript: None,
-                };
-                let _ = signals
-                    .send(SessionSignal::Status { session: facts, status: s.status, at: s.status_changed_at })
-                    .await;
-            }
-        }
-        for b in &before {
-            if !now.iter().any(|s| s.session_id == b.session_id) {
-                let at = jiff::Timestamp::now();
-                node.link.push(NodeFrame::SessionClosed { session_id: b.session_id.clone(), at }).await;
-                let _ = signals.send(SessionSignal::Closed { session_id: b.session_id.clone(), at }).await;
-            }
-        }
-    }
 }
 
 async fn shutdown() {
