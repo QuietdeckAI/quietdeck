@@ -1,0 +1,30 @@
+# deck.yaml: the deck's own config, on its data volume (/data/deck.yaml). Copy this file and change it.
+# Nothing here is a credential. Missing means defaults.
+
+# The owner's Tailscale login. QUIETDECK_OWNER_LOGIN overrides it.
+owner: you@example.com
+
+# Account labels. Every card, timeline entry and ping carries one; the Inbox has a tab per account.
+# The addresses themselves live in your own files (the runner's node.yaml, the email-triage skill), not here.
+accounts:
+  - { id: personal, label: Personal }
+  - { id: work, label: Work }
+
+# Board names stories can go to. The runner's and the skill's config map them to your tracker's IDs.
+boards: [engineering, business]
+
+# Your own task board's label.
+tasks: { label: "My Tasks" }
+
+# Pings a week before the Rules screen shows you're over. Nothing is ever suppressed.
+pings: { weekly_budget: 10 }
+
+# Who cleans up a lease when no runner is connected and the holder doesn't answer.
+leases:
+  fallback: { node: server, tab: email triage }
+
+# Autonomy policies: which action types may run automatically (under a rule you granted) per project.
+# A project is a set of working directories, or of accounts for actions with no session.
+projects:
+  app: { dirs: [~/code/app], automatic: [forward, archive, story, task] }
+  personal: { accounts: [personal], automatic: [forward, archive] }

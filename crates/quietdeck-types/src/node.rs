@@ -198,6 +198,8 @@ pub enum LocalRequest {
     Status,
     /// The latest usage readings.
     Usage,
+    /// The one-off import of claude-summarizer's history into the running node's summaries module.
+    ImportSummaries { dir: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -211,6 +213,7 @@ pub enum LocalResponse {
     },
     Status(NodeStatus),
     Usage { accounts: Vec<AccountUsage> },
+    Imported { records: usize },
     Err { error: String },
 }
 

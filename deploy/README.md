@@ -48,7 +48,7 @@ volume read-write and run as gid 65532. On a ReadWriteOnce volume, the backup po
 | Variable | Required | Default | What |
 |---|---|---|---|
 | `QUIETDECK_PUBLIC_URL` | yes | | The app's one stable HTTPS origin on the tailnet, e.g. `https://quietdeck.<tailnet>.ts.net`. It's the passkey relying party (its host is the RP ID), the origin push links open, and the URL nodes connect to. Changing it means registering passkeys and installing the web app again |
-| `QUIETDECK_OWNER_LOGIN` | yes | | The owner's Tailscale login. Browser requests must carry `Tailscale-User-Login` equal to it, and passkeys can be registered only from it. Overrides `owner:` in deck.yaml |
+| `QUIETDECK_OWNER_LOGIN` | yes | | The owner's Tailscale login, or several separated by commas (the same person on two tailnets, when the deck's device is shared into another tailnet). Browser requests must carry `Tailscale-User-Login` equal to one of them, and passkeys can be registered only from them. Overrides `owner:` in deck.yaml |
 | `QUIETDECK_HOOKS_PUBLIC_URL` | yes, for webhooks | | The public origin of the hooks port through the tunnel, e.g. `https://hooks.example.com`. Used to print endpoint URLs |
 | `QUIETDECK_VAPID_PUBLIC_KEY` | yes, for push | | Web Push VAPID public key, base64url (uncompressed P-256 point) |
 | `QUIETDECK_VAPID_PRIVATE_KEY` | yes, for push | | The matching private key, base64url. A secret. Generate a pair with `quietdeck-deck vapid-keys` |

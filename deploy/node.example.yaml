@@ -1,0 +1,28 @@
+# node.yaml: a node's config, at ~/.config/quietdeck/node.yaml. `quietdeck node enroll` writes the first version.
+# It holds references only: every token is in a file or an environment variable, filled by your secrets manager.
+
+node:
+  name: laptop                                  # this machine's name on the deck
+  deck: https://quietdeck.example.ts.net        # the deck's URL (QUIETDECK_PUBLIC_URL)
+  token_file: ~/.config/quietdeck/node-token    # mode 600; or token_env: QUIETDECK_NODE_TOKEN
+
+# Session summaries (headless Claude Code on this machine). Every key is optional; these are the defaults.
+summaries:
+  enabled: true
+  idle_seconds: 60          # summarise a session once it has been idle this long
+  min_gap_seconds: 1800     # at most one summary per session in this window
+  max_concurrent: 2         # summary calls at once on this machine
+  model: sonnet
+  user_name: ""             # your name, for the prompts ("since Sam's last message"); empty means "the user"
+
+# Account usage for this machine's Claude Code and Codex sign-ins. No token leaves the machine.
+usage:
+  enabled: true
+  poll_minutes: 5
+  codex: true
+  serve_coordinator_api: true   # keeps the account rotator's plugin working
+
+# Programs the node runs, if they aren't on PATH as herdr and claude.
+programs:
+  herdr: herdr
+  claude: claude

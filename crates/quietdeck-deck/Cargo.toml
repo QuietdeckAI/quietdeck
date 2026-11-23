@@ -1,0 +1,51 @@
+[package]
+name = "quietdeck-deck"
+description = "Quietdeck's deck: the REST API, MCP endpoint, node WebSocket, webhook receiver and web app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "quietdeck-deck"
+path = "src/main.rs"
+
+[dependencies]
+quietdeck-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+jiff.workspace = true
+garde.workspace = true
+schemars.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+axum = { version = "0.8.9", features = ["ws", "macros"] }
+tower-http = { version = "0.7.1", features = ["trace"] }
+sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros", "json"] }
+rmcp = { version = "3.11.0", features = ["server", "macros", "transport-streamable-http-server"] }
+rust-embed = "8.14.0"
+clap = { version = "4.6.9", features = ["derive", "env"] }
+yaml_serde = "0.10.7"
+sha2 = "0.11"
+hmac = "0.13"
+subtle = "2.6"
+base64 = "0.22"
+rand = "0.9"
+hex = "0.4"
+futures = "0.3"
+async-trait = "0.1"
+anyhow = "1"
+p256 = "0.13.2"
+web-push-native = "0.5.0"
+mime_guess = "2"
+
+[dev-dependencies]
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[lints]
+workspace = true

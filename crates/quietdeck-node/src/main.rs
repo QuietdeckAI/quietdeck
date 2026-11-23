@@ -1,7 +1,226 @@
+//! quietdeck-node: the daemon on each machine that runs agent sessions. It connects out to the deck, watches herdr,
+//! delivers messages to sessions, writes their summaries, monitors account usage, and hands session tokens to the
+//! CLI over its local socket.
+
+mod config;
+mod deliver;
+mod herdr;
+mod link;
+mod local;
 mod summaries;
+mod transcripts;
 mod usage;
 
-fn main() {
-    let _ = summaries::spawn;
-    let _ = usage::spawn;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+use clap::{Parser, Subcommand};
+use quietdeck_types::directory::SessionInfo;
+use quietdeck_types::node::{LocalRequest, LocalResponse, NodeFrame};
+use quietdeck_types::summary::{SessionFacts, SessionSignal};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::{Mutex, mpsc};
+
+use crate::config::NodeConfig;
+
+#[derive(Parser)]
+#[command(name = "quietdeck-node", version, about = "Quietdeck's node daemon")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Run the daemon (the default).
+    Run,
+    /// Import claude-summarizer's history into the running node, once per machine, before its first sweep.
+    ImportSummaries {
+        /// claude-summarizer's output directory (the one holding index.json).
+        dir: PathBuf,
+    },
+}
+
+/// Everything the node's tasks share.
+pub struct Node {
+    pub config: NodeConfig,
+    pub home: PathBuf,
+    pub link: link::Link,
+    pub deliverer: deliver::Deliverer,
+    pub sessions: Mutex<Vec<SessionInfo>>,
+    pub summaries: Option<summaries::SummariesHandle>,
+    pub usage: Option<usage::UsageHandle>,
+    pub tokens: local::TokenCache,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .init();
+    match Cli::parse().command.unwrap_or(Command::Run) {
+        Command::Run => run().await,
+        Command::ImportSummaries { dir } => {
+            let dir = std::fs::canonicalize(&dir).map_err(|e| anyhow::anyhow!("{}: {e}", dir.display()))?;
+            match ask_local(&LocalRequest::ImportSummaries { dir: dir.display().to_string() }).await? {
+                LocalResponse::Imported { records } => {
+                    println!("Imported {records} summary records. The node's sweep runs now.");
+                    Ok(())
+                }
+                LocalResponse::Err { error } => anyhow::bail!(error),
+                other => anyhow::bail!("unexpected answer: {other:?}"),
+            }
+        }
+    }
+}
+
+/// One request to the running node on this machine.
+async fn ask_local(req: &LocalRequest) -> anyhow::Result<LocalResponse> {
+    let path = config::socket_path();
+    let stream = tokio::net::UnixStream::connect(&path)
+        .await
+        .map_err(|e| anyhow::anyhow!("the node isn't running ({}: {e})", path.display()))?;
+    let (r, mut w) = stream.into_split();
+    w.write_all(format!("{}\n", serde_json::to_string(req)?).as_bytes()).await?;
+    let line = BufReader::new(r).lines().next_line().await?.ok_or_else(|| anyhow::anyhow!("the node hung up"))?;
+    Ok(serde_json::from_str(&line)?)
+}
+
+async fn run() -> anyhow::Result<()> {
+    let config = NodeConfig::load(&config::config_path())?;
+    // Check the token now, so a bad one stops the daemon at start instead of looping on reconnects.
+    config.node_token()?;
+    let home = config::home();
+    let state = config::state_dir();
+    std::fs::create_dir_all(&state)?;
+
+    let (signal_tx, signal_rx) = mpsc::channel::<SessionSignal>(256);
+    let (summary_tx, mut summary_rx) = mpsc::channel(256);
+    let summaries = config.summaries.enabled.then(|| {
+        summaries::spawn(
+            config.summaries.clone(),
+            summaries::SummariesEnv {
+                state_dir: state.join("summaries"),
+                home: home.clone(),
+                claude_program: PathBuf::from(&config.programs.claude),
+                coordinator_socket: Some(rotator_dir(&home).join("coordinator.sock")),
+                time_zone: jiff::tz::TimeZone::system().iana_name().unwrap_or("UTC").to_string(),
+            },
+            signal_rx,
+            summary_tx,
+        )
+    });
+    let (usage_tx, mut usage_rx) = mpsc::channel(64);
+    let usage = config.usage.enabled.then(|| {
+        usage::spawn(
+            config.usage.clone(),
+            usage::UsageEnv {
+                rotator_dir: rotator_dir(&home),
+                home: home.clone(),
+                claude_program: PathBuf::from(&config.programs.claude),
+                state_dir: state.join("usage"),
+            },
+            usage_tx,
+        )
+    });
+
+    let node = Arc::new(Node {
+        deliverer: deliver::Deliverer::new(&home, config.programs.herdr.clone()),
+        config,
+        home,
+        link: link::Link::default(),
+        sessions: Mutex::default(),
+        summaries,
+        usage,
+        tokens: local::TokenCache::default(),
+    });
+
+    // Summaries and usage go to the deck as they come.
+    {
+        let node = node.clone();
+        tokio::spawn(async move {
+            while let Some(event) = summary_rx.recv().await {
+                node.link.push(NodeFrame::Summary { event }).await;
+            }
+        });
+    }
+    {
+        let node = node.clone();
+        tokio::spawn(async move {
+            let mut last = None;
+            while let Some(usage::UsageEvent::Snapshot(accounts)) = usage_rx.recv().await {
+                if last.as_ref() == Some(&accounts) {
+                    continue;
+                }
+                node.link.push(NodeFrame::Usage { accounts: accounts.clone(), at: jiff::Timestamp::now() }).await;
+                last = Some(accounts);
+            }
+        });
+    }
+
+    tokio::spawn(watch_sessions(node.clone(), signal_tx));
+    tokio::spawn(link::run(node.clone()));
+    let socket = config::socket_path();
+    tokio::select! {
+        r = local::serve(node.clone(), &socket) => r?,
+        _ = shutdown() => tracing::info!("stopping"),
+    }
+    let _ = std::fs::remove_file(&socket);
+    Ok(())
+}
+
+fn rotator_dir(home: &std::path::Path) -> PathBuf {
+    std::env::var_os("CLAUDE_ACCOUNT_ROTATOR_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".claude/account-rotator"))
+}
+
+/// herdr's sessions, pushed to the deck and to the summaries module whenever they change.
+async fn watch_sessions(node: Arc<Node>, signals: mpsc::Sender<SessionSignal>) {
+    let mut tick = tokio::time::interval(Duration::from_secs(3));
+    loop {
+        tick.tick().await;
+        let now = match herdr::snapshot(&node.config.programs.herdr).await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::debug!(error = %e, "herdr snapshot");
+                continue;
+            }
+        };
+        let before = std::mem::replace(&mut *node.sessions.lock().await, now.clone());
+        for s in &now {
+            let old = before.iter().find(|b| b.session_id == s.session_id);
+            if old.is_none_or(|o| o.status != s.status || o.tab != s.tab || o.cwd != s.cwd || o.pane != s.pane) {
+                node.link.push(NodeFrame::Session { session: s.clone() }).await;
+                let facts = SessionFacts {
+                    session_id: s.session_id.clone(),
+                    agent: s.agent,
+                    tab: s.tab.clone(),
+                    cwd: s.cwd.clone(),
+                    transcript: None,
+                };
+                let _ = signals.send(SessionSignal::Status { session: facts, status: s.status, at: s.status_changed_at }).await;
+            }
+        }
+        for b in &before {
+            if !now.iter().any(|s| s.session_id == b.session_id) {
+                let at = jiff::Timestamp::now();
+                node.link.push(NodeFrame::SessionClosed { session_id: b.session_id.clone(), at }).await;
+                let _ = signals.send(SessionSignal::Closed { session_id: b.session_id.clone(), at }).await;
+            }
+        }
+    }
+}
+
+async fn shutdown() {
+    let term = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut s) => {
+                s.recv().await;
+            }
+            Err(_) => std::future::pending().await,
+        }
+    };
+    tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = term => {} }
 }
