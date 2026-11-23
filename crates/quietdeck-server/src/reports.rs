@@ -253,7 +253,7 @@ pub async fn chat(state: &AppState, c: ReportChat) -> AppResult<Delivered> {
     let body = format!("From the Inbox's chat box: {}", c.text.trim());
     crate::relay::send(&state.db, &state.hub, &to, DeliveryKind::Deck, body).await.map_err(|e| match e {
         DeliveryError::SessionOffline { .. } | DeliveryError::NodeOffline { .. } => {
-            AppError::Offline(format!("{to} isn't running, so it didn't get that: {e}"))
+            AppError::Offline(format!("{to} isn't running, so it didn't get that."))
         }
         DeliveryError::Ambiguous { .. } => AppError::BadRequest(e.to_string()),
         DeliveryError::Failed { .. } => AppError::Unavailable(e.to_string()),
