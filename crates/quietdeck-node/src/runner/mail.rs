@@ -167,6 +167,9 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
         if failed {
             continue;
         }
+        if latest != start {
+            tracing::info!(account = %id, from = %start, to = %latest, new = seen.len(), "mail history moved on");
+        }
         state.history.insert(id.clone(), latest);
         if !seen.is_empty() {
             state.add(id, Some(seen.len() as u64));

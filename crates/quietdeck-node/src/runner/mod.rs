@@ -519,8 +519,9 @@ impl Runner {
                 reasons.join("; "),
                 if n == 1 { "it" } else { "them" }
             );
-            if let Err(e) = self.agent.tell(DeliveryKind::Handoff, body).await {
-                tracing::info!(error = %e, "the agent will find its hand-offs with `decisions take`");
+            match self.agent.tell(DeliveryKind::Handoff, body).await {
+                Ok(()) => tracing::info!(cards = n, "handed cards to the triage agent"),
+                Err(e) => tracing::info!(error = %e, "the agent will find its hand-offs with `decisions take`"),
             }
         }
         if !failures.is_empty() {
@@ -545,6 +546,7 @@ impl Runner {
 
     pub async fn round_done(&self) {
         let mut state = self.mail.lock().await;
+        tracing::info!("the triage agent finished its round");
         state.waiting = false;
         self.wake_if_due(&mut state).await;
         state.save(&self.mail_state_path);
@@ -555,8 +557,10 @@ impl Runner {
             return;
         }
         let Some(text) = state.wakeup_text(&self.cfg) else { return };
+        let counts = text.split('.').next().unwrap_or_default().trim_start_matches("New mail: ").to_string();
         match self.agent.tell(DeliveryKind::Wakeup, text).await {
             Ok(()) => {
+                tracing::info!(%counts, "woke the triage agent for new mail");
                 state.waiting = true;
                 state.pending.clear();
             }
