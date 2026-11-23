@@ -163,6 +163,13 @@ quietdeck sessions
 
 It lists every session on every enrolled machine, with its status, and its one-line summary once the first summary
 is written (see below).
+`--all` adds sessions that have ended, and `--since 180d` (or a date, `--since 2026-05-23`) lists every session
+active since then, running or not. One session's summary, with every earlier one-line update and the command that
+resumes it:
+
+```sh
+quietdeck sessions show <tab>@<machine> --timeline
+```
 
 ```sh
 quietdeck msg send --to <tab>@<machine> "Hello from the other machine"

@@ -34,6 +34,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/cards/{id}/resolve", post(resolve_card))
         .route("/api/sessions", get(list_sessions))
         .route("/api/sessions/search", get(search_sessions))
+        .route("/api/sessions/show", get(show_session))
         .route("/api/sessions/start", post(start_session))
         .route("/api/sessions/resume", post(resume_session))
         .route("/api/sessions/close", post(close_session))
@@ -181,6 +182,21 @@ async fn search_sessions(
     Query(q): Query<SearchQuery>,
 ) -> AppResult<Json<Vec<SessionRow>>> {
     Ok(Json(sessions::search(&state.db, &state.hub, &q.q, q.limit.unwrap_or(20)).await?))
+}
+
+#[derive(Deserialize)]
+pub struct ShowQuery {
+    pub session: String,
+    #[serde(default)]
+    pub timeline: bool,
+}
+
+async fn show_session(
+    State(state): State<AppState>,
+    Authed(_): Authed,
+    Query(q): Query<ShowQuery>,
+) -> AppResult<Json<quietdeck_types::directory::SessionDetail>> {
+    Ok(Json(crate::ops::show_session(&state, &q.session, q.timeline).await?))
 }
 
 /// The owner, or one of the owner's sessions: starting or resuming a session is something either may do, like

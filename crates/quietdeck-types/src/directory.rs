@@ -283,3 +283,11 @@ pub struct NodeRow {
     #[serde(default)]
     pub no_handler: Vec<crate::action::ActionType>,
 }
+
+/// `quietdeck sessions show <session>`: one session, and with `--timeline` every summary point it has, oldest first.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct SessionDetail {
+    pub session: SessionRow,
+    pub timeline: Vec<crate::summary::SummaryRecord>,
+}

@@ -45,6 +45,21 @@ pub struct SessionsArgs {
     /// Include sessions that aren't running.
     #[serde(default)]
     pub all: bool,
+    /// Only sessions active since a date (`2026-05-23`) or a number of days back (`180d`), running or not.
+    #[serde(default)]
+    pub since: Option<String>,
+    /// At most this many (default 200, or 5,000 with `since`).
+    #[serde(default)]
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SessionShowArgs {
+    /// A session ID, `tab@machine`, or a tab name.
+    pub session: String,
+    /// Include every summary point the session has, oldest first.
+    #[serde(default)]
+    pub timeline: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -192,8 +207,24 @@ impl Mcp {
     ) -> Result<CallToolResult, ErrorData> {
         let r = async {
             self.caller(&ctx).await?;
-            let f = sessions::ListFilter { node: args.node, all: args.all, limit: None };
+            let f = sessions::ListFilter { node: args.node, all: args.all, since: args.since, limit: args.limit };
             Ok::<_, AppError>(sessions::list(&self.state.db, &self.state.hub, &f).await?)
+        }
+        .await;
+        tool_try!(r)
+    }
+
+    #[tool(
+        description = "One session, by ID, tab@machine or tab, with every earlier one-line update when timeline is set."
+    )]
+    async fn session_show(
+        &self,
+        Parameters(args): Parameters<SessionShowArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async {
+            self.caller(&ctx).await?;
+            crate::ops::show_session(&self.state, &args.session, args.timeline).await
         }
         .await;
         tool_try!(r)

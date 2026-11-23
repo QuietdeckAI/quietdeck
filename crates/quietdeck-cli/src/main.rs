@@ -178,6 +178,12 @@ struct SessionsArgs {
     /// Include sessions that aren't running.
     #[arg(long)]
     all: bool,
+    /// Only sessions active since a date (2026-05-23) or a number of days back (180d), running or not.
+    #[arg(long)]
+    since: Option<String>,
+    /// At most this many (default 200, or 5,000 with --since).
+    #[arg(long)]
+    limit: Option<i64>,
 }
 
 #[derive(Subcommand)]
@@ -236,6 +242,13 @@ enum ActionsCommand {
 enum SessionsCommand {
     /// Search every session's summaries.
     Search { words: Vec<String> },
+    /// One session: its summary, and with --timeline every earlier one-line update.
+    Show {
+        /// A session ID, tab@machine, or a tab name (running first, then the one that ended last).
+        session: String,
+        #[arg(long)]
+        timeline: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -349,10 +362,22 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 Some(SessionsCommand::Search { words }) => {
                     c.get("/api/sessions/search", &[("q", words.join(" "))]).await?
                 }
+                Some(SessionsCommand::Show { session, timeline }) => {
+                    let d: quietdeck_types::directory::SessionDetail = c
+                        .get("/api/sessions/show", &[("session", session), ("timeline", timeline.to_string())])
+                        .await?;
+                    return print::out(json, &d, print::session_detail);
+                }
                 None => {
                     let mut q = vec![("all", args.all.to_string())];
                     if let Some(n) = args.node {
                         q.push(("node", n));
+                    }
+                    if let Some(s) = args.since {
+                        q.push(("since", s));
+                    }
+                    if let Some(l) = args.limit {
+                        q.push(("limit", l.to_string()));
                     }
                     c.get("/api/sessions", &q).await?
                 }

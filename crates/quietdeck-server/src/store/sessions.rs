@@ -38,6 +38,10 @@ const COLUMNS: &str = "node, session_id, agent, workspace, tab, pane, cwd, proje
 
 impl Row {
     fn into_row(self, node_online: bool, links: Vec<SessionLink>) -> anyhow::Result<SessionRow> {
+        let resume = self.resume_command.clone().or_else(|| {
+            let agent = parse_enum(&self.agent).ok()?;
+            Some(resume_command(agent, self.cwd.as_deref()?, &self.session_id))
+        });
         Ok(SessionRow {
             node: self.node,
             info: SessionInfo {
@@ -49,7 +53,7 @@ impl Row {
                 cwd: self.cwd,
                 status: parse_enum(&self.status)?,
                 status_changed_at: ts(self.status_changed_at),
-                resume_command: self.resume_command,
+                resume_command: resume,
                 running: self.running != 0,
             },
             project: self.project,
@@ -335,13 +339,38 @@ async fn hydrate(db: &Db, hub: &crate::hub::Hub, rows: Vec<Row>) -> anyhow::Resu
     Ok(out)
 }
 
+/// What a person pastes into a terminal to pick a session up again: its directory, then the agent's own resume.
+pub fn resume_command(agent: quietdeck_types::AgentKind, cwd: &str, session_id: &str) -> String {
+    let dir = format!("'{}'", cwd.replace('\'', "'\\''"));
+    match agent {
+        quietdeck_types::AgentKind::Claude => format!("cd {dir} && claude --resume {session_id}"),
+        quietdeck_types::AgentKind::Codex => format!("cd {dir} && codex resume {session_id}"),
+    }
+}
+
 #[derive(Debug, Default, Clone, serde::Deserialize)]
 pub struct ListFilter {
     pub node: Option<String>,
     /// Include sessions that aren't running (closed or ended), most recent first.
     #[serde(default)]
     pub all: bool,
+    /// Only sessions active since: a date (`2026-05-23`) or a number of days back (`180d`). Implies `all`.
+    pub since: Option<String>,
+    /// At most this many (default 200, or 5,000 with `since`).
     pub limit: Option<i64>,
+}
+
+/// `2026-05-23` (local midnight) or `180d`, as Unix milliseconds.
+pub fn parse_since(s: &str) -> Result<i64, String> {
+    let s = s.trim();
+    if let Some(days) = s.strip_suffix('d') {
+        let days: i64 = days.parse().map_err(|_| format!("{s:?} isn't a number of days like 180d"))?;
+        return Ok(crate::db::now_ms() - days.clamp(0, 36_500) * 86_400_000);
+    }
+    let date: jiff::civil::Date =
+        s.parse().map_err(|_| format!("{s:?} isn't a date like 2026-05-23 or a number of days like 180d"))?;
+    let zoned = date.to_zoned_datetime(jiff::tz::TimeZone::system()).map_err(|e| e.to_string())?;
+    Ok(zoned.timestamp().as_millisecond())
 }
 
 pub async fn list(db: &Db, hub: &crate::hub::Hub, f: &ListFilter) -> anyhow::Result<Vec<SessionRow>> {
@@ -349,7 +378,10 @@ pub async fn list(db: &Db, hub: &crate::hub::Hub, f: &ListFilter) -> anyhow::Res
     if f.node.is_some() {
         sql.push_str(" AND node = ?");
     }
-    if !f.all {
+    let since = f.since.as_deref().map(parse_since).transpose().map_err(anyhow::Error::msg)?;
+    if since.is_some() {
+        sql.push_str(" AND COALESCE(last_activity, status_changed_at) >= ?");
+    } else if !f.all {
         sql.push_str(" AND running = 1");
     }
     sql.push_str(" ORDER BY COALESCE(last_activity, status_changed_at) DESC LIMIT ?");
@@ -357,7 +389,11 @@ pub async fn list(db: &Db, hub: &crate::hub::Hub, f: &ListFilter) -> anyhow::Res
     if let Some(n) = &f.node {
         q = q.bind(n);
     }
-    let rows = q.bind(f.limit.unwrap_or(200).clamp(1, 1000)).fetch_all(db).await?;
+    if let Some(ms) = since {
+        q = q.bind(ms);
+    }
+    let limit = f.limit.unwrap_or(if since.is_some() { 5000 } else { 200 }).clamp(1, 5000);
+    let rows = q.bind(limit).fetch_all(db).await?;
     hydrate(db, hub, rows).await
 }
 
@@ -449,6 +485,27 @@ pub async fn summary_hits(db: &Db, text: &str) -> anyhow::Result<Vec<WhoHasHit>>
         }
     }
     Ok(hits)
+}
+
+/// Every summary point a session has, oldest first: its timeline of one-line updates.
+pub async fn timeline(db: &Db, node: &str, session_id: &str) -> anyhow::Result<Vec<SummaryRecord>> {
+    let rows: Vec<(String,)> =
+        sqlx::query_as("SELECT record FROM session_updates WHERE node = ? AND session_id = ? ORDER BY activity_to")
+            .bind(node)
+            .bind(session_id)
+            .fetch_all(db)
+            .await?;
+    rows.into_iter().map(|(r,)| Ok(serde_json::from_str(&r)?)).collect()
+}
+
+/// The one session an address names, running or not: a session ID, `tab@node`, or a tab (running first, then the
+/// one that ended last).
+pub async fn find_any(db: &Db, hub: &crate::hub::Hub, address: &str) -> anyhow::Result<Vec<SessionRow>> {
+    let running = resolve(db, hub, address, true).await?;
+    if !running.is_empty() {
+        return Ok(running);
+    }
+    resolve(db, hub, address, false).await
 }
 
 /// The running sessions an address (`tab` or `tab@node`) names.
@@ -586,6 +643,34 @@ mod tests {
         assert_eq!(hits.len(), 1);
         let hits = summary_hits(&db, "invoices").await.unwrap();
         assert_eq!(hits.len(), 1, "older timeline points are searched too");
+    }
+
+    #[tokio::test]
+    async fn a_session_shows_its_timeline_oldest_first_and_how_to_resume_it() {
+        let db = crate::db::memory().await;
+        let hub = Hub::default();
+        let mut s = info("s1", "certs", AgentStatus::Idle);
+        s.cwd = Some("/work/it's here".into());
+        s.running = false;
+        upsert(&db, &DeckConfig::default(), "laptop", &s).await.unwrap();
+        for (hour, text, to) in [
+            ("2026-11-23T14", "Ordered the certificate", "2026-11-23T14:30:00Z"),
+            ("2026-11-23T10", "Started on the certificate", "2026-11-23T10:30:00Z"),
+        ] {
+            apply_summary(&db, "laptop", &SummaryEvent::Summary(record("s1", hour, text, to))).await.unwrap();
+        }
+        let found = find_any(&db, &hub, "certs@laptop").await.unwrap();
+        assert_eq!(found.len(), 1, "a tab finds the session that ended when none runs");
+        assert_eq!(found[0].info.resume_command.as_deref(), Some("cd '/work/it'\\''s here' && claude --resume s1"));
+        let points: Vec<String> =
+            timeline(&db, "laptop", "s1").await.unwrap().into_iter().map(|r| r.sentence).collect();
+        assert_eq!(points, ["Started on the certificate", "Ordered the certificate"]);
+
+        let f = ListFilter { since: Some("2000-01-01".into()), ..Default::default() };
+        assert_eq!(list(&db, &hub, &f).await.unwrap().len(), 1, "since includes sessions that aren't running");
+        let f = ListFilter { since: Some("1d".into()), ..Default::default() };
+        assert!(list(&db, &hub, &f).await.unwrap().iter().all(|r| r.info.session_id == "s1"));
+        assert!(parse_since("May").is_err());
     }
 
     #[tokio::test]

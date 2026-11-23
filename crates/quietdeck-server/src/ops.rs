@@ -578,3 +578,30 @@ async fn tell_agent(state: &AppState, w: &decisions::Waiting) {
         tracing::info!(%address, error = %e, "decisions wait for an agent that isn't reachable");
     }
 }
+
+/// One session by ID, `tab@node` or tab, with its summary points when asked.
+pub async fn show_session(
+    state: &AppState,
+    address: &str,
+    with_timeline: bool,
+) -> AppResult<quietdeck_types::directory::SessionDetail> {
+    let rows = sessions::find_any(&state.db, &state.hub, address).await?;
+    let mut nodes: Vec<&str> = rows.iter().map(|r| r.node.as_str()).collect();
+    nodes.dedup();
+    if nodes.len() > 1 {
+        let names: Vec<String> = rows.iter().map(|r| r.address()).collect();
+        return Err(AppError::BadRequest(format!(
+            "{address} names sessions on several machines: {}",
+            names.join(", ")
+        )));
+    }
+    let Some(session) = rows.into_iter().next() else {
+        return Err(AppError::NotFound(format!("no session {address}")));
+    };
+    let timeline = if with_timeline {
+        sessions::timeline(&state.db, &session.node, &session.info.session_id).await?
+    } else {
+        Vec::new()
+    };
+    Ok(quietdeck_types::directory::SessionDetail { session, timeline })
+}

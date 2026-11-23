@@ -82,6 +82,27 @@ pub fn session_line(r: &SessionRow) -> String {
     format!("{:<28} {:<8} {}{}", r.address(), status, r.sentence.as_deref().unwrap_or("-"), offline)
 }
 
+pub fn session_detail(d: &quietdeck_types::directory::SessionDetail) -> String {
+    let r = &d.session;
+    let mut out =
+        vec![session_line(r), format!("session {} in {}", r.info.session_id, r.info.cwd.as_deref().unwrap_or("?"))];
+    if let Some(c) = &r.info.resume_command {
+        out.push(format!("resume: {c}"));
+    }
+    if let Some(p) = &r.page {
+        out.push(String::new());
+        out.push(p.clone());
+    }
+    if !d.timeline.is_empty() {
+        out.push(String::new());
+        for t in &d.timeline {
+            let at = t.activity_to.to_zoned_datetime(jiff::tz::TimeZone::system());
+            out.push(format!("{}  {}", at.strftime("%Y-%m-%d %H:%M"), t.sentence));
+        }
+    }
+    out.join("\n")
+}
+
 pub fn who_has(w: &WhoHas) -> String {
     let mut lines: Vec<String> = w
         .hits
