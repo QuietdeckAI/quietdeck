@@ -165,7 +165,7 @@ async fn parent_of(pid: u32) -> Option<u32> {
         let stat = tokio::fs::read_to_string(format!("/proc/{pid}/stat")).await.ok()?;
         // pid (comm) state ppid ...: comm can hold spaces and parentheses, so read after the last ')'.
         let rest = &stat[stat.rfind(')')? + 1..];
-        return rest.split_whitespace().nth(1)?.parse().ok();
+        rest.split_whitespace().nth(1)?.parse().ok()
     }
     #[cfg(not(target_os = "linux"))]
     {
