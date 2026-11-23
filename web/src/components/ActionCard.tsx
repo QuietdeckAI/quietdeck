@@ -5,7 +5,7 @@ import {
   Eye,
   EyeOff,
   MessageSquare,
-  Repeat,
+  Info,
   Clock,
   ExternalLink,
   MoreHorizontal,
@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/input";
 import { actionLine, sessionName } from "@/components/actionText";
-import { RuleEditor, ruleFromCard } from "@/components/RuleEditor";
 import { api } from "@/lib/api";
 import { when } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -139,7 +138,7 @@ export function ActionCard({
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [noting, setNoting] = useState(false);
-  const [ruling, setRuling] = useState(false);
+  const [why, setWhy] = useState(false);
   const move = useMutation({
     mutationFn: async (o: RuleOffer) => {
       for (const id of o.rule_ids) {
@@ -302,16 +301,14 @@ export function ActionCard({
                   <ArrowDown /> Move to the archive list
                 </DropdownMenuItem>
               )}
-              {!suggestion && decidable && card.actions.some((a) => a.type !== "lease") && (
-                <DropdownMenuItem
-                  onSelect={() => {
-                    setOpen(true);
-                    setRuling(true);
-                  }}
-                >
-                  <Repeat /> Auto-approve matches in future
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem
+                onSelect={() => {
+                  setOpen(true);
+                  setWhy(true);
+                }}
+              >
+                <Info /> Why this
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -333,14 +330,10 @@ export function ActionCard({
       )}
 
       {open && (
-        <div className="flex flex-col gap-3 pb-3 pl-6 pr-2 text-sm">
-          <p className="text-neutral">
-            <span className="text-ink">{card.subject}</span> ·{" "}
-            <time className="font-mono text-xs" dateTime={card.last_message_at ?? card.prepared_at}>
-              {when(card.last_message_at ?? card.prepared_at)}
-            </time>
-            {card.sender?.address && card.sender.address !== sender && <> · {card.sender.address}</>}
-          </p>
+        <div className="flex flex-col gap-2 pb-2 pl-6 pr-2 text-sm">
+          <time className="font-mono text-xs text-neutral" dateTime={card.last_message_at ?? card.prepared_at}>
+            {when(card.last_message_at ?? card.prepared_at)}
+          </time>
           {card.facts.length > 0 && (
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-0.5">
               {card.facts.map((f) => (
@@ -374,10 +367,12 @@ export function ActionCard({
               })}
             </ul>
           )}
-          <p className="text-xs text-neutral">
-            {card.reason}
-            {card.rule_ref && <> · {card.rule_ref}</>} · from {sessionName(card.posted_by)}
-          </p>
+          {why && (
+            <p className="text-xs text-neutral">
+              {card.reason}
+              {card.rule_ref && <> · {card.rule_ref}</>} · {card.subject} · {sessionName(card.posted_by)}
+            </p>
+          )}
           {status && (
             <p className={status.tone === "danger" ? "text-danger" : "text-muted"}>{status.text}</p>
           )}
@@ -390,11 +385,6 @@ export function ActionCard({
               <Button size="sm" loading={move.isPending} onClick={() => move.mutate(offer)}>
                 Move {offer.rule_ids.length === 1 ? "it" : "them"} to this session
               </Button>
-            </div>
-          )}
-          {ruling && (
-            <div className="rounded-md border border-rule bg-paper p-3 sm:p-4">
-              <RuleEditor initial={ruleFromCard(card)} onDone={() => setRuling(false)} />
             </div>
           )}
         </div>

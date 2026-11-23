@@ -28,7 +28,14 @@ last_message_at: string | null, refs: Array<string>, sender: Sender | null, send
 /**
  * The `List-Id` header, for strict rules and the learning loop.
  */
-list_id: string | null, subject: string, summary: string, facts: Array<Fact>, section: CardSection, 
+list_id: string | null, subject: string, 
+/**
+ * What the email is, in a few words: the Inbox shows it on one line beside the proposed action. Lead with the kind
+ * of email and leave out who sent it and what their company does unless the person needs that to decide:
+ * "Sales pitch: card dunning", "Water bill, direct debit", "Customer asks how webhook retries work". Facts and
+ * drafts carry the rest.
+ */
+summary: string, facts: Array<Fact>, section: CardSection, 
 /**
  * The agent wants to carry the card out itself, whatever the runner could do.
  */

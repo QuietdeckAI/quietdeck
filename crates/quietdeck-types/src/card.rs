@@ -118,6 +118,10 @@ pub struct CardInput {
     pub list_id: Option<String>,
     #[garde(length(max = 1000))]
     pub subject: String,
+    /// What the email is, in a few words: the Inbox shows it on one line beside the proposed action. Lead with the kind
+    /// of email and leave out who sent it and what their company does unless the person needs that to decide:
+    /// "Sales pitch: card dunning", "Water bill, direct debit", "Customer asks how webhook retries work". Facts and
+    /// drafts carry the rest.
     #[garde(length(min = 1, max = 5000))]
     pub summary: String,
     #[serde(default)]
