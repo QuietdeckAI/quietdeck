@@ -16,11 +16,13 @@ pub struct AppState {
     pub signing_key: Arc<Vec<u8>>,
     pub hub: Arc<Hub>,
     pub public_url: String,
+    #[expect(dead_code, reason = "webhook endpoints' URLs use it (build step 11)")]
     pub hooks_public_url: Option<String>,
 }
 
 impl AppState {
     #[cfg(test)]
+    #[expect(dead_code, reason = "the API tests use it (build step 2)")]
     pub async fn for_tests() -> AppState {
         let db = crate::db::memory().await;
         let signing_key = crate::auth::signing_key(&db).await.unwrap();

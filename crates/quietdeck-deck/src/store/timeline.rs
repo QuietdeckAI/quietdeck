@@ -73,6 +73,7 @@ pub async fn between(db: &Db, since_ms: i64, until_ms: i64) -> anyhow::Result<Ve
 }
 
 /// Unread entries: the Inbox's timeline.
+#[expect(dead_code, reason = "the Inbox's timeline uses it (build step 2)")]
 pub async fn unread(db: &Db, limit: i64) -> anyhow::Result<Vec<TimelineEntry>> {
     let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM timeline_entries WHERE read_at IS NULL ORDER BY created_at DESC LIMIT ?"

@@ -73,6 +73,7 @@ pub struct DeckConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TasksConfig {
+    #[expect(dead_code, reason = "the Inbox shows it (build step 2)")]
     pub label: String,
 }
 
@@ -97,6 +98,7 @@ pub struct LeasesConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[expect(dead_code, reason = "leases read it (build step 8)")]
 pub struct FallbackHolder {
     pub node: String,
     pub tab: String,

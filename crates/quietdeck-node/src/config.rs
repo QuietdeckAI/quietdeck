@@ -145,30 +145,6 @@ pub fn read_secret_file(path: &Path) -> anyhow::Result<String> {
     Ok(t)
 }
 
-/// Write a secret file with mode 600 in a directory with mode 700.
-pub fn write_secret_file(path: &Path, contents: &str) -> anyhow::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
-        }
-    }
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path)?;
-        f.write_all(contents.as_bytes())?;
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-    }
-    #[cfg(not(unix))]
-    std::fs::write(path, contents)?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,7 +162,8 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("t");
-        write_secret_file(&p, "qdn_x\n").unwrap();
+        std::fs::write(&p, "qdn_x\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).unwrap();
         assert_eq!(read_secret_file(&p).unwrap(), "qdn_x");
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
         assert!(read_secret_file(&p).unwrap_err().to_string().contains("chmod 600"));

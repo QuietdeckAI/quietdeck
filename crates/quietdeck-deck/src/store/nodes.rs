@@ -72,6 +72,7 @@ pub async fn seen(db: &Db, node: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[expect(dead_code, reason = "the runner's dispatch uses it (build step 5)")]
 pub async fn runner_info(db: &Db, node: &str) -> anyhow::Result<Option<RunnerInfo>> {
     let row: Option<(Option<String>,)> =
         sqlx::query_as("SELECT runner_info FROM nodes WHERE name = ?").bind(node).fetch_optional(db).await?;
@@ -79,7 +80,8 @@ pub async fn runner_info(db: &Db, node: &str) -> anyhow::Result<Option<RunnerInf
 }
 
 pub async fn list(db: &Db, hub: &Hub) -> anyhow::Result<Vec<NodeRow>> {
-    let rows: Vec<(String, Option<i64>, Option<String>, Option<String>)> = sqlx::query_as(
+    type NodeRowDb = (String, Option<i64>, Option<String>, Option<String>);
+    let rows: Vec<NodeRowDb> = sqlx::query_as(
         "SELECT name, last_seen_at, version, runner_info FROM nodes WHERE revoked_at IS NULL ORDER BY name",
     )
     .fetch_all(db)

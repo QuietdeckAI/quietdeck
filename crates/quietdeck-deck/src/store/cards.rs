@@ -354,7 +354,8 @@ async fn stop_unstarted(db: &Db, card_id: i64) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Count actions by status on a card's current version.
+/// Whether every action on a card's current version is done or stopped.
+#[expect(dead_code, reason = "decisions and action reports use it (build step 2)")]
 pub fn all_finished(actions: &[ActionRecord]) -> bool {
     actions.iter().all(|a| matches!(a.status, ActionStatus::Done | ActionStatus::Stopped))
 }

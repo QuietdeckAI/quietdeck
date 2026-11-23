@@ -109,7 +109,7 @@ pub async fn who_has(state: &AppState, query: &str) -> AppResult<WhoHas> {
             }
         }
     }
-    hits.sort_by(|a, b| b.last_mentioned_at.cmp(&a.last_mentioned_at));
+    hits.sort_by_key(|h| std::cmp::Reverse(h.last_mentioned_at));
     offline.sort();
     offline.dedup();
     Ok(WhoHas { query: query.to_string(), hits, offline_nodes: offline, partial })

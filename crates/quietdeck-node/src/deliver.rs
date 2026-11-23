@@ -29,17 +29,9 @@ pub struct Registration {
     pub pid: u32,
     pub session_id: String,
     #[serde(default)]
-    pub cwd: Option<String>,
-    #[serde(default)]
     pub peer_protocol: Option<u64>,
     #[serde(default)]
     pub messaging_socket_path: Option<String>,
-    #[serde(default)]
-    pub name: Option<String>,
-    #[serde(default)]
-    pub status: Option<String>,
-    #[serde(default)]
-    pub kind: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -229,12 +221,8 @@ mod tests {
         let reg = Registration {
             pid: 42,
             session_id: "s".into(),
-            cwd: None,
             peer_protocol: Some(1),
             messaging_socket_path: Some("/tmp/cc-socks/42.sock".into()),
-            name: None,
-            status: None,
-            kind: None,
         };
         let p = key_path(Path::new("/x"), &reg, "/tmp/cc-socks/42.sock");
         let hash = hex::encode(Sha256::digest(b"/tmp/cc-socks/42.sock"));

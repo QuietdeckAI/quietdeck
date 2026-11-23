@@ -202,6 +202,7 @@ impl FromRequestParts<AppState> for Owner {
 }
 
 /// A node (its runner) with its node token.
+#[expect(dead_code, reason = "the runner's endpoints (build step 5) take it")]
 pub struct NodeCaller(pub String);
 
 impl FromRequestParts<AppState> for NodeCaller {

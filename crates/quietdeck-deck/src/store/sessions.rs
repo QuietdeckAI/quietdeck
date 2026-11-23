@@ -246,7 +246,8 @@ async fn store_record(db: &Db, node: &str, r: &SummaryRecord) -> anyhow::Result<
 }
 
 pub async fn links_for(db: &Db, node: &str, session_id: &str) -> anyhow::Result<Vec<SessionLink>> {
-    let rows: Vec<(String, String, Option<String>, Option<String>, Option<String>, String, i64)> = sqlx::query_as(
+    type LinkRow = (String, String, Option<String>, Option<String>, Option<String>, String, i64);
+    let rows: Vec<LinkRow> = sqlx::query_as(
         "SELECT url, kind, ref, title, state, source, added_at FROM session_links \
          WHERE node = ? AND session_id = ? AND (hide_after IS NULL OR hide_after > ?) ORDER BY added_at",
     )
@@ -306,6 +307,7 @@ pub async fn list(db: &Db, hub: &crate::hub::Hub, f: &ListFilter) -> anyhow::Res
     hydrate(db, hub, rows).await
 }
 
+#[expect(dead_code, reason = "the Sessions screen uses it (build step 9)")]
 pub async fn get(db: &Db, hub: &crate::hub::Hub, node: &str, session_id: &str) -> anyhow::Result<Option<SessionRow>> {
     let rows = sqlx::query_as::<_, Row>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM sessions WHERE node = ? AND session_id = ?"

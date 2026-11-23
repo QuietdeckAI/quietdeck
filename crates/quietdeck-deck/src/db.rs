@@ -35,18 +35,6 @@ pub async fn memory() -> Db {
     pool
 }
 
-#[cfg(test)]
-mod tests {
-    #[tokio::test]
-    async fn a_path_with_spaces_and_a_question_mark_opens() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("my data?/deck.db");
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        super::open(&path).await.unwrap();
-        assert!(path.exists());
-    }
-}
-
 pub fn now_ms() -> i64 {
     Timestamp::now().as_millisecond()
 }
@@ -79,4 +67,16 @@ pub fn json<T: serde::Serialize>(v: &T) -> String {
 
 pub fn from_json<T: serde::de::DeserializeOwned>(s: &str) -> anyhow::Result<T> {
     serde_json::from_str(s).map_err(|e| anyhow::anyhow!("corrupt JSON in the database: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn a_path_with_spaces_and_a_question_mark_opens() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("my data?/deck.db");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        super::open(&path).await.unwrap();
+        assert!(path.exists());
+    }
 }
