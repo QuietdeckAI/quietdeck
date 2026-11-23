@@ -2210,6 +2210,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "quietdeck-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "jiff",
+ "quietdeck-types",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "yaml_serde",
+]
+
+[[package]]
 name = "quietdeck-deck"
 version = "0.1.0"
 dependencies = [
@@ -2536,6 +2552,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",

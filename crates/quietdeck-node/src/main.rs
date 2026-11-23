@@ -141,7 +141,7 @@ async fn run() -> anyhow::Result<()> {
         let node = node.clone();
         tokio::spawn(async move {
             while let Some(event) = summary_rx.recv().await {
-                node.link.push(NodeFrame::Summary { event }).await;
+                node.link.push_kept(NodeFrame::Summary { event }).await;
             }
         });
     }

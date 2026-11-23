@@ -18,9 +18,13 @@ use crate::Node;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Summary events wait here while the deck is unreachable (a sleeping laptop, a deck restart), up to this many.
+const OUTBOX_LIMIT: usize = 10_000;
+
 #[derive(Default)]
 pub struct Link {
     tx: Mutex<Option<mpsc::Sender<NodeFrame>>>,
+    outbox: Mutex<std::collections::VecDeque<NodeFrame>>,
     pending: Mutex<HashMap<u64, oneshot::Sender<Reply>>>,
     next: AtomicU64,
     connected: AtomicBool,
@@ -37,6 +41,22 @@ impl Link {
         if let Some(tx) = self.tx.lock().await.as_ref() {
             let _ = tx.send(frame).await;
         }
+    }
+
+    /// Send a frame that mustn't be lost (a summary): held while disconnected and sent after the next snapshot.
+    pub async fn push_kept(&self, frame: NodeFrame) {
+        let tx = self.tx.lock().await.clone();
+        if let Some(tx) = tx
+            && tx.send(frame.clone()).await.is_ok()
+        {
+            return;
+        }
+        let mut outbox = self.outbox.lock().await;
+        if outbox.len() >= OUTBOX_LIMIT {
+            outbox.pop_front();
+            tracing::warn!("summary outbox full: dropping the oldest");
+        }
+        outbox.push_back(frame);
     }
 
     /// Ask the deck something and wait for its answer.
@@ -135,6 +155,14 @@ async fn connect_once(node: &Arc<Node>) -> anyhow::Result<Outcome> {
         if !accounts.is_empty() {
             let _ = tx.send(NodeFrame::Usage { accounts, at: jiff::Timestamp::now() }).await;
         }
+    }
+
+    let held: Vec<NodeFrame> = node.link.outbox.lock().await.drain(..).collect();
+    if !held.is_empty() {
+        tracing::info!(count = held.len(), "sending summaries held while disconnected");
+    }
+    for frame in held {
+        let _ = tx.send(frame).await;
     }
 
     loop {
