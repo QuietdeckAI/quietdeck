@@ -278,4 +278,8 @@ pub struct NodeRow {
     pub version: Option<String>,
     pub runner: bool,
     pub runner_types: Vec<crate::action::ActionType>,
+    /// The action types the runner handed to its agent for lack of a handler, most often first: candidates for the
+    /// next handler. Types only, no counts.
+    #[serde(default)]
+    pub no_handler: Vec<crate::action::ActionType>,
 }

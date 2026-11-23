@@ -5,7 +5,9 @@ use std::time::Duration;
 use jiff::Timestamp;
 use quietdeck_types::SessionRef;
 use quietdeck_types::api::{Caller, Changed, DeckInfo, Settings};
-use quietdeck_types::card::{ActionRecord, ActionReport, Card, CardAdded, CardInput, CardSection, CardState, Released};
+use quietdeck_types::card::{
+    ActionRecord, ActionReport, Card, CardAdded, CardInput, CardSection, CardState, Released, RunBy,
+};
 use quietdeck_types::decision::{ApproveAll, Approving, Decide, Inbox, ReportReceipt, StopResult};
 use quietdeck_types::directory::{HitSource, PartialSearch, TranscriptHit, WhoHas, WhoHasHit};
 use quietdeck_types::node::{DeckRequest, Delivered, TranscriptSearch};
@@ -44,6 +46,7 @@ pub async fn add_card(state: &AppState, me: &SessionRef, input: CardInput) -> Ap
             return Err(AppError::BadRequest(format!("an action names unknown account {acct:?}")));
         }
     }
+    crate::runner::check_send_as(state, me, &input.actions).await?;
     // Automatic cards go through `rules match`, which arrives with the rules (build step 6). Until then every card
     // waits for the person.
     let auto = input.auto_grant.map(|grant_id| MatchResult {
@@ -224,7 +227,7 @@ pub async fn take(state: &AppState, me: &SessionRef) -> AppResult<Vec<Released>>
 }
 
 pub async fn action_start(state: &AppState, me: &SessionRef, action_id: i64) -> AppResult<ActionRecord> {
-    let a = decisions::start(&state.db, me, action_id).await?;
+    let a = decisions::start(&state.db, me, RunBy::Agent, action_id).await?;
     state.changed(Changed::Cards);
     Ok(a)
 }
@@ -237,7 +240,7 @@ pub async fn actions_report(
     if reports.is_empty() || reports.len() > 500 {
         return Err(AppError::BadRequest("report 1 to 500 actions at a time".into()));
     }
-    let r = decisions::report(&state.db, me, &reports).await?;
+    let r = decisions::report(&state.db, me, RunBy::Agent, &reports).await?;
     state.changed(Changed::Cards);
     Ok(r)
 }
@@ -344,7 +347,9 @@ pub async fn releaser(state: AppState) {
                 state.changed(Changed::Cards);
                 state.changed(Changed::Timeline);
                 for w in waiting {
-                    tell_agent(&state, &w).await;
+                    if !crate::runner::notify(&state, &w.node, &w.tab).await {
+                        tell_agent(&state, &w).await;
+                    }
                 }
             }
             Err(e) => {
@@ -355,7 +360,7 @@ pub async fn releaser(state: AppState) {
     }
 }
 
-/// With no runner yet (build step 5), the agent that posted the cards carries them out: tell it they're waiting. An
+/// With no runner connected for it, the agent that posted the cards carries them out: tell it they're waiting. An
 /// agent that's offline finds them with `quietdeck decisions take` when it next runs.
 async fn tell_agent(state: &AppState, w: &decisions::Waiting) {
     let body = format!(

@@ -77,7 +77,7 @@ async fn respond(node: &Node, req: LocalRequest, peer_pid: Option<u32>) -> Local
             deck_url: node.config.deck_url(),
             connected: node.link.is_connected(),
             version: crate::link::VERSION.to_string(),
-            runner: false,
+            runner: node.runner.get().is_some(),
         }),
         LocalRequest::Usage => match &node.usage {
             Some(u) => LocalResponse::Usage { accounts: u.snapshot().await },

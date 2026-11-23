@@ -11,8 +11,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::action::{ActionType, SessionRef};
+use crate::card::ActionReport;
 use crate::directory::{SessionEnd, SessionInfo, SessionResume, SessionStart, TranscriptHit};
-use crate::relay::Delivery;
+use crate::relay::{Delivery, DeliveryKind};
 use crate::summary::{Catchup, SummaryEvent};
 use crate::usage::{AccountUsage, UsageCommand};
 
@@ -100,12 +101,52 @@ pub enum DeckFrame {
 }
 
 /// What the node asks the deck.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "op", rename_all = "snake_case")]
 #[ts(export)]
 pub enum NodeRequest {
     /// A short-lived session token for a caller on this machine. `session` is None for a plain shell.
     MintToken { session: Option<TokenSession> },
+    /// The runner: every released decision on its agent's cards that nobody has claimed or been handed yet.
+    /// Answers `Vec<Released>`.
+    RunnerTake,
+    /// The runner's sorting of what it took: the decisions it carries out itself, and the ones it hands to the agent
+    /// with a reason each. Answers `()`.
+    RunnerSort { claims: Vec<i64>, handoffs: Vec<Handoff> },
+    /// The runner, just before carrying an action out. Refused once Stop has been pressed. Answers the
+    /// [`crate::card::ActionRecord`] as the deck has it now.
+    ActionStart { action_id: i64 },
+    /// The runner's results. Answers `Vec<ReportReceipt>`.
+    ActionsReport { reports: Vec<ActionReport> },
+    /// The runner: pass a forward (or another delivery) to a session by address, through the relay. Answers
+    /// [`Delivered`].
+    Relay { to: String, kind: DeliveryKind, body: String },
+    /// The runner: an approved `new_session` on whichever machine it names (flow 3.15). Answers
+    /// [`crate::directory::SessionStarted`].
+    StartSession { spec: SessionStart },
+    /// The runner: an approved `resume` of one session by its ID, on the machine it ran on. Answers
+    /// [`crate::directory::SessionStarted`].
+    ResumeSession { node: String, session_id: String, tab: String, cwd: String },
+}
+
+/// A decision the runner hands to the agent, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct Handoff {
+    pub decision_id: i64,
+    pub reason: String,
+    /// Set when the reason is that the runner has no handler for this action type: the deck counts it, by type only.
+    #[serde(default)]
+    pub no_handler: Option<ActionType>,
+}
+
+/// Whether an address is one a mail account can send as, from the runner's send-as list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct SendAsCheck {
+    pub allowed: bool,
+    /// Every address the account can send as.
+    pub addresses: Vec<String>,
 }
 
 /// The session a token speaks for.
@@ -149,6 +190,15 @@ pub enum DeckRequest {
     /// Close a running session's tab.
     CloseSession {
         session_id: String,
+    },
+    /// To the runner: decisions on its agent's cards were released. It takes them with `runner_take`.
+    DecisionsReleased,
+    /// To the runner: its agent finished its round (`quietdeck round done`), so the next wake-up can go.
+    RoundDone,
+    /// To the runner: may this account send as `from`? Answers [`SendAsCheck`].
+    SendAs {
+        account: String,
+        from: String,
     },
 }
 

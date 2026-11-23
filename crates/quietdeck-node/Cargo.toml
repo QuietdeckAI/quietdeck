@@ -37,8 +37,11 @@ tokio-tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots"]
 memchr = "2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 toml = "1.2.2"
+rmcp = { version = "3.11.0", default-features = false, features = ["client", "transport-streamable-http-client-reqwest", "reqwest"] }
 
 [dev-dependencies]
+schemars.workspace = true
+rmcp = { version = "3.11.0", features = ["server", "macros", "client", "transport-streamable-http-server", "transport-streamable-http-client-reqwest", "reqwest"] }
 tempfile = "3.27.0"
 tokio = { workspace = true, features = ["test-util"] }
 

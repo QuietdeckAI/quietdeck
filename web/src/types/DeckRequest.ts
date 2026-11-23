@@ -7,4 +7,4 @@ import type { UsageCommand } from "./UsageCommand";
 /**
  * What the deck asks a node.
  */
-export type DeckRequest = { "op": "deliver", delivery: Delivery, } | { "op": "search_transcripts", query: string, limit: number, } | { "op": "catchup", session_id: string, } | { "op": "usage", command: UsageCommand, } | { "op": "start_session", spec: SessionStart, } | { "op": "resume_session", spec: SessionResume, } | { "op": "close_session", session_id: string, };
+export type DeckRequest = { "op": "deliver", delivery: Delivery, } | { "op": "search_transcripts", query: string, limit: number, } | { "op": "catchup", session_id: string, } | { "op": "usage", command: UsageCommand, } | { "op": "start_session", spec: SessionStart, } | { "op": "resume_session", spec: SessionResume, } | { "op": "close_session", session_id: string, } | { "op": "decisions_released" } | { "op": "round_done" } | { "op": "send_as", account: string, from: string, };

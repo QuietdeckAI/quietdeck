@@ -21,6 +21,9 @@ pub struct NodeConfig {
     pub programs: Programs,
     #[serde(default)]
     pub sessions: SessionsConfig,
+    /// The runner, on the triage agent's machine only.
+    #[serde(default)]
+    pub runner: Option<crate::runner::RunnerConfig>,
 }
 
 /// Sessions the deck starts or resumes on this machine (flow 3.15).
@@ -122,6 +125,11 @@ impl NodeConfig {
         if c.node.token_file.is_some() && c.node.token_env.is_some() {
             anyhow::bail!("{}: set node.token_file or node.token_env, not both", path.display());
         }
+        if let Some(r) = &c.runner
+            && r.enabled
+        {
+            r.check().map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
+        }
         Ok(c)
     }
 
@@ -181,6 +189,9 @@ mod tests {
         let c: NodeConfig = yaml_serde::from_str(include_str!("../../../deploy/node.example.yaml")).unwrap();
         assert_eq!(c.node.name, "laptop");
         assert!(c.summaries.enabled);
+        let runner = c.runner.expect("the example has a runner section");
+        assert!(!runner.enabled, "off unless the user turns it on");
+        runner.check().unwrap();
     }
 
     #[test]

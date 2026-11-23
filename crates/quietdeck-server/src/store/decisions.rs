@@ -2,8 +2,8 @@
 //! start and report.
 //!
 //! A decision names the card version the person saw. Release checks it again, so an approval of version 2 never
-//! releases version 3's actions. Released actions go only to the agent that posted the card (or, from build step 5,
-//! that agent's runner), and an action runs only after `action start`, which Stop makes fail.
+//! releases version 3's actions. Released actions go only to the agent that posted the card or to
+//! that agent's runner, and an action runs only after `action start`, which Stop makes fail.
 
 use quietdeck_types::SessionRef;
 use quietdeck_types::card::{
@@ -395,6 +395,107 @@ pub async fn take(db: &Db, me: &SessionRef) -> anyhow::Result<Vec<Released>> {
     Ok(out)
 }
 
+/// The runner's `runner_take`: every released decision on its agent's cards that nobody has claimed and it hasn't
+/// handed over. Nothing is claimed until [`runner_sort`].
+pub async fn runner_take(db: &Db, agent: &SessionRef) -> anyhow::Result<Vec<Released>> {
+    let rows: Vec<DecisionRow> = sqlx::query_as(
+        "SELECT d.id, d.card_id, d.card_version, d.kind, d.fields, d.text, d.released_at, d.claimed_by, \
+           d.picked_up_at, d.handoff_reason, d.at \
+         FROM decisions d JOIN cards c ON c.id = d.card_id \
+         WHERE d.released_at IS NOT NULL AND d.claimed_by IS NULL AND d.skipped IS NULL AND d.handoff_reason IS NULL \
+           AND d.kind IN ('approve', 'edit', 'adjust') AND c.version = d.card_version \
+           AND c.posted_node = ? AND c.posted_tab = ? \
+         ORDER BY d.id",
+    )
+    .bind(&agent.node)
+    .bind(&agent.tab)
+    .fetch_all(db)
+    .await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        let card =
+            cards::get(db, row.card_id).await?.ok_or_else(|| anyhow::anyhow!("card {} vanished", row.card_id))?;
+        let decision = row.into_decision()?;
+        out.push(Released { actions: card.action_records.clone(), decision, card, handoff_reason: None });
+    }
+    Ok(out)
+}
+
+/// The runner's sorting: claim the decisions it carries out, and hand the rest to the agent with their reasons.
+/// Returns the decisions it now holds; one the agent took in the meantime isn't among them. A hand-off for lack of a
+/// handler adds one to that action type's count for this node, and nothing else is recorded about it.
+pub async fn runner_sort(
+    db: &Db,
+    agent: &SessionRef,
+    claims: &[i64],
+    handoffs: &[quietdeck_types::node::Handoff],
+) -> anyhow::Result<Vec<i64>> {
+    let now = now_ms();
+    let mut held = Vec::new();
+    let mut touched = Vec::new();
+    let mut tx = db.begin().await?;
+    let mine = |id: i64| {
+        sqlx::query_as::<_, (i64, i64)>(
+            "SELECT d.card_id, d.card_version FROM decisions d JOIN cards c ON c.id = d.card_id \
+             WHERE d.id = ? AND d.claimed_by IS NULL AND d.handoff_reason IS NULL AND d.released_at IS NOT NULL \
+               AND d.skipped IS NULL AND c.version = d.card_version AND c.posted_node = ? AND c.posted_tab = ?",
+        )
+        .bind(id)
+        .bind(agent.node.clone())
+        .bind(agent.tab.clone())
+    };
+    for &id in claims {
+        let Some((card_id, version)) = mine(id).fetch_optional(&mut *tx).await? else { continue };
+        sqlx::query("UPDATE decisions SET claimed_by = 'runner', picked_up_at = ? WHERE id = ?")
+            .bind(now)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "UPDATE actions SET run_by = 'runner' WHERE card_id = ? AND card_version = ? AND status = 'released'",
+        )
+        .bind(card_id)
+        .bind(version)
+        .execute(&mut *tx)
+        .await?;
+        held.push(id);
+        touched.push(card_id);
+    }
+    for h in handoffs {
+        let Some((card_id, _)) = mine(h.decision_id).fetch_optional(&mut *tx).await? else { continue };
+        sqlx::query("UPDATE decisions SET handoff_reason = ? WHERE id = ?")
+            .bind(&h.reason)
+            .bind(h.decision_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "UPDATE cards SET state = 'handed_off', handoff_reason = ?, updated_at = ? \
+             WHERE id = ? AND state IN ('approved', 'revising')",
+        )
+        .bind(&h.reason)
+        .bind(now)
+        .bind(card_id)
+        .execute(&mut *tx)
+        .await?;
+        if let Some(t) = h.no_handler {
+            sqlx::query(
+                "INSERT INTO runner_handoff_stats (node, action_type, count, last_at) VALUES (?, ?, 1, ?3) \
+                 ON CONFLICT (node, action_type) DO UPDATE SET count = count + 1, last_at = ?3",
+            )
+            .bind(&agent.node)
+            .bind(t.as_str())
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+    tx.commit().await?;
+    for id in touched {
+        cards::refresh_state(db, id).await?;
+    }
+    Ok(held)
+}
+
 /// The action, checked as one this agent may run: on a card it posted, at the card's current version.
 async fn own_action(db: &Db, me: &SessionRef, action_id: i64) -> Result<(ActionRecord, Card), AppError> {
     let card_id: Option<(i64,)> =
@@ -415,16 +516,31 @@ async fn own_action(db: &Db, me: &SessionRef, action_id: i64) -> Result<(ActionR
     Ok((action, card))
 }
 
-/// `quietdeck action start`: claim an action just before running it. Refused once Stop has been pressed.
-pub async fn start(db: &Db, me: &SessionRef, action_id: i64) -> Result<ActionRecord, AppError> {
+/// `quietdeck action start` (and the runner's): claim an action just before running it. Refused once Stop has been
+/// pressed, and for an action the other side (runner or agent) claimed.
+pub async fn start(db: &Db, me: &SessionRef, who: RunBy, action_id: i64) -> Result<ActionRecord, AppError> {
     let (action, card) = own_action(db, me, action_id).await?;
+    if let Some(owner) = action.run_by
+        && owner != who
+    {
+        return Err(AppError::Conflict(format!(
+            "action {action_id} is the {}'s to run, not the {}'s",
+            enum_str(&owner),
+            enum_str(&who)
+        )));
+    }
+    if who == RunBy::Runner && action.run_by.is_none() && action.status == ActionStatus::Released {
+        return Err(AppError::Conflict(format!("action {action_id} isn't claimed by the runner")));
+    }
     let now = now_ms();
     let res = sqlx::query(
-        "UPDATE actions SET status = 'started', started_at = ?, run_by = COALESCE(run_by, 'agent') \
-         WHERE id = ? AND status = 'released'",
+        "UPDATE actions SET status = 'started', started_at = ?, run_by = ? \
+         WHERE id = ? AND status = 'released' AND (run_by IS NULL OR run_by = ?)",
     )
     .bind(now)
+    .bind(enum_str(&who))
     .bind(action_id)
+    .bind(enum_str(&who))
     .execute(db)
     .await?;
     if res.rows_affected() == 0 {
@@ -442,7 +558,12 @@ pub async fn start(db: &Db, me: &SessionRef, action_id: i64) -> Result<ActionRec
 }
 
 /// `quietdeck actions report` (and `action done|fail`): every result in one call. Each is checked on its own.
-pub async fn report(db: &Db, me: &SessionRef, reports: &[ActionReport]) -> Result<Vec<ReportReceipt>, AppError> {
+pub async fn report(
+    db: &Db,
+    me: &SessionRef,
+    who: RunBy,
+    reports: &[ActionReport],
+) -> Result<Vec<ReportReceipt>, AppError> {
     let now = now_ms();
     let mut out = Vec::with_capacity(reports.len());
     let mut touched = Vec::new();
@@ -450,6 +571,13 @@ pub async fn report(db: &Db, me: &SessionRef, reports: &[ActionReport]) -> Resul
         let result = async {
             garde::Validate::validate(r).map_err(|e| AppError::BadRequest(e.to_string()))?;
             let (action, card) = own_action(db, me, r.action_id).await?;
+            if action.run_by.is_some_and(|owner| owner != who) {
+                return Err(AppError::Conflict(format!(
+                    "action {} was started by the {}: only it reports the result",
+                    r.action_id,
+                    enum_str(&action.run_by.unwrap_or(who))
+                )));
+            }
             if action.status != ActionStatus::Started {
                 return Err(AppError::Conflict(format!(
                     "action {} is {}, not started: run `quietdeck action start {}` before carrying it out",
@@ -726,7 +854,7 @@ mod tests {
         let other = SessionRef { node: "laptop".into(), tab: "api".into(), session_id: None };
         assert!(take(&db, &other).await.unwrap().is_empty());
         let action_id = c.action_records[0].id;
-        assert!(matches!(start(&db, &other, action_id).await, Err(AppError::Forbidden(_))));
+        assert!(matches!(start(&db, &other, RunBy::Agent, action_id).await, Err(AppError::Forbidden(_))));
         let taken = take(&db, &agent()).await.unwrap();
         assert_eq!(taken.len(), 1);
         assert_eq!(taken[0].actions[0].status, ActionStatus::Released);
@@ -777,15 +905,25 @@ mod tests {
         approve_now(&db, &[&c]).await;
         let taken = take(&db, &agent()).await.unwrap();
         let id = taken[0].actions[0].id;
-        let r = report(&db, &agent(), &[ActionReport { action_id: id, result: ActionResult::Done { outcome: None } }])
-            .await
-            .unwrap();
+        let r = report(
+            &db,
+            &agent(),
+            RunBy::Agent,
+            &[ActionReport { action_id: id, result: ActionResult::Done { outcome: None } }],
+        )
+        .await
+        .unwrap();
         assert!(r[0].error.as_deref().unwrap().contains("not started"), "a report needs a start first");
-        assert_eq!(start(&db, &agent(), id).await.unwrap().status, ActionStatus::Started);
+        assert_eq!(start(&db, &agent(), RunBy::Agent, id).await.unwrap().status, ActionStatus::Started);
         assert_eq!(cards::get(&db, c.id).await.unwrap().unwrap().state, CardState::Executing);
-        let r = report(&db, &agent(), &[ActionReport { action_id: id, result: ActionResult::Done { outcome: None } }])
-            .await
-            .unwrap();
+        let r = report(
+            &db,
+            &agent(),
+            RunBy::Agent,
+            &[ActionReport { action_id: id, result: ActionResult::Done { outcome: None } }],
+        )
+        .await
+        .unwrap();
         assert_eq!(r[0].error, None);
         assert_eq!(cards::get(&db, c.id).await.unwrap().unwrap().state, CardState::Done);
     }
@@ -798,12 +936,14 @@ mod tests {
         let id = c.action_records[0].id;
         let s = stop(&db).await.unwrap();
         assert_eq!(s.actions, 1);
-        assert!(matches!(start(&db, &agent(), id).await, Err(AppError::Conflict(m)) if m.contains("stopped")));
+        assert!(
+            matches!(start(&db, &agent(), RunBy::Agent, id).await, Err(AppError::Conflict(m)) if m.contains("stopped"))
+        );
         assert_eq!(cards::get(&db, c.id).await.unwrap().unwrap().state, CardState::Open);
         // Another Approve All releases it again.
         let c = cards::get(&db, c.id).await.unwrap().unwrap();
         approve_now(&db, &[&c]).await;
-        assert_eq!(start(&db, &agent(), id).await.unwrap().status, ActionStatus::Started);
+        assert_eq!(start(&db, &agent(), RunBy::Agent, id).await.unwrap().status, ActionStatus::Started);
     }
 
     #[tokio::test]
@@ -823,16 +963,16 @@ mod tests {
         approve_now(&db, &[&c]).await;
         take(&db, &agent()).await.unwrap();
         let id = c.action_records[0].id;
-        start(&db, &agent(), id).await.unwrap();
+        start(&db, &agent(), RunBy::Agent, id).await.unwrap();
         let failed = ActionResult::Failed { error: "Executor error 401".into() };
-        report(&db, &agent(), &[ActionReport { action_id: id, result: failed }]).await.unwrap();
+        report(&db, &agent(), RunBy::Agent, &[ActionReport { action_id: id, result: failed }]).await.unwrap();
         let card = cards::get(&db, c.id).await.unwrap().unwrap();
         assert_eq!(card.state, CardState::Failed);
         assert_eq!(card.action_records[0].error.as_deref(), Some("Executor error 401"));
         retry(&db, c.id).await.unwrap();
         release_due(&db).await.unwrap();
         assert_eq!(take(&db, &agent()).await.unwrap().len(), 1);
-        assert_eq!(start(&db, &agent(), id).await.unwrap().status, ActionStatus::Started);
+        assert_eq!(start(&db, &agent(), RunBy::Agent, id).await.unwrap().status, ActionStatus::Started);
     }
 
     #[tokio::test]
@@ -922,5 +1062,70 @@ mod tests {
         let c = decide(&db, c.id, &Decide { version: 1, kind: DecisionKind::MoveUp, text: None }).await.unwrap();
         assert_eq!(c.input.section, CardSection::Actions);
         assert!(take(&db, &agent()).await.unwrap().is_empty(), "moves are never taken");
+    }
+
+    #[tokio::test]
+    async fn the_runner_claims_and_hands_over_and_neither_side_runs_the_others_actions() {
+        use quietdeck_types::node::Handoff;
+        let db = crate::db::memory().await;
+        let a = post(&db, "t1").await;
+        let b = post(&db, "t2").await;
+        approve_now(&db, &[&a, &b]).await;
+        let taken = runner_take(&db, &agent()).await.unwrap();
+        assert_eq!(taken.len(), 2);
+        let (da, db_) = (taken[0].decision.id, taken[1].decision.id);
+        let handoff = Handoff {
+            decision_id: db_,
+            reason: "no handler for watch".into(),
+            no_handler: Some(quietdeck_types::ActionType::Watch),
+        };
+        let held = runner_sort(&db, &agent(), &[da], &[handoff]).await.unwrap();
+        assert_eq!(held, vec![da]);
+        assert!(runner_take(&db, &agent()).await.unwrap().is_empty(), "sorted decisions aren't offered again");
+
+        // The agent gets the hand-off, with its reason, and not the runner's claim.
+        let mine = take(&db, &agent()).await.unwrap();
+        assert_eq!(mine.len(), 1);
+        assert_eq!(mine[0].decision.id, db_);
+        assert_eq!(mine[0].handoff_reason.as_deref(), Some("no handler for watch"));
+        assert_eq!(cards::get(&db, b.id).await.unwrap().unwrap().state, CardState::HandedOff);
+
+        let runner_action = a.action_records[0].id;
+        let agent_action = b.action_records[0].id;
+        assert!(matches!(start(&db, &agent(), RunBy::Agent, runner_action).await,
+            Err(AppError::Conflict(m)) if m.contains("runner's to run")));
+        assert!(matches!(start(&db, &agent(), RunBy::Runner, agent_action).await,
+            Err(AppError::Conflict(m)) if m.contains("agent's to run")));
+        assert_eq!(start(&db, &agent(), RunBy::Runner, runner_action).await.unwrap().run_by, Some(RunBy::Runner));
+        let done = ActionReport { action_id: runner_action, result: ActionResult::Done { outcome: None } };
+        let r = report(&db, &agent(), RunBy::Agent, std::slice::from_ref(&done)).await.unwrap();
+        assert!(r[0].error.as_deref().unwrap().contains("started by the runner"));
+        let r = report(&db, &agent(), RunBy::Runner, &[done]).await.unwrap();
+        assert_eq!(r[0].error, None);
+        assert_eq!(cards::get(&db, a.id).await.unwrap().unwrap().state, CardState::Done);
+
+        // A handed-off card finishes when the agent reports.
+        start(&db, &agent(), RunBy::Agent, agent_action).await.unwrap();
+        let done = ActionReport { action_id: agent_action, result: ActionResult::Done { outcome: None } };
+        report(&db, &agent(), RunBy::Agent, &[done]).await.unwrap();
+        assert_eq!(cards::get(&db, b.id).await.unwrap().unwrap().state, CardState::Done);
+
+        let (count,): (i64,) =
+            sqlx::query_as("SELECT count FROM runner_handoff_stats WHERE node = 'server' AND action_type = 'watch'")
+                .fetch_one(&db)
+                .await
+                .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn the_runner_takes_only_its_own_agents_cards() {
+        let db = crate::db::memory().await;
+        let c = post(&db, "t1").await;
+        approve_now(&db, &[&c]).await;
+        let other = SessionRef { node: "server".into(), tab: "api".into(), session_id: None };
+        assert!(runner_take(&db, &other).await.unwrap().is_empty());
+        let d = runner_take(&db, &agent()).await.unwrap()[0].decision.id;
+        assert!(runner_sort(&db, &other, &[d], &[]).await.unwrap().is_empty(), "another agent's runner can't claim it");
     }
 }

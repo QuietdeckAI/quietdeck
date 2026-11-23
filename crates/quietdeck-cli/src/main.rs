@@ -80,6 +80,11 @@ enum Command {
         #[command(subcommand)]
         command: DecisionsCommand,
     },
+    /// The triage round: say it's finished, so the runner may wake you again.
+    Round {
+        #[command(subcommand)]
+        command: RoundCommand,
+    },
     /// One approved action: start it before you run it, then mark it done or failed.
     Action {
         #[command(subcommand)]
@@ -135,6 +140,8 @@ enum CardCommand {
         /// Ask for an automatic action under this grant (`g_3` or `3`).
         #[arg(long, requires = "auto")]
         grant: Option<String>,
+        /// Try it as an automatic action under `--grant`: the deck checks the rules and, if they allow it, carries it
+        /// out without asking. Otherwise it's stored as a normal card.
         #[arg(long)]
         auto: bool,
     },
@@ -172,6 +179,12 @@ struct SessionsArgs {
 enum DecisionsCommand {
     /// Claim every released decision on your cards, with the actions exactly as approved.
     Take,
+}
+
+#[derive(Subcommand)]
+enum RoundCommand {
+    /// The round is finished: the runner may send the next wake-up.
+    Done,
 }
 
 #[derive(Subcommand)]
@@ -354,6 +367,17 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             let c = Client::connect().await?;
             let r: Vec<Released> = c.post("/api/decisions/take", &serde_json::json!({})).await?;
             print::out(json, &r, |r| print::released(r))
+        }
+        Command::Round { command: RoundCommand::Done } => {
+            let c = Client::connect().await?;
+            let r: quietdeck_types::api::RoundDone = c.post("/api/round/done", &serde_json::json!({})).await?;
+            print::out(json, &r, |r| {
+                if r.runner_told {
+                    "Round done: the runner will wake you for what comes next.".to_string()
+                } else {
+                    "Round done. No runner runs for this session, so nothing was waiting on it.".to_string()
+                }
+            })
         }
         Command::Action { command } => {
             let c = Client::connect().await?;

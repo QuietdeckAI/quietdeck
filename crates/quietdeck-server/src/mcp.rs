@@ -278,6 +278,23 @@ impl Mcp {
         tool_try!(r)
     }
 
+    #[tool(description = "Say your triage round is finished, so the runner may wake you again when new mail or \
+        events arrive. Call it at the end of every round.")]
+    async fn round_done(
+        &self,
+        _: Parameters<NoArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async {
+            let me = self.agent(&ctx).await?;
+            Ok::<_, crate::error::AppError>(quietdeck_types::api::RoundDone {
+                runner_told: crate::runner::round_done(&self.state, &me).await?,
+            })
+        }
+        .await;
+        tool_try!(r)
+    }
+
     #[tool(description = "Start one approved action before you run it. Refused once the person has pressed Stop: \
         then don't run it.")]
     async fn action_start(

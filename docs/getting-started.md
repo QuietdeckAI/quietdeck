@@ -333,3 +333,10 @@ launchctl bootout gui/$(id -u)/<claude-summarizer-web's label>
 ```
 
 The Markdown files stay where they are; the node doesn't write them.
+
+## The runner, on the triage agent's machine
+
+The machine where your triage agent runs can also run the runner, inside its node: it wakes the agent when mail
+arrives and carries out the approved actions that need no thought. It's off unless `node.yaml` turns it on, and it
+calls your services through Executor or your own commands. See [Executor, and the runner that uses
+it](executor.md).

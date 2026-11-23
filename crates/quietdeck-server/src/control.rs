@@ -22,7 +22,8 @@ const CLOSE_TIMEOUT: Duration = Duration::from_secs(20);
 fn asked_by(caller: &Caller) -> String {
     match caller {
         Caller::Session { session } => format!(" (asked by {})", session.address()),
-        _ => String::new(),
+        Caller::Node { node } => format!(" (by the runner on {node})"),
+        Caller::Owner { .. } => String::new(),
     }
 }
 
@@ -93,6 +94,30 @@ pub async fn resume(state: &AppState, caller: &Caller, target: SessionTarget) ->
     let started: SessionStarted = serde_json::from_value(v).map_err(|e| AppError::Internal(e.into()))?;
     let refs = vec![format!("{}@{}", started.tab, row.node), row.info.session_id.clone()];
     let text = format!("Resumed {} on {}{}", started.tab, row.node, asked_by(caller));
+    timeline::log(&state.db, TimelineKind::SessionResumed, &refs, &text).await?;
+    state.changed(Changed::Timeline);
+    Ok(started)
+}
+
+/// The runner's `resume`: one session by its ID, on the machine it ran on, in the tab the card names.
+pub async fn resume_by_id(
+    state: &AppState,
+    caller: &Caller,
+    node: &str,
+    session_id: &str,
+    tab: &str,
+    cwd: &str,
+) -> AppResult<SessionStarted> {
+    let row = sessions::get(&state.db, &state.hub, node, session_id).await?;
+    if row.as_ref().is_some_and(|r| r.info.running) {
+        return Err(AppError::Conflict(format!("{tab}@{node} is already running")));
+    }
+    let agent = row.map(|r| r.info.agent).unwrap_or(quietdeck_types::AgentKind::Claude);
+    let spec = SessionResume { session_id: session_id.into(), agent, tab: Some(tab.into()), cwd: cwd.into() };
+    let v = ask(state, node, DeckRequest::ResumeSession { spec }, START_TIMEOUT).await?;
+    let started: SessionStarted = serde_json::from_value(v).map_err(|e| AppError::Internal(e.into()))?;
+    let refs = vec![format!("{}@{node}", started.tab), session_id.to_string()];
+    let text = format!("Resumed {} on {node}{}", started.tab, asked_by(caller));
     timeline::log(&state.db, TimelineKind::SessionResumed, &refs, &text).await?;
     state.changed(Changed::Timeline);
     Ok(started)

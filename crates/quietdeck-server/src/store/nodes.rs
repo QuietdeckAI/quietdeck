@@ -72,7 +72,6 @@ pub async fn seen(db: &Db, node: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[expect(dead_code, reason = "the runner's dispatch uses it (build step 5)")]
 pub async fn runner_info(db: &Db, node: &str) -> anyhow::Result<Option<RunnerInfo>> {
     let row: Option<(Option<String>,)> =
         sqlx::query_as("SELECT runner_info FROM nodes WHERE name = ?").bind(node).fetch_optional(db).await?;
@@ -89,7 +88,17 @@ pub async fn list(db: &Db, hub: &Hub) -> anyhow::Result<Vec<NodeRow>> {
     let mut out = Vec::new();
     for (name, last_seen, version, runner) in rows {
         let runner: Option<RunnerInfo> = runner.map(|s| from_json(&s)).transpose()?;
+        let no_handler: Vec<ActionType> = sqlx::query_as::<_, (String,)>(
+            "SELECT action_type FROM runner_handoff_stats WHERE node = ? ORDER BY count DESC, last_at DESC",
+        )
+        .bind(&name)
+        .fetch_all(db)
+        .await?
+        .into_iter()
+        .filter_map(|(t,)| ActionType::parse(&t))
+        .collect();
         out.push(NodeRow {
+            no_handler,
             online: hub.is_online(&name).await,
             name,
             last_seen_at: ts_opt(last_seen),

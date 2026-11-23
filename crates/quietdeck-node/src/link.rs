@@ -130,11 +130,18 @@ async fn connect_once(node: &Arc<Node>) -> anyhow::Result<Outcome> {
         .map_err(|_| anyhow::anyhow!("timed out connecting to the deck"))??;
     let (mut sink, mut stream) = ws.split();
 
-    let hello = NodeFrame::Hello { protocol: PROTOCOL_VERSION, version: VERSION.to_string(), runner: None };
+    let runner = node.runner.get().map(|r| r.info());
+    let hello = NodeFrame::Hello { protocol: PROTOCOL_VERSION, version: VERSION.to_string(), runner };
     sink.send(Message::Text(serde_json::to_string(&hello)?.into())).await?;
     match tokio::time::timeout(Duration::from_secs(10), stream.next()).await {
         Ok(Some(Ok(Message::Text(t)))) => match serde_json::from_str::<DeckFrame>(&t)? {
-            DeckFrame::Welcome { node: name } => tracing::info!(node = %name, "connected to the deck"),
+            DeckFrame::Welcome { node: name } => {
+                tracing::info!(node = %name, "connected to the deck");
+                // Decisions released while this node was away are waiting.
+                if let Some(r) = node.runner.get() {
+                    r.signal(crate::runner::Signal::Released);
+                }
+            }
             DeckFrame::Refused { reason } => return Ok(Outcome::Refused(reason)),
             other => anyhow::bail!("expected welcome, got {other:?}"),
         },
@@ -224,6 +231,27 @@ async fn answer(node: &Node, request: DeckRequest) -> Reply {
         DeckRequest::CloseSession { session_id } => match crate::control::close(node, &session_id).await {
             Ok(()) => Reply::ok(&serde_json::json!({})),
             Err(error) => Reply::Err { error },
+        },
+        DeckRequest::DecisionsReleased => match node.runner.get() {
+            Some(r) => {
+                r.signal(crate::runner::Signal::Released);
+                Reply::ok(&())
+            }
+            None => Reply::Err { error: "this node's runner is off".into() },
+        },
+        DeckRequest::RoundDone => match node.runner.get() {
+            Some(r) => {
+                r.signal(crate::runner::Signal::RoundDone);
+                Reply::ok(&())
+            }
+            None => Reply::Err { error: "this node's runner is off".into() },
+        },
+        DeckRequest::SendAs { account, from } => match node.runner.get() {
+            Some(r) => match r.runner.send_as_check(&account, &from).await {
+                Ok(c) => Reply::ok(&c),
+                Err(error) => Reply::Err { error },
+            },
+            None => Reply::Err { error: "this node's runner is off".into() },
         },
         DeckRequest::Usage { command } => match &node.usage {
             Some(u) => match u.command(command).await {

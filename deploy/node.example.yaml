@@ -32,3 +32,48 @@ programs:
   herdr: herdr
   claude: claude
   codex: codex
+
+# The runner: only on the machine where the triage agent runs. It watches Gmail's history (message IDs and labels
+# only) and wakes the agent when mail arrives, and it carries out approved actions that need no thought. Every tool
+# is an Executor app tool (`path`) or a command that reads JSON on stdin and prints JSON (`command`). In `input`,
+# ${...} names a value: account.address, account.<var>, action.<field>, card.<field>, board.<field>, and for the mail
+# watch history_id and page_token. See docs/executor.md.
+runner:
+  enabled: false
+  agent: { tab: email triage }                  # gets wake-ups, hand-offs and error reports
+  executor:
+    url: https://executor.example.com/org/<org>/mcp
+    token_file: ~/.config/quietdeck/executor-token   # mode 600; or token_env: QUIETDECK_EXECUTOR_TOKEN
+  accounts:                                     # the account IDs from the deck's config
+    personal:
+      address: you@example.com
+      label: Personal
+      vars: { executor_account: acc_<id> }      # Executor's ID for this Google account
+  mail_watch:
+    every: 30s
+    profile: { path: tools.google.api.gmail.users.gmailUsersGetProfile, input: { accountId: "${account.executor_account}", input: { path: { userId: me } } } }
+    history:
+      path: tools.google.api.gmail.users.gmailUsersHistoryList
+      input:
+        accountId: "${account.executor_account}"
+        input:
+          path: { userId: me }
+          query: { startHistoryId: "${history_id}", pageToken: "${page_token}", historyTypes: [messageAdded], fields: "history(messagesAdded(message(id,labelIds))),historyId,nextPageToken" }
+  thread:
+    path: tools.google.api.gmail.users.gmailUsersThreadsGet
+    input: { accountId: "${account.executor_account}", input: { path: { userId: me, id: "${action.thread_id}" }, query: { format: minimal, fields: "id,messages(id,labelIds)" } } }
+  send_as:
+    path: tools.google.api.gmail.users.gmailUsersSettingsSendAsList
+    input: { accountId: "${account.executor_account}", input: { path: { userId: me }, query: { fields: "sendAs(sendAsEmail)" } } }
+  boards:                                       # the board names from the deck's config, with the tracker's IDs
+    engineering: { workflow_state_id: 500000001 }
+  eligible: [archive, mark_read, label, draft, forward, watch, lease, story, task, calendar, resume, new_session]
+  tools:
+    archive:   { path: tools.google.gmail.modify, input: { account: "${account.address}", threadIds: ["${action.thread_id}"], archive: true } }
+    mark_read: { path: tools.google.gmail.modify, input: { account: "${account.address}", threadIds: ["${action.thread_id}"], read: true } }
+    label:     { path: tools.google.gmail.modify, input: { account: "${account.address}", threadIds: ["${action.thread_id}"], addLabels: "${action.add}", removeLabels: "${action.remove}" } }
+    draft:     { path: tools.google.gmail.draft, input: { account: "${account.address}", from: "${action.from}", to: "${action.to}", cc: "${action.cc}", subject: "${action.subject}", body: "${action.body}", replyToMessageId: "${action.reply_to_message_id}" } }
+    calendar:  { path: tools.google.calendar.createEvent, input: { account: "${account.address}", calendarId: "${action.calendar}", summary: "${action.title}", start: "${action.start}", end: "${action.end}", timeZone: "${action.time_zone}", location: "${action.location}", description: "${action.description}" } }
+    story:
+      path: tools.shortcut.stories.createStory
+      input: { accountId: acc_<shortcut account>, input: { body: { name: "${action.title}", description: "${action.description}", story_type: "${action.story_type}", workflow_state_id: "${board.workflow_state_id}" } } }

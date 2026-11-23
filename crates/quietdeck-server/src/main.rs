@@ -13,6 +13,7 @@ mod mcp;
 mod ops;
 mod passkeys;
 mod relay;
+mod runner;
 mod state;
 mod store;
 mod web;

@@ -321,7 +321,6 @@ pub async fn list(db: &Db, hub: &crate::hub::Hub, f: &ListFilter) -> anyhow::Res
     hydrate(db, hub, rows).await
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "the Sessions screen uses it (build step 9)"))]
 pub async fn get(db: &Db, hub: &crate::hub::Hub, node: &str, session_id: &str) -> anyhow::Result<Option<SessionRow>> {
     let rows = sqlx::query_as::<_, Row>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM sessions WHERE node = ? AND session_id = ?"

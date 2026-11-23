@@ -169,3 +169,11 @@ pub enum Changed {
     /// The stream fell behind: refetch everything.
     All,
 }
+
+/// `quietdeck round done`'s answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct RoundDone {
+    /// Whether a runner on the caller's machine was told. False when none runs for this session.
+    pub runner_told: bool,
+}

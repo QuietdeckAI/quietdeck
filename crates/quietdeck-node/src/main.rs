@@ -8,6 +8,7 @@ mod deliver;
 mod herdr;
 mod link;
 mod local;
+mod runner;
 mod service;
 mod summaries;
 mod transcripts;
@@ -63,6 +64,8 @@ pub struct Node {
     pub summaries: Option<summaries::SummariesHandle>,
     pub usage: Option<usage::UsageHandle>,
     pub tokens: local::TokenCache,
+    /// Set once at start when node.yaml switches the runner on.
+    pub runner: std::sync::OnceLock<runner::RunnerHandle>,
 }
 
 #[tokio::main]
@@ -70,7 +73,9 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
         .with_writer(std::io::stderr)
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,rmcp=warn".into()),
+        )
         .init();
     match Cli::parse().command.unwrap_or(Command::Run) {
         Command::Run => run().await,
@@ -153,7 +158,24 @@ async fn run() -> anyhow::Result<()> {
         summaries,
         usage,
         tokens: local::TokenCache::default(),
+        runner: std::sync::OnceLock::new(),
     });
+
+    if let Some(cfg) = node.config.runner.clone().filter(|r| r.enabled) {
+        let executor = match &cfg.executor {
+            Some(e) => Some((e.clone(), runner::executor_token(e)?)),
+            None => None,
+        };
+        let r = Arc::new(runner::Runner::new(
+            cfg.clone(),
+            Arc::new(runner::LinkDeck(node.clone())),
+            Arc::new(runner::ConfiguredTools::new(executor)),
+            Arc::new(runner::LocalAgent { node: node.clone(), tab: cfg.agent.tab.clone() }),
+            state.clone(),
+        ));
+        let _ = node.runner.set(runner::spawn(r));
+        tracing::info!(agent = %cfg.agent.tab, "runner on");
+    }
 
     // Summaries and usage go to the deck as they come.
     {

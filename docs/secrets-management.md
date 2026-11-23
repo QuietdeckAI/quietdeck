@@ -131,6 +131,9 @@ QUIETDECK_NODE_TOKEN="op://agents/quietdeck-node-<machine>/token" op run -- quie
 (or `infisical run`, `doppler run` and so on). The service that `quietdeck-node install` sets up uses `token_file`; if
 you use `token_env`, run the node from your own service definition under `op run`.
 
+The runner's Executor token works the same way, under `runner.executor` with its own `token_file` or `token_env`
+([Executor, and the runner that uses it](executor.md#1-a-token-for-the-runner)).
+
 Either way, the node never sends its token anywhere but the deck's sign-in, and never logs it. The CLI never sees it:
 it gets a short-lived session token from the node over a local socket only you can open, and that token names the
 session that asked for it.

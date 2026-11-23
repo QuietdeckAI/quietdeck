@@ -229,6 +229,11 @@ function Nodes() {
                   {n.version && <> · {n.version}</>}
                   {n.runner && <> · runner: {n.runner_types.join(", ") || "no action types"}</>}
                 </p>
+                {n.runner && n.no_handler.length > 0 && (
+                  <p className="text-sm text-neutral">
+                    Handed to the agent for lack of a handler, most often first: {n.no_handler.join(", ")}
+                  </p>
+                )}
               </div>
               <Button variant="danger" size="sm" loading={revoke.isPending && revoke.variables === n.name} onClick={() => revoke.mutate(n.name)}>
                 Revoke

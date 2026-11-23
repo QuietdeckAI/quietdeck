@@ -4,4 +4,9 @@ import type { ActionType } from "./ActionType";
 /**
  * A node as the deck serves it.
  */
-export type NodeRow = { name: string, online: boolean, last_seen_at: string | null, version: string | null, runner: boolean, runner_types: Array<ActionType>, };
+export type NodeRow = { name: string, online: boolean, last_seen_at: string | null, version: string | null, runner: boolean, runner_types: Array<ActionType>, 
+/**
+ * The action types the runner handed to its agent for lack of a handler, most often first: candidates for the
+ * next handler. Types only, no counts.
+ */
+no_handler: Array<ActionType>, };

@@ -5,7 +5,7 @@ use axum::Json;
 use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::routing::{delete, get, post};
-use quietdeck_types::api::{Caller, Changed, DeckInfo, EnrolRequest, Enrolled, EnrolmentCode, Settings};
+use quietdeck_types::api::{Caller, Changed, DeckInfo, EnrolRequest, Enrolled, EnrolmentCode, RoundDone, Settings};
 use quietdeck_types::card::{ActionRecord, ActionReport, Card, CardAdded, CardInput, CardResolution, Released};
 use quietdeck_types::decision::{ApproveAll, Approving, Decide, Inbox, ReportReceipt, StopResult, UndoBatch};
 use quietdeck_types::directory::{NodeRow, SessionRow, SessionStart, SessionStarted, SessionTarget, WhoHas};
@@ -48,6 +48,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/decisions/undo", post(undo))
         .route("/api/decisions/stop", post(stop))
         .route("/api/decisions/take", post(take))
+        .route("/api/round/done", post(round_done))
         .route("/api/cards/{id}/decide", post(decide))
         .route("/api/cards/{id}/retry", post(retry))
         .route("/api/actions/{id}/start", post(action_start))
@@ -279,6 +280,10 @@ async fn retry(State(state): State<AppState>, _owner: Owner, Path(id): Path<i64>
 
 async fn take(State(state): State<AppState>, Agent(me): Agent) -> AppResult<Json<Vec<Released>>> {
     Ok(Json(ops::take(&state, &me).await?))
+}
+
+async fn round_done(State(state): State<AppState>, Agent(me): Agent) -> AppResult<Json<RoundDone>> {
+    Ok(Json(RoundDone { runner_told: crate::runner::round_done(&state, &me).await? }))
 }
 
 async fn action_start(

@@ -231,20 +231,6 @@ impl FromRequestParts<AppState> for Owner {
     }
 }
 
-/// A node (its runner) with its node token.
-#[expect(dead_code, reason = "the runner's endpoints (build step 5) take it")]
-pub struct NodeCaller(pub String);
-
-impl FromRequestParts<AppState> for NodeCaller {
-    type Rejection = AppError;
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
-        match resolve(state, parts).await? {
-            Caller::Node { node } => Ok(NodeCaller(node)),
-            _ => Err(AppError::Forbidden("this needs a node token".into())),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
