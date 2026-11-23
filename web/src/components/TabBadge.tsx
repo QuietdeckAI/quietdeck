@@ -20,11 +20,12 @@ function baseIcon(): Promise<HTMLImageElement> {
   return base;
 }
 
-/** Gmail's tab badge: a small white rounded badge at the bottom right with small black figures. */
+/** Gmail's tab badge: white, with black figures. */
 const BADGE_FILL = "#ffffff";
 const BADGE_TEXT = "#000000";
 
-/** The base icon with the count in a small white badge at the bottom right, as Gmail draws its unread count. */
+/** The base icon with the count in a white badge across its lower half, as Gmail draws its unread count: as tall as
+ * Gmail's, with figures nearly as tall as the badge, and as wide as the figures need (two or three fill the icon). */
 async function badgedIcon(label: string): Promise<string> {
   const img = await baseIcon();
   const canvas = document.createElement("canvas");
@@ -33,13 +34,19 @@ async function badgedIcon(label: string): Promise<string> {
   const ctx = canvas.getContext("2d");
   if (!ctx) return BASE_ICON;
   ctx.drawImage(img, 0, 0, SIZE, SIZE);
-  const h = 34;
-  ctx.font = `700 ${label.length > 2 ? 22 : label.length > 1 ? 26 : 30}px "Geist Variable", ui-sans-serif, sans-serif`;
-  const w = Math.min(SIZE, Math.max(h - 6, ctx.measureText(label).width + 10));
+  const h = 36;
+  let size = 38;
+  const font = () => `500 ${size}px "Geist Variable", ui-sans-serif, sans-serif`;
+  ctx.font = font();
+  while (size > 20 && ctx.measureText(label).width > SIZE - 4) {
+    size -= 1;
+    ctx.font = font();
+  }
+  const w = Math.min(SIZE, Math.max(h, ctx.measureText(label).width + 8));
   const x = SIZE - w;
   const y = SIZE - h;
   ctx.beginPath();
-  ctx.roundRect(x, y, w, h, 8);
+  ctx.roundRect(x, y, w, h, 9);
   ctx.fillStyle = BADGE_FILL;
   ctx.fill();
   ctx.fillStyle = BADGE_TEXT;
