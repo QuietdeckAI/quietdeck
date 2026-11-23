@@ -10,13 +10,18 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, S
 pub type Db = SqlitePool;
 
 pub async fn open(path: &std::path::Path) -> anyhow::Result<Db> {
-    let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))?
+    let opts = SqliteConnectOptions::new()
+        .filename(path)
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
         .synchronous(SqliteSynchronous::Normal)
         .foreign_keys(true)
         .busy_timeout(Duration::from_secs(5));
-    let pool = SqlitePoolOptions::new().max_connections(8).connect_with(opts).await?;
+    let pool = SqlitePoolOptions::new()
+        .max_connections(8)
+        .connect_with(opts)
+        .await
+        .map_err(|e| anyhow::anyhow!("opening {}: {e}", path.display()))?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     Ok(pool)
 }
@@ -29,6 +34,18 @@ pub async fn memory() -> Db {
     let pool = SqlitePoolOptions::new().max_connections(1).connect_with(opts).await.unwrap();
     sqlx::migrate!("./migrations").run(&pool).await.unwrap();
     pool
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn a_path_with_spaces_and_a_question_mark_opens() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("my data?/deck.db");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        super::open(&path).await.unwrap();
+        assert!(path.exists());
+    }
 }
 
 pub fn now_ms() -> i64 {

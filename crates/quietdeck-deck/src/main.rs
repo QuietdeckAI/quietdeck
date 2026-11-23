@@ -49,6 +49,8 @@ enum Command {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
+        .with_writer(std::io::stderr)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,sqlx=warn".into()),
         )
@@ -92,7 +94,8 @@ async fn serve(env: Env) -> anyhow::Result<()> {
     if owner_logins.is_empty() {
         anyhow::bail!("set QUIETDECK_OWNER_LOGIN (or owner: in deck.yaml): the deck serves only its owner");
     }
-    std::fs::create_dir_all(&env.data.data_dir)?;
+    std::fs::create_dir_all(&env.data.data_dir)
+        .map_err(|e| anyhow::anyhow!("the data directory {}: {e}", env.data.data_dir.display()))?;
 
     // Health answers 503 until the database is open and migrated.
     let ready = Arc::new(AtomicBool::new(false));
