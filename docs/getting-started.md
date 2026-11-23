@@ -262,7 +262,8 @@ quietdeck who-has <some ID you've worked on>
 
 It finds the sessions that mention it: in their summaries on the deck, and in the raw transcripts on every connected
 machine. Transcripts never leave their machine; the deck only learns which sessions mention the ID and when they
-last did. Each machine searches its newest transcripts first, for a few seconds, and says how far back it got.
+last did. Each machine searches its newest transcripts first, for a few seconds, and says how far back it got. Give
+several IDs or quoted phrases and each is looked up on its own, with its own answer.
 
 ## The Sessions screen
 

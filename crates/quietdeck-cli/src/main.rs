@@ -62,7 +62,9 @@ enum Command {
     },
     /// Who has this ID? Summaries on the deck, raw transcripts on every connected machine.
     WhoHas {
-        /// The ID or words to look for.
+        /// IDs or words to look for. Each argument is looked up on its own and gets its own answer; quote a phrase to
+        /// look for it as one term (`quietdeck who-has 19a4f0c2b7e1d3a5 "tech meetup"`).
+        #[arg(required = true)]
         query: Vec<String>,
     },
     /// Messages to sessions on other machines.
@@ -550,9 +552,27 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             print::out(json, &r, |r| format!("Resumed {} on {}.", r.tab, r.node))
         }
         Command::WhoHas { query } => {
-            let c = Client::connect().await?;
-            let r: quietdeck_types::directory::WhoHas = c.get("/api/who-has", &[("q", query.join(" "))]).await?;
-            print::out(json, &r, print::who_has)
+            let c = std::sync::Arc::new(Client::connect().await?);
+            let mut lookups = tokio::task::JoinSet::new();
+            for (i, q) in query.iter().enumerate() {
+                let (c, q) = (c.clone(), q.clone());
+                lookups.spawn(async move {
+                    (i, c.get::<quietdeck_types::directory::WhoHas>("/api/who-has", &[("q", q)]).await)
+                });
+            }
+            let mut answers = Vec::with_capacity(query.len());
+            while let Some(done) = lookups.join_next().await {
+                answers.push(done?);
+            }
+            answers.sort_by_key(|(i, _)| *i);
+            let answers = answers.into_iter().map(|(_, r)| r).collect::<anyhow::Result<Vec<_>>>()?;
+            if let [one] = answers.as_slice() {
+                print::out(json, one, print::who_has)
+            } else {
+                print::out(json, &answers, |all| {
+                    all.iter().map(|w| format!("{}:\n{}", w.query, print::who_has(w))).collect::<Vec<_>>().join("\n\n")
+                })
+            }
         }
         Command::Msg { command: MsgCommand::Send { to, text } } => {
             let c = Client::connect().await?;
