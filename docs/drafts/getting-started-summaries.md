@@ -120,7 +120,7 @@ quietdeck-node import-summaries <claude-summarizer vault>
 
 The vault is the `vault_dir` in `~/.config/claude-summarizer/config.json`, or `~/.local/share/claude-summarizer` if
 you never set one. The import sends every update to the deck as a point on its session's timeline, with its original
-hour, so each session's history and timeline carry over. Running it again sends nothing new.
+hour, so each session's history and timeline carry over.
 
 Then stop claude-summarizer. On a Mac:
 
