@@ -168,7 +168,7 @@ mod tests {
     use crate::session::AgentKind;
 
     fn target() -> DeliveryTarget {
-        DeliveryTarget { tab: "talira".into(), session_id: None, pane: None, agent: AgentKind::Claude }
+        DeliveryTarget { tab: "api".into(), session_id: None, pane: None, agent: AgentKind::Claude }
     }
 
     #[test]

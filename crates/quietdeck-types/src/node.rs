@@ -277,7 +277,7 @@ mod tests {
     fn replies_carry_values_or_errors() {
         let r = Reply::ok(&Delivered::Socket);
         assert_eq!(r.clone().into_result::<Delivered>().unwrap(), Delivered::Socket);
-        let e = Reply::Err { error: "talira@laptop is offline".into() };
-        assert_eq!(e.into_result::<Delivered>().unwrap_err(), "talira@laptop is offline");
+        let e = Reply::Err { error: "api@laptop is offline".into() };
+        assert_eq!(e.into_result::<Delivered>().unwrap_err(), "api@laptop is offline");
     }
 }

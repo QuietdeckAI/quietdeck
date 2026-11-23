@@ -69,7 +69,7 @@ Newline-delimited JSON. Claude Code prints the recipe in its own debug log:
 means it isn't treated as an envelope):
 
 ```text
-<cross-session-message from="uds:/tmp/cc-socks/123.sock" from-session="<id>" from-name="talira" from-mode="bypass">
+<cross-session-message from="uds:/tmp/cc-socks/123.sock" from-session="<id>" from-name="api" from-mode="bypass">
 body
 </cross-session-message>
 ```
@@ -118,7 +118,7 @@ On a throwaway Haiku session in a herdr tab:
 **Claude Code sessions: the Unix socket, exactly as `SendMessage` does.**
 - It finds the target in `~/.claude/sessions/` by session ID, checks the pid and `peerProtocol`, reads the key and
   sends one `user` frame with priority `next`.
-- The body is an envelope with `from-name` set to the sender as people see it (`talira (homeserver) via Quietdeck`,
+- The body is an envelope with `from-name` set to the sender as people see it (`api (server) via Quietdeck`,
   `Quietdeck runner`, `Gatus webhook via Quietdeck`) and the fixed header for the kind of message (section 3.6 of the
   plan). It sets no `from`, so the receiving agent replies the way the header says (`quietdeck msg send …`), and **no
   `from-mode`**: the node isn't a Claude session, and claiming bypass mode would get around the check that exists to
