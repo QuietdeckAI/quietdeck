@@ -81,9 +81,65 @@ pub fn import(
     old_state: Option<&Path>,
     state: &mut State,
 ) -> std::io::Result<Imported> {
-    let mut out = Imported::default();
     let index: Value = serde_json::from_slice(&std::fs::read(vault.join("index.json"))?)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    import_index(vault, &index, old_state, state)
+}
+
+/// Where claude-summarizer kept its summaries: `vault_dir` in its config, or its default.
+pub fn claude_summarizer_vault(home: &Path) -> PathBuf {
+    let config = home.join(".config/claude-summarizer/config.json");
+    let configured = std::fs::read(&config)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        .and_then(|v| {
+            v.get("vault_dir")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        });
+    match configured {
+        Some(d) if d.starts_with("~/") => home.join(&d[2..]),
+        Some(d) if !d.is_empty() => PathBuf::from(d),
+        _ => home.join(".local/share/claude-summarizer"),
+    }
+}
+
+/// At start-up on a machine that ran claude-summarizer: adopt its byte offsets and each session's latest page, so
+/// nothing it already summarised is summarised again, whether or not anyone runs the import. Sends nothing to the
+/// deck: the import does that. Returns how many offsets it adopted, or None when there's nothing to adopt.
+pub fn seed_from_claude_summarizer(home: &Path, state: &mut State) -> Option<usize> {
+    let old_state = home.join(".local/state/claude-summarizer/state.json");
+    if !old_state.exists() || state.seeded_at.is_some() || state.imported_at.is_some() {
+        return None;
+    }
+    let vault = claude_summarizer_vault(home);
+    let index = std::fs::read(vault.join("index.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        .unwrap_or_else(|| serde_json::json!({"sessions": {}}));
+    match import_index(&vault, &index, Some(&old_state), state) {
+        Ok(got) => {
+            state.imported_at = None;
+            state.seeded_at = Some(Timestamp::now());
+            Some(got.offsets)
+        }
+        Err(e) => {
+            tracing::warn!(
+                "summaries: can't adopt claude-summarizer's offsets from {}: {e}",
+                old_state.display()
+            );
+            None
+        }
+    }
+}
+
+fn import_index(
+    vault: &Path,
+    index: &Value,
+    old_state: Option<&Path>,
+    state: &mut State,
+) -> std::io::Result<Imported> {
+    let mut out = Imported::default();
     let empty = serde_json::Map::new();
     let sessions = index
         .get("sessions")

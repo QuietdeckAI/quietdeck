@@ -1,0 +1,17 @@
+# quietdeck-node as a systemd user service. `quietdeck-node install` fills in the placeholders, writes this to
+# ~/.config/systemd/user/quietdeck-node.service and enables it. To keep it running while you're logged out:
+# loginctl enable-linger "$USER".
+[Unit]
+Description=Quietdeck node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart={{BIN}} run
+# The node runs herdr and claude: the PATH they were found on when you installed it.
+Environment=PATH={{PATH}}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

@@ -686,26 +686,6 @@ async fn the_start_up_sweep_takes_sessions_that_ended_and_leaves_running_ones() 
     assert_eq!(fake.prompts().len(), 2);
 }
 
-#[tokio::test(start_paused = true)]
-async fn no_sweep_before_claude_summarizers_offsets_are_imported() {
-    let h = home();
-    append(&h, "ended", &[human("ended", "Old work", 50)]);
-    let old = h.home.join(".local/state/claude-summarizer");
-    std::fs::create_dir_all(&old).unwrap();
-    std::fs::write(old.join("state.json"), r#"{"files": {}}"#).unwrap();
-    let fake = Fake::new(vec![]);
-    let r = run(&h, &fake, true);
-    advance(35).await;
-    assert!(fake.prompts().is_empty(), "held");
-    // Idle summaries still run.
-    r.signals
-        .send(status("ended", AgentStatus::Idle))
-        .await
-        .unwrap();
-    advance(61).await;
-    assert_eq!(fake.prompts().len(), 1);
-}
-
 // ---------------------------------------------------------------- catch-up and import
 
 #[tokio::test]
@@ -865,22 +845,108 @@ fn parity_dump() {
     }
 }
 
-#[tokio::test(start_paused = true)]
-async fn the_import_starts_the_sweep_it_held() {
-    let h = home();
-    append(&h, "ended", &[human("ended", "Old work", 50)]);
+/// A machine that ran claude-summarizer, with a transcript it has read up to some offset and a page for it.
+fn claude_summarizer_was_here(h: &Home, sid: &str, read_to: u64) {
+    let vault = h.home.join(".local/share/claude-summarizer");
+    std::fs::create_dir_all(vault.join("ci")).unwrap();
+    std::fs::write(
+        vault.join("ci/2026-11-20T10.md"),
+        "---\nactivity_from: \"2026-11-20T09:00+13:00\"\nactivity_to: \"2026-11-20T10:00+13:00\"\n---\n## Sentence\n\nS.\n\n## Paragraph\n\nP.\n\n## Page\n\nThe old page.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        vault.join("index.json"),
+        json!({"sessions": {sid: {"agent": "claude", "folder": "ci", "tab": "ci", "transcripts": [transcript_path(h, sid)]}}}).to_string(),
+    )
+    .unwrap();
     let old = h.home.join(".local/state/claude-summarizer");
     std::fs::create_dir_all(&old).unwrap();
-    std::fs::write(old.join("state.json"), r#"{"files": {}}"#).unwrap();
-    let vault = h.home.join("vault");
-    std::fs::create_dir_all(&vault).unwrap();
-    std::fs::write(vault.join("index.json"), r#"{"sessions": {}}"#).unwrap();
+    std::fs::write(
+        old.join("state.json"),
+        json!({"files": {transcript_path(h, sid).to_string_lossy(): {"offset": read_to}}})
+            .to_string(),
+    )
+    .unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn on_start_it_adopts_claude_summarizers_offsets_without_any_import() {
+    let h = home();
+    let path = append(
+        &h,
+        "s1",
+        &[
+            human("s1", "Weeks of old work", 60 * 24 * 40),
+            human("s1", "Already summarised", 60),
+        ],
+    );
+    claude_summarizer_was_here(&h, "s1", std::fs::metadata(&path).unwrap().len());
+    append(&h, "s1", &[human("s1", "New since then", 5)]);
+    append(
+        &h,
+        "ended",
+        &[human("ended", "Not in claude-summarizer's state", 50)],
+    );
     let fake = Fake::new(vec![]);
     let r = run(&h, &fake, true);
-    advance(35).await;
-    assert!(fake.prompts().is_empty(), "held");
-    assert_eq!(r.handle.import_claude_summarizer(vault).await.unwrap(), 0);
+    r.signals
+        .send(status("s1", AgentStatus::Idle))
+        .await
+        .unwrap();
+    advance(65).await;
+    let prompts = fake.prompts();
+    let s1: Vec<&String> = prompts
+        .iter()
+        .filter(|p| p.contains("session ID s1"))
+        .collect();
+    assert_eq!(
+        s1.len(),
+        1,
+        "one call, for the new activity only: {prompts:?}"
+    );
+    assert!(
+        s1[0].contains("New since then")
+            && !s1[0].contains("Already summarised")
+            && !s1[0].contains("Weeks of old")
+    );
+    assert!(
+        s1[0].contains("Current page (written 2026-11-20T10)") && s1[0].contains("The old page.")
+    );
+    // The sweep runs as usual for what claude-summarizer never read.
+    assert!(prompts.iter().any(|p| p.contains("session ID ended")));
+    // Nothing was sent to the deck for the history: that's the import's job.
+    let mut origins = vec![];
+    let mut events = r.events;
+    while let Ok(SummaryEvent::Summary(rec)) = events.try_recv() {
+        origins.push(rec.origin);
+    }
+    assert!(origins.iter().all(|o| *o == RecordOrigin::Node));
+    // Adopted once: a restart doesn't adopt again, and the import still sends the history.
+    let st = super::state::State::load(&h.state.join("summaries.json")).unwrap();
+    assert!(st.seeded_at.is_some() && st.imported_at.is_none());
+    drop(r.handle);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_import_after_adopting_still_sends_the_history_and_sweeps() {
+    let h = home();
+    let path = append(&h, "s1", &[human("s1", "Already summarised", 60)]);
+    claude_summarizer_was_here(&h, "s1", std::fs::metadata(&path).unwrap().len());
+    let fake = Fake::new(vec![]);
+    let mut r = run(&h, &fake, false);
+    advance(1).await;
+    let vault = h.home.join(".local/share/claude-summarizer");
+    assert_eq!(r.handle.import_claude_summarizer(vault).await.unwrap(), 1);
+    match r.events.try_recv() {
+        Ok(SummaryEvent::Summary(rec)) => assert_eq!(
+            (rec.origin, rec.sentence.as_str()),
+            (RecordOrigin::ClaudeSummarizer, "S.")
+        ),
+        other => panic!("{other:?}"),
+    }
     advance(2).await;
-    assert_eq!(fake.prompts().len(), 1);
-    assert!(fake.prompts()[0].contains("session ID ended"));
+    assert!(
+        fake.prompts().is_empty(),
+        "claude-summarizer had read it all"
+    );
 }

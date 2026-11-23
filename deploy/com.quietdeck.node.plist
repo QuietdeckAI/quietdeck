@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- quietdeck-node as a launchd agent. `quietdeck-node install` fills in the placeholders and loads it. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.quietdeck.node</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{BIN}}</string>
+    <string>run</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- The node runs herdr and claude: the PATH they were found on when you installed it. -->
+    <key>PATH</key>
+    <string>{{PATH}}</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>{{LOG}}</string>
+  <key>StandardErrorPath</key>
+  <string>{{LOG}}</string>
+</dict>
+</plist>

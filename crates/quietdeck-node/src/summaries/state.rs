@@ -51,6 +51,9 @@ pub struct State {
     /// When claude-summarizer's history was imported (once).
     #[serde(default)]
     pub imported_at: Option<Timestamp>,
+    /// When claude-summarizer's offsets and latest pages were adopted at start-up (without sending its records).
+    #[serde(default)]
+    pub seeded_at: Option<Timestamp>,
 }
 
 impl State {

@@ -7,6 +7,7 @@ mod deliver;
 mod herdr;
 mod link;
 mod local;
+mod service;
 mod summaries;
 mod transcripts;
 mod usage;
@@ -40,6 +41,15 @@ enum Command {
         /// claude-summarizer's output directory (the one holding index.json).
         dir: PathBuf,
     },
+    /// Run the node as a service: a launchd agent on macOS, a systemd user service on Linux. Run it again after
+    /// moving the binary or changing PATH.
+    Install {
+        /// Write the service file without starting it.
+        #[arg(long)]
+        no_start: bool,
+    },
+    /// Stop the service and remove its file.
+    Uninstall,
 }
 
 /// Everything the node's tasks share.
@@ -61,6 +71,8 @@ async fn main() -> anyhow::Result<()> {
         .init();
     match Cli::parse().command.unwrap_or(Command::Run) {
         Command::Run => run().await,
+        Command::Install { no_start } => service::install(&config::home(), !no_start),
+        Command::Uninstall => service::uninstall(&config::home()),
         Command::ImportSummaries { dir } => {
             let dir = std::fs::canonicalize(&dir).map_err(|e| anyhow::anyhow!("{}: {e}", dir.display()))?;
             match ask_local(&LocalRequest::ImportSummaries { dir: dir.display().to_string() }).await? {

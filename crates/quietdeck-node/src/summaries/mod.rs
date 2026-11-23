@@ -146,7 +146,7 @@ impl SummariesHandle {
                 .await
                 .map_err(|_| SummariesError::Stopped)?;
         }
-        // The start-up sweep was held until now.
+        // Sweep now for whatever the imported offsets leave unread.
         let _ = self.tx.send(Command::Sweep);
         Ok(n)
     }
@@ -216,6 +216,19 @@ pub fn start(
             Arc::new(Engine::new(config, model, accounts, events).expect("empty state loads"))
         }
     };
+    {
+        let home = engine.config.roots.home_path();
+        let seeded = import::seed_from_claude_summarizer(
+            &home,
+            &mut engine.state.lock().expect("state lock"),
+        );
+        if let Some(n) = seeded {
+            engine.save();
+            tracing::info!(
+                "summaries: adopted claude-summarizer's offsets for {n} transcripts; import-summaries adds its history to the deck"
+            );
+        }
+    }
     let (tx, rx) = mpsc::unbounded_channel();
     let driver = Driver::new(engine.clone(), tx.clone(), enabled);
     tokio::spawn(driver.run(rx, signals));
@@ -428,28 +441,6 @@ impl Driver {
     /// Transcripts with unread content whose session isn't running.
     fn queue_sweep(&mut self) {
         self.paused = false;
-        // A machine that ran claude-summarizer: until its offsets are imported, a sweep would summarise six months of
-        // history again (about 1,100 calls on the first machine). Idle summaries still run.
-        let old_state = self
-            .engine
-            .config
-            .roots
-            .home_path()
-            .join(".local/state/claude-summarizer/state.json");
-        if old_state.exists()
-            && self
-                .engine
-                .state
-                .lock()
-                .expect("state lock")
-                .imported_at
-                .is_none()
-        {
-            tracing::warn!(
-                "summaries: sweep held until claude-summarizer's history is imported (quietdeck-node import-summaries <dir>)"
-            );
-            return;
-        }
         let cutoff =
             SystemTime::now() - Duration::from_secs(self.engine.config.max_age_days as u64 * 86400);
         let running: HashSet<String> = self.sched.running_sessions().into_iter().collect();
