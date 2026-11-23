@@ -3,4 +3,12 @@
 /**
  * One fact on a card: an amount, a date, a reference.
  */
-export type Fact = { label: string, value: string, };
+export type Fact = { 
+/**
+ * A few words: "Amount", "Due".
+ */
+label: string, 
+/**
+ * "$1,200", "1 December".
+ */
+value: string, };

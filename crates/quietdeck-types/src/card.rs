@@ -83,8 +83,10 @@ pub struct SenderAuth {
 #[ts(export)]
 #[serde(deny_unknown_fields)]
 pub struct Fact {
+    /// A few words: "Amount", "Due".
     #[garde(length(min = 1, max = 100))]
     pub label: String,
+    /// "$1,200", "1 December".
     #[garde(length(min = 1, max = 1000))]
     pub value: String,
 }
@@ -133,6 +135,7 @@ pub struct CardInput {
     /// drafts carry the rest.
     #[garde(length(min = 1, max = 5000))]
     pub summary: String,
+    /// Key facts shown under the summary, each `{"label": "Amount", "value": "$1,200"}`.
     #[serde(default)]
     #[garde(length(max = 30), dive)]
     pub facts: Vec<Fact>,
@@ -204,7 +207,64 @@ impl CardInput {
                 problems.join("\n- ")
             ));
         }
-        serde_json::from_value(v).map_err(|e| format!("the card's JSON: {e}"))
+        serde_path_to_error::deserialize(v).map_err(|e| {
+            let path = e.path().to_string();
+            let inner = e.into_inner();
+            let field = path.split(['.', '[']).next().unwrap_or_default();
+            let takes = props
+                .get(field)
+                .map(|p| Self::shape(&schema, p, 0))
+                .filter(|s| s.len() <= 300)
+                .map(|s| format!("\n`{field}` takes {s}."))
+                .unwrap_or_default();
+            format!(
+                "the card's JSON: `{path}`: {inner}{takes}\n`quietdeck card add --help` has an example; `quietdeck card \
+                 schema` prints every field."
+            )
+        })
+    }
+
+    /// A field's JSON shape in one line from its schema: `[{"label": string, "value": string}]`. Optional fields end in `?`.
+    fn shape(root: &serde_json::Value, node: &serde_json::Value, depth: usize) -> String {
+        use serde_json::Value;
+        let node = match node.get("$ref").and_then(Value::as_str).and_then(|r| r.strip_prefix("#/$defs/")) {
+            Some(name) => &root["$defs"][name],
+            None => node,
+        };
+        if depth > 3 {
+            return "…".into();
+        }
+        if let Some(values) = node.get("enum").and_then(Value::as_array) {
+            return values.iter().map(Value::to_string).collect::<Vec<_>>().join(" | ");
+        }
+        if let Some(any) = node.get("anyOf").or_else(|| node.get("oneOf")).and_then(Value::as_array) {
+            return any.iter().map(|n| Self::shape(root, n, depth + 1)).collect::<Vec<_>>().join(" | ");
+        }
+        let types: Vec<&str> = match &node["type"] {
+            Value::String(t) => vec![t.as_str()],
+            Value::Array(ts) => ts.iter().filter_map(Value::as_str).collect(),
+            _ => vec![],
+        };
+        let main = types.iter().find(|t| **t != "null").copied().unwrap_or("any");
+        match main {
+            "array" => format!("[{}]", Self::shape(root, &node["items"], depth + 1)),
+            "object" => match node["properties"].as_object() {
+                Some(props) => {
+                    let required: Vec<&str> =
+                        node["required"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+                    let fields: Vec<String> = props
+                        .iter()
+                        .map(|(k, v)| {
+                            let opt = if required.contains(&k.as_str()) { "" } else { "?" };
+                            format!("\"{k}\"{opt}: {}", Self::shape(root, v, depth + 1))
+                        })
+                        .collect();
+                    format!("{{{}}}", fields.join(", "))
+                }
+                None => "object".into(),
+            },
+            other => other.into(),
+        }
     }
 
     /// The JSON Schema of a card, with every field's doc comment as its description.
@@ -429,6 +489,18 @@ mod tests {
         }
         assert!(e.contains("Gmail's thread ID"), "missing fields say what they are: {e}");
         assert!(!e.contains("missing `facts`"), "defaulted fields aren't required: {e}");
+    }
+
+    #[test]
+    fn a_wrong_type_names_its_path_and_the_shape_the_field_takes() {
+        let mut card = card();
+        card["facts"] = json!(["Amount: $1,200"]);
+        let e = CardInput::from_json(&card.to_string()).unwrap_err();
+        assert!(e.contains("`facts[0]`"), "{e}");
+        assert!(e.contains(r#"`facts` takes [{"label": string, "value": string}]"#), "{e}");
+        card["facts"] = json!("Amount: $1,200");
+        let e = CardInput::from_json(&card.to_string()).unwrap_err();
+        assert!(e.contains("`facts`: invalid type: string"), "{e}");
     }
 
     #[test]

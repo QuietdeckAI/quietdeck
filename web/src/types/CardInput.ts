@@ -37,7 +37,11 @@ list_id: string | null, subject: string,
  * "Sales pitch: card dunning", "Water bill, direct debit", "Customer asks how webhook retries work". Facts and
  * drafts carry the rest.
  */
-summary: string, facts: Array<Fact>, section: CardSection, 
+summary: string, 
+/**
+ * Key facts shown under the summary, each `{"label": "Amount", "value": "$1,200"}`.
+ */
+facts: Array<Fact>, section: CardSection, 
 /**
  * The agent wants to carry the card out itself, whatever the runner could do.
  */

@@ -251,6 +251,7 @@ Example: a sales pitch for the archive list, with a one-line unsubscribe reply:
     "sender": {"name": "Paul", "address": "paul@vendor.example"},
     "subject": "Quick question about your card renewals",
     "summary": "Sales pitch: card dunning",
+    "facts": [{"label": "From", "value": "Vendor's sales team"}],
     "section": "archive_list",
     "reason": "Cold sales pitch: unsubscribe and archive",
     "actions": [

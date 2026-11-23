@@ -13,6 +13,7 @@ rust-version = "1.99"
 quietdeck-types = { path = "crates/quietdeck-types" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+serde_path_to_error = "0.1.20"
 jiff = { version = "1.0.2", features = ["serde"] }
 ts-rs = { version = "12.0.1", features = ["serde-json-impl", "no-serde-warnings"] }
 schemars = "1.2.3"
