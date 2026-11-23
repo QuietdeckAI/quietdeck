@@ -95,5 +95,10 @@ for the PR detector, `gh`.
 
 **macOS:** a launchd agent, `deploy/com.quietdeck.node.plist`, installed by `quietdeck-node install`.
 
+**Claude Code's inbound setting.** The node delivers messages to Claude Code sessions the way `SendMessage` does
+(`docs/claude-code-messaging.md`). Sessions in bypass-permissions mode hold those messages for approval unless
+`~/.claude/settings.json` on that machine has `"crossSessionInbound": "accept"`. Set it on every machine whose sessions
+run with `--dangerously-skip-permissions` and should receive wake-ups, forwards, relayed messages and webhooks.
+
 The node opens no ports. It needs outbound HTTPS and WebSocket access to `QUIETDECK_PUBLIC_URL` and, with the runner
 on, to the user's Executor.
