@@ -146,6 +146,8 @@ impl SummariesHandle {
                 .await
                 .map_err(|_| SummariesError::Stopped)?;
         }
+        // The start-up sweep was held until now.
+        let _ = self.tx.send(Command::Sweep);
         Ok(n)
     }
 }
@@ -232,6 +234,8 @@ enum Command {
     },
     /// Every account is spent: wait for the next idle event or sweep.
     Paused,
+    /// Sweep now (after the import).
+    Sweep,
 }
 
 /// What a summary task works on: an idle session, or a transcript the sweep found.
@@ -347,6 +351,11 @@ impl Driver {
         match cmd {
             Command::Finished { key, called } => self.sched.on_finished(&key, called, now),
             Command::Paused => self.paused = true,
+            Command::Sweep => {
+                if self.enabled && self.engine.config.sweep {
+                    self.queue_sweep();
+                }
+            }
             Command::CatchupDone(session_id, result) => {
                 self.catchups_writing.remove(&session_id);
                 for reply in self.catchup_waiters.remove(&session_id).unwrap_or_default() {

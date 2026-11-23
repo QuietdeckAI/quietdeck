@@ -864,3 +864,23 @@ fn parity_dump() {
         writeln!(f, "{row}").unwrap();
     }
 }
+
+#[tokio::test(start_paused = true)]
+async fn the_import_starts_the_sweep_it_held() {
+    let h = home();
+    append(&h, "ended", &[human("ended", "Old work", 50)]);
+    let old = h.home.join(".local/state/claude-summarizer");
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(old.join("state.json"), r#"{"files": {}}"#).unwrap();
+    let vault = h.home.join("vault");
+    std::fs::create_dir_all(&vault).unwrap();
+    std::fs::write(vault.join("index.json"), r#"{"sessions": {}}"#).unwrap();
+    let fake = Fake::new(vec![]);
+    let r = run(&h, &fake, true);
+    advance(35).await;
+    assert!(fake.prompts().is_empty(), "held");
+    assert_eq!(r.handle.import_claude_summarizer(vault).await.unwrap(), 0);
+    advance(2).await;
+    assert_eq!(fake.prompts().len(), 1);
+    assert!(fake.prompts()[0].contains("session ID ended"));
+}
