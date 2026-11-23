@@ -26,7 +26,7 @@ export function DropdownMenuItem({ className, ...props }: ComponentProps<typeof 
   return (
     <Menu.Item
       className={cn(
-        "flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 outline-none " +
+        "flex cursor-pointer select-none items-center data-[disabled]:cursor-default gap-2 rounded-sm px-2 py-1.5 outline-none " +
           "data-[disabled]:opacity-45 data-[highlighted]:bg-paper-2 [&_svg]:size-4 [&_svg]:text-neutral",
         className,
       )}

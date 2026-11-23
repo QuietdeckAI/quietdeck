@@ -77,7 +77,7 @@ export function InboxScreen() {
 
   return (
     <>
-      <main className="mx-auto max-w-3xl px-4 pt-6 pb-4">
+      <main className="mx-auto max-w-5xl px-4 pt-6 pb-4">
         <AccountTabs />
         {inbox.isError && (
           <p role="alert" className="mt-8 text-danger">
@@ -85,7 +85,12 @@ export function InboxScreen() {
           </p>
         )}
         {inbox.data && (
-          <InboxBody inbox={inbox.data} drafts={drafts} setDrafts={setDrafts} />
+          <InboxBody
+            inbox={inbox.data}
+            drafts={drafts}
+            setDrafts={setDrafts}
+            showAccount={!account}
+          />
         )}
       </main>
       {inbox.data && (
@@ -102,10 +107,12 @@ function InboxBody({
   inbox,
   drafts,
   setDrafts,
+  showAccount,
 }: {
   inbox: Inbox;
   drafts: Record<string, Draft>;
   setDrafts: React.Dispatch<React.SetStateAction<Record<string, Draft>>>;
+  showAccount: boolean;
 }) {
   const draftFor = (c: Card) => drafts[key(c)] ?? EMPTY;
   const setDraft = (c: Card) => (d: Draft) =>
@@ -137,23 +144,26 @@ function InboxBody({
       )}
 
       {inbox.actions.length > 0 && (
-        <section className="mt-6 flex flex-col gap-4" aria-label="Actions">
-          {inbox.actions.map((c) => (
-            <ActionCard
-              key={key(c)}
-              card={c}
-              draft={draftFor(c)}
-              onDraft={setDraft(c)}
-              offer={inbox.rule_offers.find((o) => o.card_id === c.id)}
-            />
-          ))}
+        <section className="mt-6" aria-label="Actions">
+          <ul>
+            {inbox.actions.map((c) => (
+              <ActionCard
+                key={key(c)}
+                card={c}
+                draft={draftFor(c)}
+                onDraft={setDraft(c)}
+                offer={inbox.rule_offers.find((o) => o.card_id === c.id)}
+                showAccount={showAccount}
+              />
+            ))}
+          </ul>
         </section>
       )}
 
       {inbox.suggestions.length > 0 && (
-        <section className="mt-10">
-          <h2 className="mb-3 text-lg text-muted">Suggestions</h2>
-          <div className="flex flex-col gap-4">
+        <section className="mt-8">
+          <h2 className="mb-1 text-lg text-muted">Suggestions</h2>
+          <ul>
             {inbox.suggestions.map((c) => (
               <ActionCard
                 key={key(c)}
@@ -161,14 +171,15 @@ function InboxBody({
                 draft={draftFor(c)}
                 onDraft={setDraft(c)}
                 suggestion
+                showAccount={showAccount}
               />
             ))}
-          </div>
+          </ul>
         </section>
       )}
 
       {inbox.archive_list.length > 0 && (
-        <section className="mt-10">
+        <section className="mt-8">
           <h2 className="mb-1 text-lg text-muted">Archive list</h2>
           <ul>
             {inbox.archive_list.map((c) => (
@@ -179,7 +190,7 @@ function InboxBody({
       )}
 
       {inbox.timeline.length > 0 && (
-        <section className="mt-10">
+        <section className="mt-8">
           <h2 className="mb-1 text-lg text-muted">Automatic actions</h2>
           <ul>
             {inbox.timeline.map((e) => (

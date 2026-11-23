@@ -20,12 +20,11 @@ function baseIcon(): Promise<HTMLImageElement> {
   return base;
 }
 
-function token(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
+/** Gmail's tab badge: a small white rounded badge at the bottom right with small black figures. */
+const BADGE_FILL = "#ffffff";
+const BADGE_TEXT = "#000000";
 
-/** The base icon with the count in a pill at the bottom right: the accent with dark figures, ringed in the icon's own
- * dark so it stays clear on light and dark tab strips at 16 px. */
+/** The base icon with the count in a small white badge at the bottom right, as Gmail draws its unread count. */
 async function badgedIcon(label: string): Promise<string> {
   const img = await baseIcon();
   const canvas = document.createElement("canvas");
@@ -34,22 +33,19 @@ async function badgedIcon(label: string): Promise<string> {
   const ctx = canvas.getContext("2d");
   if (!ctx) return BASE_ICON;
   ctx.drawImage(img, 0, 0, SIZE, SIZE);
-  const h = 50;
-  ctx.font = `700 ${label.length > 2 ? 30 : label.length > 1 ? 40 : 44}px "Geist Variable", ui-sans-serif, sans-serif`;
-  const w = Math.min(SIZE, Math.max(h, ctx.measureText(label).width + 10));
+  const h = 34;
+  ctx.font = `700 ${label.length > 2 ? 22 : label.length > 1 ? 26 : 30}px "Geist Variable", ui-sans-serif, sans-serif`;
+  const w = Math.min(SIZE, Math.max(h - 6, ctx.measureText(label).width + 10));
   const x = SIZE - w;
   const y = SIZE - h;
   ctx.beginPath();
-  ctx.roundRect(x, y, w, h, h / 2);
-  ctx.fillStyle = token("--color-accent");
+  ctx.roundRect(x, y, w, h, 8);
+  ctx.fillStyle = BADGE_FILL;
   ctx.fill();
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = token("--color-paper");
-  ctx.stroke();
-  ctx.fillStyle = token("--color-accent-ink");
+  ctx.fillStyle = BADGE_TEXT;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(label, x + w / 2, y + h / 2 + 3);
+  ctx.fillText(label, x + w / 2, y + h / 2 + 2);
   return canvas.toDataURL("image/png");
 }
 

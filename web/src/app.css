@@ -80,6 +80,24 @@ h3 {
   min-width: 0;
 }
 
+/* Everything clickable shows the pointer: Tailwind's reset leaves buttons with the arrow. */
+a[href],
+button:not(:disabled),
+select:not(:disabled),
+summary,
+label:has(input, select, button, textarea),
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled),
+input[type="file"]:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+[role="menuitem"]:not([data-disabled]),
+[role="menuitemcheckbox"]:not([data-disabled]),
+[role="option"]:not([aria-disabled="true"]),
+[role="tab"],
+[role="switch"]:not(:disabled) {
+  cursor: pointer;
+}
+
 :focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;

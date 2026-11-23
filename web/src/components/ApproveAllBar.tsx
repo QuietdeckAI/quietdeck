@@ -61,7 +61,7 @@ export function ApproveAllBar({ inbox, request }: { inbox: Inbox; request: Appro
           aria-hidden
         />
       )}
-      <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-3 px-4 py-3">
+      <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-3">
         {approving ? (
           <>
             <p className="flex-1 text-sm text-muted" role="status">
@@ -99,7 +99,7 @@ export function ApproveAllBar({ inbox, request }: { inbox: Inbox; request: Appro
         )}
       </div>
       {error && (
-        <p role="alert" className="mx-auto max-w-3xl px-4 pb-3 text-sm text-danger">
+        <p role="alert" className="mx-auto max-w-5xl px-4 pb-3 text-sm text-danger">
           {error.message}
         </p>
       )}

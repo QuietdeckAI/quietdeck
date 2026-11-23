@@ -10,24 +10,24 @@ const SOURCE: Record<TimelineEntry["source"], string> = {
 
 export function TimelineRow({ entry }: { entry: TimelineEntry }) {
   return (
-    <li className="arrive flex flex-wrap items-baseline gap-x-3 py-1.5 text-sm">
+    <li className="arrive flex flex-wrap items-baseline gap-x-3 py-0.5 text-sm leading-6">
       <time
-        className="w-24 shrink-0 font-mono text-xs text-neutral"
+        className="shrink-0 whitespace-nowrap font-mono text-xs text-neutral"
         dateTime={entry.created_at}
       >
         {when(entry.created_at)}
       </time>
-      <span className="min-w-0 flex-1 text-muted">
+      <span className="min-w-0 flex-1 truncate text-muted" title={entry.text}>
         {entry.text}
         {entry.count > 1 && (
           <span className="text-neutral"> ×{entry.count}</span>
         )}
-        <span className="text-neutral"> · {SOURCE[entry.source]} · </span>
-        <CommentBox
-          target={{ type: "timeline", id: entry.id }}
-          label={entry.text}
-        />
+        <span className="text-neutral"> · {SOURCE[entry.source]}</span>
       </span>
+      <CommentBox
+        target={{ type: "timeline", id: entry.id }}
+        label={entry.text}
+      />
     </li>
   );
 }
