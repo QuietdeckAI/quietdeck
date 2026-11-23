@@ -11,8 +11,9 @@ Quietdeck has two parts to deploy:
 
 ### Image
 
-- Built from `deploy/Dockerfile` (multi-stage: the web app with pnpm, then the Rust binary, then a distroless
-  `nonroot` image holding one static binary with the web app embedded).
+- Built from `deploy/Dockerfile` (multi-stage: the Rust binary, then a distroless `nonroot` image holding that one
+  binary, with the web app embedded once it exists). Build from the repository root:
+  `docker build -f deploy/Dockerfile -t quietdeck-deck .`
 - Binary `/quietdeck-deck`, entrypoint `["/quietdeck-deck", "serve"]`. Runs as uid and gid 65532.
 - Push it to your own registry as `<registry>/quietdeck/deck:<git short SHA>`. No public image is published yet.
 - Root filesystem can be read-only. The deck writes only to the data volume and `/tmp` (an `emptyDir` is enough).
