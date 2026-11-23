@@ -111,10 +111,16 @@ impl NodeConfig {
 
     /// The node token, from wherever node.yaml says.
     pub fn node_token(&self) -> anyhow::Result<String> {
+        self.node_token_from(|var| std::env::var(var).ok())
+    }
+
+    fn node_token_from(&self, env: impl Fn(&str) -> Option<String>) -> anyhow::Result<String> {
         if let Some(var) = &self.node.token_env {
-            return std::env::var(var)
-                .map(|t| t.trim().to_string())
-                .map_err(|_| anyhow::anyhow!("node.token_env names {var}, which isn't set"));
+            let token = env(var).map(|t| t.trim().to_string()).unwrap_or_default();
+            if token.is_empty() {
+                anyhow::bail!("node.token_env names {var}, which isn't set");
+            }
+            return Ok(token);
         }
         let path = self.node.token_file.as_deref().map(expand).unwrap_or_else(default_token_file);
         read_secret_file(&path)
@@ -154,6 +160,16 @@ mod tests {
         let c: NodeConfig = yaml_serde::from_str(include_str!("../../../deploy/node.example.yaml")).unwrap();
         assert_eq!(c.node.name, "laptop");
         assert!(c.summaries.enabled);
+    }
+
+    #[test]
+    fn a_token_can_come_from_the_environment() {
+        let yaml = "node: { name: m, deck: \"https://d.example\", token_env: QD_TEST_TOKEN_A1 }\n";
+        let c: NodeConfig = yaml_serde::from_str(yaml).unwrap();
+        assert!(c.node_token_from(|_| None).unwrap_err().to_string().contains("QD_TEST_TOKEN_A1"));
+        let env = |v: &str| (v == "QD_TEST_TOKEN_A1").then(|| " qdn_x\n".to_string());
+        assert_eq!(c.node_token_from(env).unwrap(), "qdn_x");
+        assert!(c.node_token_from(|_| Some(String::new())).is_err());
     }
 
     #[cfg(unix)]

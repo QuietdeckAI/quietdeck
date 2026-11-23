@@ -67,6 +67,10 @@ every device's push subscription.
 
 - The tailnet ingress (Tailscale operator `Ingress`, or `tailscale serve`) must pass `Tailscale-User-Login` through
   and support WebSockets. Its certificate name goes into public Certificate Transparency logs.
+- **Only the tailnet ingress may reach port 8080.** The deck believes `Tailscale-User-Login`, so anything else that can
+  reach 8080 could claim to be the owner. In Kubernetes, add a NetworkPolicy that admits 8080 only from the Tailscale
+  proxy's pods. With Docker, publish 8080 on `127.0.0.1` and run `tailscale serve` on the same host. Tailscale Serve
+  replaces any `Tailscale-User-*` headers a client sends with its own.
 - Nodes connect to `QUIETDECK_PUBLIC_URL` over the tailnet too, from tagged machines that send no
   `Tailscale-User-Login`. They authenticate with their node token, so the ingress must not demand a user identity.
 - The deck makes outbound requests only to Web Push services (`*.push.apple.com`, `fcm.googleapis.com`,
