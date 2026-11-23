@@ -6,7 +6,12 @@ const LINKS = [
   {
     to: "/",
     label: "Inbox",
-    match: (p: string) => p === "/" || p.startsWith("/later"),
+    match: (p: string) => p === "/",
+  },
+  {
+    to: "/cards",
+    label: "Cards",
+    match: (p: string) => p.startsWith("/cards") || p.startsWith("/later"),
   },
   {
     to: "/sessions",
@@ -40,8 +45,9 @@ export function Header() {
           to="/"
           className="flex shrink-0 items-center font-display text-xl font-medium tracking-tight text-ink"
         >
-          {/* Five screens leave no room for the wordmark on a phone: the app's icon stands in for it. */}
-          <img src="/icon.svg" alt="" className="size-7 rounded-md sm:hidden" />
+          {/* Six screens leave no room for the wordmark on a phone: the app's icon stands in for it, and below 360px
+              not even that (Inbox goes home too). */}
+          <img src="/icon.svg" alt="" className="size-7 rounded-md max-[359px]:hidden sm:hidden" />
           <span className="max-sm:sr-only">Quietdeck</span>
         </Link>
         <nav className="flex items-center gap-1" aria-label="Screens">
@@ -52,7 +58,7 @@ export function Header() {
               aria-current={l.match(path) ? "page" : undefined}
               aria-label={l.label}
               className={cn(
-                "rounded-md px-1.5 py-1.5 text-sm whitespace-nowrap text-neutral transition-colors sm:px-2.5 " +
+                "rounded-md px-1.5 py-1.5 text-sm whitespace-nowrap text-neutral transition-colors max-[359px]:px-1 sm:px-2.5 " +
                   "duration-(--dur-quick) hover:text-ink",
                 l.match(path) &&
                   "text-ink underline decoration-accent decoration-2 underline-offset-[6px]",

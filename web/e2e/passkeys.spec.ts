@@ -83,7 +83,7 @@ test("the first passkey takes a setup code, and signs in", async () => {
   await page.getByLabel("Setup code").fill(firstCode);
   await page.getByLabel("This device").fill("Test laptop");
   await page.getByRole("button", { name: "Create passkey" }).click();
-  await expect(page.getByText("Nothing waiting.")).toBeVisible();
+  await expect(page.getByText("No report yet.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Inbox" })).toHaveAttribute(
     "aria-current",
     "page",

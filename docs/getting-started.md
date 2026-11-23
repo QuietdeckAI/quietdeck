@@ -110,8 +110,14 @@ happen by default. Read it like a document:
   on: if the agent's session isn't running, it says so and keeps your text.
 
 The agent writes the report with `quietdeck report show` and `quietdeck report set` (`quietdeck report --help` lists
-the two tags it uses for defaults and questions). Cards the report doesn't mention yet are listed under it, one line
-each.
+the two tags it uses for defaults and questions). Under the report, the agent's cards carry each default's actions.
+
+## Cards: every card in a list
+
+**Cards**, beside Inbox, lists the same mail as cards: what each email is, its facts, the actions it proposes, and a
+box to say what to do instead. Use it when you want the whole list rather than the report. Its own **Approve All**
+decides every card on screen, and **Later** is at the bottom. When the agent has posted cards its report doesn't
+mention yet, the Inbox says so under the report, with a link here.
 
 ## Pings on your phone
 

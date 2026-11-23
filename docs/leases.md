@@ -24,7 +24,7 @@ quietdeck lease propose gmail-filter --account work \
 The query needs a `from:` with a full address or domain (`from:notifications@github.com` or `from:github.com`), so a
 filter can't catch all your mail. A session holds at most five filter leases.
 
-**What you see.** A card in your Inbox: which session asks, the query, the account and its reason. Approve it like any
+**What you see.** A card on the Cards screen: which session asks, the query, the account and its reason. Approve it like any
 other card. Approving it approves that filter on that account for every session: the next session that asks for the
 same query on the same account gets it at once, without a card. Settings > Leases lists the filters you've approved;
 revoke one there to need a card again.
