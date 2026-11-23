@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
 use quietdeck_types::node::{
-    CatchupReply, DeckFrame, DeckRequest, NodeFrame, NodeRequest, PROTOCOL_VERSION, Reply, TranscriptSearch,
+    CatchupReply, DeckFrame, DeckRequest, NodeFrame, NodeRequest, PROTOCOL_VERSION, Reply,
 };
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
@@ -206,8 +206,7 @@ async fn answer(node: &Node, request: DeckRequest) -> Reply {
             Err(error) => Reply::Err { error },
         },
         DeckRequest::SearchTranscripts { query, limit } => {
-            let hits = crate::transcripts::search(node.home.clone(), query, limit.min(500) as usize).await;
-            Reply::ok(&TranscriptSearch { hits })
+            Reply::ok(&crate::transcripts::search(node.home.clone(), query, limit.min(500) as usize).await)
         }
         DeckRequest::Catchup { session_id } => match &node.summaries {
             Some(s) => match s.catchup(crate::summaries::CatchupRequest { session_id, transcript: None }).await {

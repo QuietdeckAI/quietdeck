@@ -172,6 +172,10 @@ pub enum Delivered {
 #[ts(export)]
 pub struct TranscriptSearch {
     pub hits: Vec<TranscriptHit>,
+    /// Set when the search ran out of time: transcripts last written before this weren't searched.
+    #[ts(type = "string | null")]
+    #[serde(default)]
+    pub searched_back_to: Option<jiff::Timestamp>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

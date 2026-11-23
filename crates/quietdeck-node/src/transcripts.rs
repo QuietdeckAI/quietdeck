@@ -3,8 +3,15 @@
 
 use std::path::{Path, PathBuf};
 
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant, SystemTime};
+
 use jiff::Timestamp;
 use quietdeck_types::directory::TranscriptHit;
+use quietdeck_types::node::TranscriptSearch;
 
 /// Claude Code's transcripts (`~/.claude/projects/<dir>/<session id>.jsonl`, subagents excluded) and Codex's
 /// (`~/.codex/sessions/YYYY/MM/DD/rollout-…-<session id>.jsonl`).
@@ -52,35 +59,152 @@ fn codex_session_id(stem: &str) -> Option<String> {
     (id.len() == 36 && id.chars().filter(|c| *c == '-').count() == 4).then(|| id.to_string())
 }
 
-/// Search every transcript for `query` (a literal, case-sensitive). The newest mention's `timestamp` field is the
-/// answer's time. Runs on a blocking thread.
-pub async fn search(home: PathBuf, query: String, limit: usize) -> Vec<TranscriptHit> {
-    tokio::task::spawn_blocking(move || search_blocking(&home, &query, limit)).await.unwrap_or_default()
+/// How long one search may take on this machine. The deck waits a little longer than this.
+pub const SEARCH_BUDGET: Duration = Duration::from_secs(6);
+
+/// Files are read this much at a time, so a transcript of a gigabyte or more never sits in memory whole.
+const CHUNK: usize = 8 << 20;
+
+/// Search every transcript for `query` (a literal, case-sensitive), newest files first, on several threads, until
+/// [`SEARCH_BUDGET`] runs out. The newest mention's `timestamp` field is each hit's time.
+pub async fn search(home: PathBuf, query: String, limit: usize) -> TranscriptSearch {
+    tokio::task::spawn_blocking(move || search_blocking(&home, &query, limit, SEARCH_BUDGET))
+        .await
+        .unwrap_or(TranscriptSearch { hits: vec![], searched_back_to: None })
 }
 
-fn search_blocking(home: &Path, query: &str, limit: usize) -> Vec<TranscriptHit> {
+fn search_blocking(home: &Path, query: &str, limit: usize, budget: Duration) -> TranscriptSearch {
     if query.trim().is_empty() {
-        return vec![];
+        return TranscriptSearch { hits: vec![], searched_back_to: None };
     }
-    let finder = memchr::memmem::FinderRev::new(query.as_bytes());
-    let mut hits: Vec<TranscriptHit> = Vec::new();
-    for (session_id, path) in transcript_files(home) {
-        let Ok(bytes) = std::fs::read(&path) else { continue };
-        let Some(last) = finder.rfind(&bytes) else { continue };
-        let line_start = bytes[..last].iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
-        let line_end = bytes[last..].iter().position(|b| *b == b'\n').map_or(bytes.len(), |i| last + i);
-        let at = serde_json::from_slice::<serde_json::Value>(&bytes[line_start..line_end])
-            .ok()
-            .and_then(|v| v.get("timestamp").and_then(|t| t.as_str()).and_then(|t| t.parse::<Timestamp>().ok()));
-        match hits.iter_mut().find(|h| h.session_id == session_id) {
-            Some(h) if at > h.last_mentioned_at => h.last_mentioned_at = at,
-            Some(_) => {}
-            None => hits.push(TranscriptHit { session_id, last_mentioned_at: at }),
+    let deadline = Instant::now() + budget;
+    let mut files: Vec<(String, PathBuf, SystemTime)> = transcript_files(home)
+        .into_iter()
+        .map(|(id, p)| {
+            let modified = std::fs::metadata(&p).and_then(|m| m.modified()).unwrap_or(SystemTime::UNIX_EPOCH);
+            (id, p, modified)
+        })
+        .collect();
+    files.sort_by_key(|f| std::cmp::Reverse(f.2));
+
+    let next = AtomicUsize::new(0);
+    let found: Mutex<Vec<TranscriptHit>> = Mutex::new(Vec::new());
+    let finder = memchr::memmem::Finder::new(query.as_bytes());
+    let workers = std::thread::available_parallelism().map_or(2, |n| n.get()).clamp(1, 4);
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| {
+                let mut buf = vec![0u8; CHUNK + query.len()];
+                loop {
+                    if Instant::now() >= deadline {
+                        return;
+                    }
+                    let i = next.fetch_add(1, Ordering::SeqCst);
+                    let Some((session_id, path, _)) = files.get(i) else { return };
+                    let Some(at) = last_mention(path, &finder, &mut buf) else { continue };
+                    let mut hits = found.lock().unwrap_or_else(|e| e.into_inner());
+                    match hits.iter_mut().find(|h| &h.session_id == session_id) {
+                        Some(h) if at > h.last_mentioned_at => h.last_mentioned_at = at,
+                        Some(_) => {}
+                        None => hits.push(TranscriptHit { session_id: session_id.clone(), last_mentioned_at: at }),
+                    }
+                }
+            });
+        }
+    });
+
+    // Every file a worker took was searched to the end, so the files not searched are the oldest ones.
+    let claimed = next.load(Ordering::SeqCst).min(files.len());
+    let searched_back_to = (claimed < files.len())
+        .then(|| claimed.checked_sub(1).map(|i| files[i].2).unwrap_or_else(SystemTime::now))
+        .and_then(|t| Timestamp::try_from(t).ok());
+    let mut hits = found.into_inner().unwrap_or_else(|e| e.into_inner());
+    hits.sort_by_key(|h| std::cmp::Reverse(h.last_mentioned_at));
+    hits.truncate(limit);
+    TranscriptSearch { hits, searched_back_to }
+}
+
+/// `Some(time of the last line that mentions it)` when the file mentions it at all; the time is `None` when that
+/// line has no readable `timestamp`.
+fn last_mention(path: &Path, finder: &memchr::memmem::Finder, buf: &mut [u8]) -> Option<Option<Timestamp>> {
+    let mut f = File::open(path).ok()?;
+    let keep = finder.needle().len().saturating_sub(1);
+    let mut filled = 0usize; // bytes in buf, the first `carried` of them repeated from the last chunk
+    let mut base = 0u64; // the file offset of buf[0]
+    let mut last: Option<u64> = None;
+    loop {
+        let n = read_some(&mut f, &mut buf[filled..]).ok()?;
+        if n == 0 {
+            break;
+        }
+        filled += n;
+        if let Some(pos) = finder.find_iter(&buf[..filled]).last() {
+            last = Some(base + pos as u64);
+        }
+        let carried = keep.min(filled);
+        buf.copy_within(filled - carried..filled, 0);
+        base += (filled - carried) as u64;
+        filled = carried;
+    }
+    let pos = last?;
+    Some(timestamp_around(&mut f, pos))
+}
+
+fn read_some(f: &mut File, buf: &mut [u8]) -> std::io::Result<usize> {
+    let mut total = 0;
+    while total < buf.len() {
+        match f.read(&mut buf[total..])? {
+            0 => break,
+            n => total += n,
         }
     }
-    hits.sort_by(|a, b| b.last_mentioned_at.cmp(&a.last_mentioned_at));
-    hits.truncate(limit);
-    hits
+    Ok(total)
+}
+
+/// The `timestamp` of the JSON line holding the byte at `pos`: the line's first `"timestamp":"…"`. In content, quotes
+/// are escaped, so that byte sequence is a key. It's the first key in Codex's lines and follows `message` in Claude
+/// Code's, so lines are read from their start, a step at a time, until it turns up or the line ends.
+fn timestamp_around(f: &mut File, pos: u64) -> Option<Timestamp> {
+    const STEP: u64 = 1 << 20;
+    const KEY: &[u8] = b"\"timestamp\":\"";
+    // The line's start: the byte after the last newline before `pos`.
+    let mut line_start = 0;
+    let mut end = pos;
+    let mut buf = Vec::new();
+    while end > 0 {
+        let from = end.saturating_sub(STEP);
+        f.seek(SeekFrom::Start(from)).ok()?;
+        buf.clear();
+        f.by_ref().take(end - from).read_to_end(&mut buf).ok()?;
+        if let Some(i) = buf.iter().rposition(|b| *b == b'\n') {
+            line_start = from + i as u64 + 1;
+            break;
+        }
+        end = from;
+    }
+    // Forward from there to the key, or the line's end.
+    f.seek(SeekFrom::Start(line_start)).ok()?;
+    let mut carry: Vec<u8> = Vec::new();
+    loop {
+        buf.clear();
+        buf.extend_from_slice(&carry);
+        let n = f.by_ref().take(STEP).read_to_end(&mut buf).ok()?;
+        let line_end = buf.iter().position(|b| *b == b'\n').unwrap_or(buf.len());
+        if let Some(i) = memchr::memmem::find(&buf[..line_end], KEY) {
+            let value_start = i + KEY.len();
+            // The value is short: make sure all of it is in the buffer.
+            if buf.len() < value_start + 64 {
+                f.by_ref().take(64).read_to_end(&mut buf).ok()?;
+            }
+            let value_end = buf[value_start..].iter().position(|b| *b == b'"')? + value_start;
+            return std::str::from_utf8(&buf[value_start..value_end]).ok()?.parse().ok();
+        }
+        if n == 0 || line_end < buf.len() {
+            return None;
+        }
+        let keep = (KEY.len() - 1).min(buf.len());
+        carry = buf[buf.len() - keep..].to_vec();
+    }
 }
 
 #[cfg(test)]
@@ -105,10 +229,54 @@ mod tests {
             "{\"timestamp\":\"2026-11-23T09:00:00Z\",\"x\":\"sc-1234\"}\n",
         )
         .unwrap();
-        let hits = search_blocking(home.path(), "sc-1234", 10);
+        let r = search_blocking(home.path(), "sc-1234", 10, Duration::from_secs(5));
+        assert_eq!(r.searched_back_to, None);
+        let hits = r.hits;
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].session_id, "s1");
         assert_eq!(hits[0].last_mentioned_at.unwrap().to_string(), "2026-11-23T11:00:00Z");
         assert_eq!(hits[1].session_id, "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b");
+    }
+
+    #[test]
+    fn matches_across_chunk_edges_and_long_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("s.jsonl");
+        // The needle straddles the first chunk boundary, on a line far longer than the timestamp window.
+        let pad = "x".repeat(CHUNK - 40);
+        let tail = "y".repeat(3 << 20);
+        std::fs::write(
+            &p,
+            format!("{{\"timestamp\":\"2026-11-23T08:00:00Z\",\"a\":\"{pad}NEEDLE-123456789{tail}\"}}\n"),
+        )
+        .unwrap();
+        let finder = memchr::memmem::Finder::new(b"NEEDLE-123456789");
+        let mut buf = vec![0u8; CHUNK + 16];
+        let at = last_mention(&p, &finder, &mut buf).unwrap().unwrap();
+        assert_eq!(at.to_string(), "2026-11-23T08:00:00Z");
+        assert!(last_mention(&p, &memchr::memmem::Finder::new(b"absent"), &mut buf).is_none());
+
+        // Claude Code's order: the timestamp follows a long message, after an earlier line.
+        let msg = "z".repeat(3 << 20);
+        std::fs::write(
+            &p,
+            format!(
+                "{{\"timestamp\":\"2026-11-22T01:00:00Z\"}}\n{{\"message\":\"{msg} NEEDLE-123456789 {msg}\",\"uuid\":\"u\",\"timestamp\":\"2026-11-23T09:30:00Z\"}}\n"
+            ),
+        )
+        .unwrap();
+        let at = last_mention(&p, &finder, &mut buf).unwrap().unwrap();
+        assert_eq!(at.to_string(), "2026-11-23T09:30:00Z");
+    }
+
+    #[test]
+    fn a_spent_budget_says_how_far_back_it_got() {
+        let home = tempfile::tempdir().unwrap();
+        let proj = home.path().join(".claude/projects/-w");
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::write(proj.join("s1.jsonl"), "{}\n").unwrap();
+        let r = search_blocking(home.path(), "q", 10, Duration::ZERO);
+        assert!(r.hits.is_empty());
+        assert!(r.searched_back_to.is_some());
     }
 }

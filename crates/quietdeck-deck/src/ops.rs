@@ -6,7 +6,7 @@ use jiff::Timestamp;
 use quietdeck_types::SessionRef;
 use quietdeck_types::api::{Caller, DeckInfo};
 use quietdeck_types::card::{CardAdded, CardInput, CardState};
-use quietdeck_types::directory::{HitSource, TranscriptHit, WhoHas, WhoHasHit};
+use quietdeck_types::directory::{HitSource, PartialSearch, TranscriptHit, WhoHas, WhoHasHit};
 use quietdeck_types::node::{DeckRequest, Delivered, TranscriptSearch};
 use quietdeck_types::relay::{DeliveryError, DeliveryKind, MsgSend};
 use quietdeck_types::rules::MatchResult;
@@ -74,18 +74,22 @@ pub async fn who_has(state: &AppState, query: &str) -> AppResult<WhoHas> {
         let q = query.to_string();
         async move {
             let r = hub
-                .request(node, DeckRequest::SearchTranscripts { query: q, limit: 50 }, Duration::from_secs(8))
+                .request(node, DeckRequest::SearchTranscripts { query: q, limit: 50 }, Duration::from_secs(9))
                 .await;
             (node.clone(), r.ok().and_then(|reply| reply.into_result::<TranscriptSearch>().ok()))
         }
     });
     let answers = futures::future::join_all(asks).await;
     let mut offline: Vec<String> = enrolled.iter().filter(|n| !connected.contains(n)).cloned().collect();
+    let mut partial = Vec::new();
     for (node, answer) in answers {
-        let Some(TranscriptSearch { hits: found }) = answer else {
+        let Some(TranscriptSearch { hits: found, searched_back_to }) = answer else {
             offline.push(node);
             continue;
         };
+        if let Some(t) = searched_back_to {
+            partial.push(PartialSearch { node: node.clone(), searched_back_to: t });
+        }
         for TranscriptHit { session_id, last_mentioned_at } in found {
             let tab = sessions::tab_of(&state.db, &node, &session_id).await?;
             match hits.iter_mut().find(|h| h.node == node && h.session_id == session_id) {
@@ -109,7 +113,7 @@ pub async fn who_has(state: &AppState, query: &str) -> AppResult<WhoHas> {
     hits.sort_by(|a, b| b.last_mentioned_at.cmp(&a.last_mentioned_at));
     offline.sort();
     offline.dedup();
-    Ok(WhoHas { query: query.to_string(), hits, offline_nodes: offline })
+    Ok(WhoHas { query: query.to_string(), hits, offline_nodes: offline, partial })
 }
 
 pub async fn msg_send(state: &AppState, me: &SessionRef, msg: MsgSend) -> AppResult<Delivered> {

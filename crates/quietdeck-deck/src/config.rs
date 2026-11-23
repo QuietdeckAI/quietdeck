@@ -34,7 +34,7 @@ pub struct Env {
     pub hooks_listen: String,
     /// Development only: accept browser requests without `Tailscale-User-Login` (as the owner). Never set this on a
     /// deck that's reachable from anywhere but your own machine.
-    #[arg(long, env = "QUIETDECK_DEV_TRUST_LOCAL", default_value_t = false)]
+    #[arg(long, env = "QUIETDECK_DEV_TRUST_LOCAL", action = clap::ArgAction::SetTrue, value_parser = clap::builder::BoolishValueParser::new())]
     pub dev_trust_local: bool,
 }
 

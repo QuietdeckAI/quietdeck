@@ -145,6 +145,17 @@ pub struct WhoHas {
     /// Nodes whose transcripts weren't searched (offline, or didn't answer in time): their sessions were searched by
     /// summary only.
     pub offline_nodes: Vec<String>,
+    /// Nodes that ran out of time: they searched their transcripts back to this time, newest first.
+    pub partial: Vec<PartialSearch>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct PartialSearch {
+    pub node: String,
+    #[ts(type = "string")]
+    #[schemars(with = "String")]
+    pub searched_back_to: jiff::Timestamp,
 }
 
 /// One transcript hit from a node.

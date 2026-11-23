@@ -113,6 +113,9 @@ pub fn who_has(w: &WhoHas) -> String {
     if lines.is_empty() {
         lines.push(format!("Nobody mentions {}.", w.query));
     }
+    for p in &w.partial {
+        lines.push(format!("{}: out of time, searched transcripts written since {}", p.node, p.searched_back_to));
+    }
     if !w.offline_nodes.is_empty() {
         lines.push(format!("Searched by summary only (offline): {}", w.offline_nodes.join(", ")));
     }
