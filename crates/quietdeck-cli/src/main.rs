@@ -156,7 +156,8 @@ enum ReportCommand {
     /// The current report: its version, its text and the person's answers on it.
     Show,
     /// Replace the report's text with a file's (`-` reads stdin). Edit the text `report show` printed and pass its
-    /// version as --base, so you never overwrite an edit you didn't see.
+    /// version as --base, so you never overwrite an edit you didn't see. It lists any open card that no <Default>
+    /// names.
     Set {
         file: String,
         #[arg(long)]
@@ -589,7 +590,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 ReportCommand::Set { file, base, new } => {
                     let req = quietdeck_types::report::ReportSet { markdown: read_file_arg(&file)?, base, new };
                     let r: quietdeck_types::report::Report = c.post("/api/report", &req).await?;
-                    print::out(json, &r, |r| format!("Report {} is at version {}.", r.id, r.version))
+                    print::out(json, &r, print::report_saved)
                 }
                 ReportCommand::Answers => {
                     let r: Vec<quietdeck_types::report::ReportAnswer> =

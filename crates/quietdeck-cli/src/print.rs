@@ -305,12 +305,35 @@ pub fn watches(r: &[quietdeck_types::timeline::ThreadWatch]) -> String {
         .join("\n")
 }
 
+/// `report set`'s answer: the version, and any open card no `<Default>` names.
+pub fn report_saved(r: &quietdeck_types::report::Report) -> String {
+    let mut out = format!("Report {} is at version {}.", r.id, r.version);
+    out.push_str(&not_in_report(r));
+    out
+}
+
+fn not_in_report(r: &quietdeck_types::report::Report) -> String {
+    if r.cards_not_in_report.is_empty() {
+        return String::new();
+    }
+    let ids: Vec<String> = r.cards_not_in_report.iter().map(|i| format!("c_{i}")).collect();
+    format!(
+        "\nOpen cards in no <Default>: {}. Name each in one, or the Inbox only points at them on the Cards screen.",
+        ids.join(", ")
+    )
+}
+
 pub fn report(r: Option<&quietdeck_types::report::Report>) -> String {
     let Some(r) = r else { return "No report yet: write one with `quietdeck report set <file>`.".into() };
     let mut out = format!(
         "Report {} version {} (pass --base {} to `report set`)\n\n{}\n",
         r.id, r.version, r.version, r.markdown
     );
+    let missing = not_in_report(r);
+    if !missing.is_empty() {
+        out.push_str(missing.trim_start());
+        out.push('\n');
+    }
     if !r.answers.is_empty() {
         out.push_str("\nAnswers:\n");
         out.push_str(&report_answers(&r.answers));

@@ -32,6 +32,9 @@ pub struct Report {
     pub updated_at: Timestamp,
     /// The person's answers and changes on this report, oldest first.
     pub answers: Vec<ReportAnswer>,
+    /// Open cards (waiting on the person, handed off or failed) that no `<Default>` names: the Inbox points at the
+    /// Cards screen for them, and `report set` lists them for the agent.
+    pub cards_not_in_report: Vec<i64>,
 }
 
 /// `quietdeck report set`: the whole report, as the agent wants it now.

@@ -36,14 +36,6 @@ function reportApproveRequest(inbox: Inbox, report: Report, changed: Set<string>
   return { cards, timeline: inbox.timeline.map((e) => e.id) };
 }
 
-/** Whether open cards wait that the report doesn't name: the Inbox then points at the Cards screen. */
-function hasUnnamed(inbox: Inbox, report: Report): boolean {
-  const named = new Set(reportDefaults(report.markdown).flatMap((d) => d.cards));
-  return [...inbox.actions, ...inbox.suggestions, ...inbox.archive_list].some(
-    (c) => !named.has(Number(c.id)) && (c.state === "open" || c.state === "handed_off" || c.state === "failed"),
-  );
-}
-
 export function InboxScreen() {
   const account = useAccount();
   const inbox = useQuery({
@@ -92,7 +84,7 @@ function ReportScreen({
   setChanges: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
   const setChange = (k: string, t: string) => setChanges((all) => ({ ...all, [k]: t }));
-  const others = hasUnnamed(inbox, report);
+  const others = report.cards_not_in_report.length > 0;
   // A change typed but not sent goes to the agent before Approve All, so its cards stay out of the approval.
   const pending = Object.entries(changes).filter(([, t]) => t.trim());
   const changed = changedKeys(report);

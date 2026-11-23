@@ -10,4 +10,9 @@ version: number, markdown: string, posted_by: SessionRef, created_at: string, up
 /**
  * The person's answers and changes on this report, oldest first.
  */
-answers: Array<ReportAnswer>, };
+answers: Array<ReportAnswer>, 
+/**
+ * Open cards (waiting on the person, handed off or failed) that no `<Default>` names: the Inbox points at the
+ * Cards screen for them, and `report set` lists them for the agent.
+ */
+cards_not_in_report: Array<number>, };

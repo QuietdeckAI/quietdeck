@@ -83,6 +83,13 @@ pub async fn current(db: &Db) -> AppResult<Option<Report>> {
     .bind(r.id)
     .fetch_all(db)
     .await?;
+    let (named, _) = default_cards(&r.markdown);
+    let open: Vec<(i64,)> = sqlx::query_as(
+        "SELECT id FROM cards WHERE state IN ('open', 'handed_off', 'failed') AND section != 'sent' ORDER BY id",
+    )
+    .fetch_all(db)
+    .await?;
+    let cards_not_in_report = open.into_iter().map(|(id,)| id).filter(|id| !named.contains(id)).collect();
     Ok(Some(Report {
         id: r.id,
         version: r.version,
@@ -91,6 +98,7 @@ pub async fn current(db: &Db) -> AppResult<Option<Report>> {
         created_at: ts(r.created_at),
         updated_at: ts(r.updated_at),
         answers: answers.into_iter().map(ReportAnswer::from).collect(),
+        cards_not_in_report,
     }))
 }
 
@@ -286,6 +294,31 @@ mod tests {
         let fresh = super::set(&state, &me(), set("# Next round", None, true)).await.unwrap();
         assert_ne!(fresh.id, r.id);
         assert_eq!(fresh.version, 1);
+    }
+
+    #[tokio::test]
+    async fn the_report_lists_open_cards_no_default_names() {
+        let state = AppState::for_tests().await;
+        let card = |thread: &str| -> quietdeck_types::card::CardInput {
+            serde_json::from_value(serde_json::json!({"account": "personal", "thread_key": thread, "subject": "s",
+                "summary": "x", "section": "archive_list", "reason": "r",
+                "actions": [{"type": "archive", "account": "personal", "thread_id": thread}]}))
+            .unwrap()
+        };
+        let mut ids = vec![];
+        for t in ["t1", "t2", "t3"] {
+            let added =
+                crate::store::cards::add(&state.db, &me(), &card(t), quietdeck_types::card::CardState::Open, None)
+                    .await
+                    .unwrap();
+            ids.push(added.card.id);
+        }
+        let md = format!("<Default cards=\"c_{}\">archive</Default>", ids[0]);
+        let r = super::set(&state, &me(), ReportSet { markdown: md, base: None, new: false }).await.unwrap();
+        assert_eq!(r.cards_not_in_report, vec![ids[1], ids[2]]);
+        let md = format!("<Default cards=\"c_{} c_{} c_{}\">archive</Default>", ids[0], ids[1], ids[2]);
+        let r = super::set(&state, &me(), ReportSet { markdown: md, base: Some(1), new: false }).await.unwrap();
+        assert!(r.cards_not_in_report.is_empty());
     }
 
     #[tokio::test]
