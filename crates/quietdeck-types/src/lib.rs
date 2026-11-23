@@ -9,6 +9,7 @@ pub mod directory;
 pub mod lease;
 pub mod node;
 pub mod relay;
+pub mod report;
 pub mod rules;
 pub mod session;
 pub mod summary;

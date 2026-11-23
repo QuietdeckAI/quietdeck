@@ -171,6 +171,35 @@ input[type="file"]:not(:disabled),
 .md li + li {
   margin-top: 0.2em;
 }
+/* The triage report: a skimmable document, headings that group it, nested lists for an item's detail. */
+.report {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+.report > * + * {
+  margin-top: 0.45em;
+}
+.report li + li {
+  margin-top: 0.1em;
+}
+.report h1,
+.report h2,
+.report h3 {
+  margin-top: 1.4em;
+  color: var(--color-ink);
+}
+.report > h1:first-child,
+.report > h2:first-child,
+.report > h3:first-child {
+  margin-top: 0;
+}
+.report li > ul,
+.report li > ol {
+  margin-top: 0.2em;
+}
+.report ol > li + li {
+  margin-top: 0.45em;
+}
 .md a {
   color: var(--color-accent);
   text-decoration: underline;

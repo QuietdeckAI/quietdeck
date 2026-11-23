@@ -94,6 +94,25 @@ devices too. Each device stays signed in until you sign out, or until it hasn't 
 Keep the deck open in a pinned tab if you like: its tab icon shows how many cards are in your Inbox, and so does its
 title ("(3) Quietdeck"). Switch **Show the pending count on the tab icon** off in Settings if you'd rather it didn't.
 
+## The Inbox: the triage report
+
+The Inbox is one report the triage agent writes and keeps up to date as mail arrives: what needs you, numbered, then
+groups it handles the same way (sales pitches, mail it will archive, grouped by subject). Each item says what will
+happen by default. Read it like a document:
+
+- **Change this**, beside a default, opens a box: say what to do instead and **Send**. It goes straight to the agent,
+  and Approve All leaves that item to it.
+- **A question** shows its answers as buttons ("Was this you? Yes / No"), sometimes with **Other**. Your answer goes
+  straight to the agent, which follows it up in the report.
+- **Approve All**, at the top, carries out every default you didn't change. Anything typed in a Change this box and
+  not sent yet goes to the agent first.
+- **The box at the bottom** sends plain words to the triage agent ("archive HelloFresh from now on"). It's only passed
+  on: if the agent's session isn't running, it says so and keeps your text.
+
+The agent writes the report with `quietdeck report show` and `quietdeck report set` (`quietdeck report --help` lists
+the two tags it uses for defaults and questions). Cards the report doesn't mention yet are listed under it, one line
+each.
+
 ## Pings on your phone
 
 An agent can ping your phone when something can't wait a few hours: at first, a reply on a thread you watch, or an
@@ -296,7 +315,7 @@ herdr sends no close events while it stops. A tab someone closed, or an agent th
 Nothing happens without your approval until you grant it, rule by rule. Two things must both allow an automatic
 action:
 
-- **A rule you made**, on the **Rules** screen or from a card's **Auto-approve matches in future**. A rule says what
+- **A rule you made**, on the **Rules** screen. A rule says what
   counts as a match and which actions it allows. **The agent judges** (the default) leaves the match to the triage
   agent, for mail from the sender domains you list and no others. **Exact match** has the deck check the account, the
   sender's address or domain and, optionally, the subject. It needs the message to have passed DMARC or DKIM, which

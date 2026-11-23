@@ -427,6 +427,7 @@ pub async fn inbox(state: &AppState, account: Option<&str>) -> AppResult<Inbox> 
         running: decisions::running(&state.db).await?,
         last_agent_at: decisions::last_agent_at(&state.db).await?.map(crate::db::ts),
         rule_offers: vec![],
+        report: crate::reports::current(&state.db).await?,
     };
     if let Some(a) = account {
         inbox.timeline.retain(|e| e.account.as_deref() == Some(a));

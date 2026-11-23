@@ -10,13 +10,28 @@ import type { Skipped } from "@/types/Skipped";
 import type { StopResult } from "@/types/StopResult";
 
 /** The one button. Then, for the undo window, Undo; while anything runs, Stop. It never counts what's waiting. */
-export function ApproveAllBar({ inbox, request }: { inbox: Inbox; request: ApproveAll }) {
+export function ApproveAllBar({
+  inbox,
+  request,
+  beforeApprove,
+  top,
+}: {
+  inbox: Inbox;
+  request: ApproveAll;
+  /** Runs first: the report sends any change typed but not yet sent. */
+  beforeApprove?: () => Promise<void>;
+  /** Above the report, rather than pinned to the bottom of the screen. */
+  top?: boolean;
+}) {
   const qc = useQueryClient();
   const [skipped, setSkipped] = useState<Skipped[]>([]);
   const refresh = () => void qc.invalidateQueries({ queryKey: ["inbox"] });
 
   const approve = useMutation({
-    mutationFn: () => api<Approving>("/api/decisions/approve-all", { method: "POST", body: request }),
+    mutationFn: async () => {
+      await beforeApprove?.();
+      return api<Approving>("/api/decisions/approve-all", { method: "POST", body: request });
+    },
     onSuccess: (a) => {
       setSkipped(a.skipped);
       refresh();
@@ -52,7 +67,13 @@ export function ApproveAllBar({ inbox, request }: { inbox: Inbox; request: Appro
   const error = approve.error ?? undo.error ?? stop.error;
 
   return (
-    <div className="sticky bottom-0 z-10 mt-10 border-t border-rule bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm">
+    <div
+      className={
+        top
+          ? "border-b border-rule"
+          : "sticky bottom-0 z-10 mt-10 border-t border-rule bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm"
+      }
+    >
       {approving && (
         <div
           key={approving.batch}
@@ -61,7 +82,7 @@ export function ApproveAllBar({ inbox, request }: { inbox: Inbox; request: Appro
           aria-hidden
         />
       )}
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-3">
+      <div className={top ? "flex flex-wrap items-center gap-3 py-3" : "mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-3"}>
         {approving ? (
           <>
             <p className="flex-1 text-sm text-muted" role="status">
@@ -99,7 +120,7 @@ export function ApproveAllBar({ inbox, request }: { inbox: Inbox; request: Appro
         )}
       </div>
       {error && (
-        <p role="alert" className="mx-auto max-w-5xl px-4 pb-3 text-sm text-danger">
+        <p role="alert" className={top ? "pb-3 text-sm text-danger" : "mx-auto max-w-5xl px-4 pb-3 text-sm text-danger"}>
           {error.message}
         </p>
       )}

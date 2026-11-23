@@ -16,6 +16,7 @@ mod passkeys;
 mod pings;
 mod push;
 mod relay;
+mod reports;
 mod rules;
 mod runner;
 mod state;

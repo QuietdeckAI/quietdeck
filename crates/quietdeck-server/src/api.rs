@@ -70,6 +70,10 @@ pub fn router() -> Router<AppState> {
         .route("/api/leases/{id}/cleaned", post(lease_cleaned))
         .route("/api/lease-patterns/{id}/revoke", post(lease_pattern_revoke))
         .route("/api/comments", post(comment_add))
+        .route("/api/report", get(report_show).post(report_set))
+        .route("/api/report/answers", post(report_answer))
+        .route("/api/report/answers/take", post(report_answers_take))
+        .route("/api/report/chat", post(report_chat))
         .route("/api/pings", get(pings_view).post(ping_send))
         .route("/api/pings/{id}/feedback", post(ping_feedback))
         .route("/api/pings/feedback/take", post(ping_feedback_take))
@@ -78,6 +82,44 @@ pub fn router() -> Router<AppState> {
         .route("/api/push", get(push_config))
         .route("/api/push/devices", get(push_devices).post(push_subscribe))
         .route("/api/push/devices/remove", post(push_remove))
+}
+
+async fn report_show(
+    State(state): State<AppState>,
+    Authed(_): Authed,
+) -> AppResult<Json<Option<quietdeck_types::report::Report>>> {
+    Ok(Json(crate::reports::current(&state.db).await?))
+}
+
+async fn report_set(
+    State(state): State<AppState>,
+    Agent(me): Agent,
+    Json(req): Json<quietdeck_types::report::ReportSet>,
+) -> AppResult<Json<quietdeck_types::report::Report>> {
+    Ok(Json(crate::reports::set(&state, &me, req).await?))
+}
+
+async fn report_answer(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(a): Json<quietdeck_types::report::ReportAnswerAdd>,
+) -> AppResult<Json<quietdeck_types::report::Report>> {
+    Ok(Json(crate::reports::answer(&state, a).await?))
+}
+
+async fn report_answers_take(
+    State(state): State<AppState>,
+    _agent: Agent,
+) -> AppResult<Json<Vec<quietdeck_types::report::ReportAnswer>>> {
+    Ok(Json(crate::reports::take_answers(&state).await?))
+}
+
+async fn report_chat(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(c): Json<quietdeck_types::report::ReportChat>,
+) -> AppResult<Json<quietdeck_types::node::Delivered>> {
+    Ok(Json(crate::reports::chat(&state, c).await?))
 }
 
 async fn ping_send(

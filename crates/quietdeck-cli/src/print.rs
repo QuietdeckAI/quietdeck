@@ -304,3 +304,32 @@ pub fn watches(r: &[quietdeck_types::timeline::ThreadWatch]) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
+
+pub fn report(r: Option<&quietdeck_types::report::Report>) -> String {
+    let Some(r) = r else { return "No report yet: write one with `quietdeck report set <file>`.".into() };
+    let mut out = format!(
+        "Report {} version {} (pass --base {} to `report set`)\n\n{}\n",
+        r.id, r.version, r.version, r.markdown
+    );
+    if !r.answers.is_empty() {
+        out.push_str("\nAnswers:\n");
+        out.push_str(&report_answers(&r.answers));
+    }
+    out
+}
+
+pub fn report_answers(a: &[quietdeck_types::report::ReportAnswer]) -> String {
+    if a.is_empty() {
+        return "No answers.".into();
+    }
+    a.iter()
+        .map(|a| {
+            let what = match a.kind {
+                quietdeck_types::report::AnswerKind::Choice => "answered",
+                quietdeck_types::report::AnswerKind::Change => "instead of the default",
+            };
+            format!("- v{} [{}] \"{}\" {what}: {}", a.report_version, a.control, a.about, a.value)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}

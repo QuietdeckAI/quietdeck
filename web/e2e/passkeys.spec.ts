@@ -54,6 +54,7 @@ test("nothing is reachable before sign-in", async ({ request }) => {
     "/api/leases",
     "/api/sessions/transcript?session=x",
     "/api/sessions/catchup?session=x",
+    "/api/report",
     "/api/pings",
     "/api/watches",
     "/api/push",

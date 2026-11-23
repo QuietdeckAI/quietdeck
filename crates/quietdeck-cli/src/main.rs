@@ -124,6 +124,14 @@ enum Command {
         #[arg(long)]
         thread: Option<String>,
     },
+    /// The triage report the Inbox shows: one living Markdown document you keep up to date as mail arrives.
+    /// `<Default cards="c_1 c_2">forward both to ads, then archive</Default>` shows a default with Change this, and
+    /// Approve All approves its cards unless the person changed it. `<Ask id="signin" options="Yes|No">Was this
+    /// you?</Ask>` asks a question (add `other` for an Other box); answers come to you as messages.
+    Report {
+        #[command(subcommand)]
+        command: ReportCommand,
+    },
     /// Your pings: `pings feedback` picks up the person's "Don't ping for this again" on them.
     Pings {
         #[command(subcommand)]
@@ -141,6 +149,24 @@ enum Command {
         #[arg(long, default_value = "last")]
         since: String,
     },
+}
+
+#[derive(Subcommand)]
+enum ReportCommand {
+    /// The current report: its version, its text and the person's answers on it.
+    Show,
+    /// Replace the report's text with a file's (`-` reads stdin). Edit the text `report show` printed and pass its
+    /// version as --base, so you never overwrite an edit you didn't see.
+    Set {
+        file: String,
+        #[arg(long)]
+        base: Option<i64>,
+        /// Start a new report: everything on the current one is approved or handled.
+        #[arg(long)]
+        new: bool,
+    },
+    /// Answers you haven't had yet (they normally arrive as messages); taking them marks them.
+    Answers,
 }
 
 #[derive(Subcommand)]
@@ -512,6 +538,25 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             };
             let p: quietdeck_types::timeline::Ping = c.post("/api/pings", &req).await?;
             print::out(json, &p, |p| format!("Ping {}: {}", p.id, p.result.as_deref().unwrap_or("recorded")))
+        }
+        Command::Report { command } => {
+            let c = Client::connect().await?;
+            match command {
+                ReportCommand::Show => {
+                    let r: Option<quietdeck_types::report::Report> = c.get("/api/report", &[]).await?;
+                    print::out(json, &r, |r| print::report(r.as_ref()))
+                }
+                ReportCommand::Set { file, base, new } => {
+                    let req = quietdeck_types::report::ReportSet { markdown: read_file_arg(&file)?, base, new };
+                    let r: quietdeck_types::report::Report = c.post("/api/report", &req).await?;
+                    print::out(json, &r, |r| format!("Report {} is at version {}.", r.id, r.version))
+                }
+                ReportCommand::Answers => {
+                    let r: Vec<quietdeck_types::report::ReportAnswer> =
+                        c.post("/api/report/answers/take", &serde_json::json!({})).await?;
+                    print::out(json, &r, |r| print::report_answers(r))
+                }
+            }
         }
         Command::Pings { command: PingsCommand::Feedback } => {
             let c = Client::connect().await?;

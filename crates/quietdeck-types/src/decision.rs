@@ -142,6 +142,9 @@ pub struct Inbox {
     /// Cards whose target's tab had grants archived when its earlier session closed.
     #[serde(default)]
     pub rule_offers: Vec<crate::rules::RuleOffer>,
+    /// The triage agent's current report, which the Inbox shows in place of the cards.
+    #[serde(default)]
+    pub report: Option<crate::report::Report>,
 }
 
 #[cfg(test)]
