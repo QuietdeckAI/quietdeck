@@ -421,6 +421,7 @@ impl Runner {
                     "card": {"id": r.card.id, "thread_key": r.card.input.thread_key,
                              "last_message_ref": r.card.input.last_message_ref, "subject": r.card.input.subject},
                 });
+                derived_values(a, &mut ctx["action"]);
                 if let Some(acct) = a.account().and_then(|id| self.account_ctx(id)) {
                     ctx["account"] = acct;
                 }
@@ -571,6 +572,29 @@ impl Runner {
 }
 
 /// Gmail's own labels, which a labels list may leave out.
+/// Values tools need in another shape than the action has: `story_number` (the number in "sc-1234" or "1234", for
+/// trackers whose tools take a number) and `agent_labels` (["agent:<tab>"] when the task names the tab that works on
+/// it; left out otherwise, so the tool's key goes too).
+fn derived_values(a: &Action, v: &mut Value) {
+    let story_id = match a {
+        Action::Story(StoryOp::Comment { story_id, .. }) => Some(story_id.as_str()),
+        Action::Task { story_id, .. } => story_id.as_deref(),
+        _ => None,
+    };
+    if let Some(n) = story_id.and_then(story_number) {
+        v["story_number"] = json!(n);
+    }
+    if let Action::Task { agent_tab: Some(tab), .. } = a {
+        v["agent_labels"] = json!([format!("agent:{tab}")]);
+    }
+}
+
+fn story_number(id: &str) -> Option<u64> {
+    let id = id.trim();
+    let digits = id.get(..3).filter(|p| p.eq_ignore_ascii_case("sc-")).map_or(id, |_| &id[3..]);
+    digits.parse().ok()
+}
+
 fn is_system_label(l: &str) -> bool {
     matches!(l, "INBOX" | "UNREAD" | "STARRED" | "IMPORTANT" | "SPAM" | "TRASH")
 }

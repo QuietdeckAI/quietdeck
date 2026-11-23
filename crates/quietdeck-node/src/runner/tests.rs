@@ -639,3 +639,29 @@ async fn a_filter_lease_is_created_with_its_label_moves_inbox_mail_and_is_remove
     assert_eq!(removed["already_gone"], true);
     assert_eq!(calls.lock().unwrap().last().unwrap().1["id"], "filter_1");
 }
+
+#[test]
+fn tools_get_the_story_number_and_the_agent_label() {
+    let comment: Action =
+        serde_json::from_value(json!({"type": "story", "op": "comment", "story_id": "sc-1234", "text": "x"})).unwrap();
+    let mut v = serde_json::to_value(&comment).unwrap();
+    super::derived_values(&comment, &mut v);
+    assert_eq!(v["story_number"], json!(1234));
+
+    let done: Action = serde_json::from_value(json!({"type": "task", "op": "done", "story_id": "77"})).unwrap();
+    let mut v = serde_json::to_value(&done).unwrap();
+    super::derived_values(&done, &mut v);
+    assert_eq!(v["story_number"], json!(77));
+    assert!(v.get("agent_labels").is_none(), "no tab, no label key");
+
+    let task: Action =
+        serde_json::from_value(json!({"type": "task", "op": "create", "title": "Sign", "agent_tab": "finances"}))
+            .unwrap();
+    let mut v = serde_json::to_value(&task).unwrap();
+    super::derived_values(&task, &mut v);
+    assert_eq!(v["agent_labels"], json!(["agent:finances"]));
+    assert!(v.get("story_number").is_none());
+
+    assert_eq!(super::story_number("SC-9"), Some(9));
+    assert_eq!(super::story_number("PROJ-9"), None);
+}
