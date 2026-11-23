@@ -254,10 +254,12 @@ impl Mcp {
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for Mcp {
     fn get_info(&self) -> ServerConfig {
-        ServerConfig::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
-            "Quietdeck: cards for the person to approve, the sessions directory, the cross-machine message relay \
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(rmcp::model::Implementation::new("quietdeck", env!("CARGO_PKG_VERSION")))
+            .with_instructions(
+                "Quietdeck: cards for the person to approve, the sessions directory, the cross-machine message relay \
              and the timeline. The same commands as the quietdeck CLI.",
-        )
+            )
     }
 }
 
