@@ -1,7 +1,8 @@
 /* Hallmark · app scope · genre: editorial (dark, by the owner's rule) · theme: custom
- * vibe: "a desk lamp on dark graphite, letters waiting"
- * paper oklch(16% 0.008 70) · accent oklch(80% 0.11 75) amber · Newsreader + Geist + Geist Mono (times and IDs only)
- * axes: dark / roman-serif / warm · motion: card arrival · undo hairline · enrichment: none
+ * vibe: "still water at dusk, letters waiting"
+ * paper oklch(16% 0.012 250) · accent oklch(76% 0.085 240) calm blue (the owner's colour) · Newsreader + Geist +
+ * Geist Mono (times and IDs only)
+ * axes: dark / roman-serif / cool · motion: card arrival · undo hairline · enrichment: none
  */
 @import "tailwindcss";
 @import "@fontsource-variable/newsreader";
@@ -9,17 +10,17 @@
 @import "@fontsource-variable/geist-mono";
 
 @theme {
-  --color-paper: oklch(16% 0.008 70);
-  --color-paper-2: oklch(19.5% 0.009 70);
-  --color-paper-3: oklch(23% 0.01 70);
-  --color-rule: oklch(30% 0.01 70);
-  --color-rule-strong: oklch(40% 0.012 70);
-  --color-neutral: oklch(62% 0.01 70);
-  --color-muted: oklch(76% 0.008 70);
-  --color-ink: oklch(94% 0.007 80);
-  --color-accent: oklch(80% 0.11 75);
-  --color-accent-ink: oklch(20% 0.03 70);
-  --color-focus: oklch(82% 0.12 75);
+  --color-paper: oklch(16% 0.012 250);
+  --color-paper-2: oklch(19.5% 0.014 250);
+  --color-paper-3: oklch(23% 0.016 250);
+  --color-rule: oklch(30% 0.016 250);
+  --color-rule-strong: oklch(40% 0.018 250);
+  --color-neutral: oklch(64% 0.014 250);
+  --color-muted: oklch(77% 0.012 250);
+  --color-ink: oklch(94% 0.008 250);
+  --color-accent: oklch(76% 0.085 240);
+  --color-accent-ink: oklch(19% 0.035 245);
+  --color-focus: oklch(80% 0.1 238);
   --color-danger: oklch(72% 0.13 28);
   --color-danger-wash: oklch(24% 0.04 28);
 

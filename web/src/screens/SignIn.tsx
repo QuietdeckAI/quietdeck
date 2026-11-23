@@ -8,7 +8,7 @@ import { createPasskey, getPasskey, guessDeviceName, passkeysSupported } from "@
 import type { AuthState } from "@/types/AuthState";
 import type { Ceremony } from "@/types/Ceremony";
 
-/** Passkeys only. The first one takes a one-time setup code from the deck's container. */
+/** Passkeys only. The first one takes a one-time setup code from the server (`quietdeck-server setup-code`). */
 export function SignInScreen({ setupNeeded }: { setupNeeded: boolean }) {
   const qc = useQueryClient();
   const [code, setCode] = useState("");
@@ -58,8 +58,10 @@ export function SignInScreen({ setupNeeded }: { setupNeeded: boolean }) {
           }}
         >
           <p className="text-muted">
-            Add this device’s passkey with a setup code. Get one on the deck’s host with{" "}
-            <code className="font-mono text-sm text-ink">quietdeck-deck setup-code</code>.
+            Quietdeck has no passwords. You sign in with a passkey, and adding one without being signed in takes a
+            one-time code that proves you run this server. Run{" "}
+            <code className="font-mono text-sm text-ink">quietdeck-server setup-code</code> where Quietdeck runs (in
+            its container), and type the code here. It works once, for 15 minutes.
           </p>
           <label className="flex flex-col gap-1.5 text-sm text-muted">
             Setup code
