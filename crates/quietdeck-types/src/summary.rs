@@ -193,7 +193,7 @@ pub struct SummariesConfig {
     pub sweep: bool,
     /// The model for summary and catch-up calls.
     pub model: String,
-    /// The person's name the prompts use ("since Nathan's last message"). Empty means "the user".
+    /// The person's name the prompts use ("since Sam's last message"). Empty means "the user".
     pub user_name: String,
 }
 

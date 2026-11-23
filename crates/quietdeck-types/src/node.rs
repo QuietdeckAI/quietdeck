@@ -1,0 +1,248 @@
+//! The node protocol (one WebSocket the node opens to the deck), the local socket protocol (the CLI, the MCP
+//! headers helper and the menu bar app talking to their machine's node), and session tokens.
+//!
+//! Both directions carry requests with an `id` the answer echoes. Requests are never retried by the sender: a
+//! delivery that fails fails at once, and a reconnect starts clean. A node remembers the IDs of recent deliveries
+//! and refuses a repeat, so nothing is ever put in front of a session twice.
+
+use jiff::Timestamp;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+use crate::action::{ActionType, SessionRef};
+use crate::directory::{SessionInfo, TranscriptHit};
+use crate::relay::Delivery;
+use crate::summary::{Catchup, SummaryEvent};
+use crate::usage::{AccountUsage, UsageCommand};
+
+/// Bumped when a frame changes incompatibly. The deck refuses a node with another version, with a message saying
+/// which side to upgrade.
+pub const PROTOCOL_VERSION: u32 = 1;
+
+/// Node → deck.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[ts(export)]
+pub enum NodeFrame {
+    /// The first frame after connecting.
+    Hello {
+        protocol: u32,
+        version: String,
+        runner: Option<RunnerInfo>,
+    },
+    /// Every session on the machine. Replaces what the deck has for this node.
+    Sessions { sessions: Vec<SessionInfo> },
+    /// One session changed (herdr's status event, a new tab, a rename).
+    Session { session: SessionInfo },
+    /// The tab closed or the agent's process exited.
+    SessionClosed {
+        session_id: String,
+        #[ts(type = "string")]
+        at: Timestamp,
+    },
+    Summary { event: SummaryEvent },
+    Usage {
+        accounts: Vec<AccountUsage>,
+        #[ts(type = "string")]
+        at: Timestamp,
+    },
+    Request { id: u64, request: NodeRequest },
+    Response { id: u64, reply: Reply },
+}
+
+/// What a node with its runner on tells the deck.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct RunnerInfo {
+    pub eligible: Vec<ActionType>,
+    /// The session that gets wake-ups, hand-offs and error reports.
+    pub agent_tab: String,
+    pub accounts: Vec<String>,
+}
+
+/// Deck → node.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[ts(export)]
+pub enum DeckFrame {
+    /// The answer to `hello`: the name the deck knows this node by (from its token).
+    Welcome { node: String },
+    /// The deck can't take this node (wrong protocol version). The node logs it and stops reconnecting.
+    Refused { reason: String },
+    Request { id: u64, request: DeckRequest },
+    Response { id: u64, reply: Reply },
+}
+
+/// What the node asks the deck.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "op", rename_all = "snake_case")]
+#[ts(export)]
+pub enum NodeRequest {
+    /// A short-lived session token for a caller on this machine. `session` is None for a plain shell.
+    MintToken { session: Option<TokenSession> },
+}
+
+/// The session a token speaks for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct TokenSession {
+    pub session_id: Option<String>,
+    pub tab: Option<String>,
+    pub pane: Option<String>,
+}
+
+/// What the deck asks a node.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "op", rename_all = "snake_case")]
+#[ts(export)]
+pub enum DeckRequest {
+    /// Put this in front of a session now. Answers `delivered`, or an error when the session is offline.
+    Deliver { delivery: Delivery },
+    /// "Who has this ID?" over the raw transcripts on this machine.
+    SearchTranscripts { query: String, limit: u32 },
+    /// The catch-up for the transcript viewer.
+    Catchup { session_id: String },
+    Usage { command: UsageCommand },
+}
+
+/// The answer to a request.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "status", rename_all = "snake_case")]
+#[ts(export)]
+pub enum Reply {
+    Ok {
+        #[ts(type = "unknown")]
+        value: serde_json::Value,
+    },
+    Err { error: String },
+}
+
+impl Reply {
+    pub fn ok<T: Serialize>(value: &T) -> Reply {
+        match serde_json::to_value(value) {
+            Ok(value) => Reply::Ok { value },
+            Err(e) => Reply::Err { error: format!("serialising the answer: {e}") },
+        }
+    }
+
+    pub fn into_result<T: serde::de::DeserializeOwned>(self) -> Result<T, String> {
+        match self {
+            Reply::Ok { value } => serde_json::from_value(value).map_err(|e| format!("reading the answer: {e}")),
+            Reply::Err { error } => Err(error),
+        }
+    }
+}
+
+/// The token the deck minted, as the node caches it and hands it on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct MintedToken {
+    pub token: String,
+    #[ts(type = "string")]
+    #[schemars(with = "String")]
+    pub expires_at: Timestamp,
+    /// Who it speaks for, as the deck will name the caller.
+    pub caller: SessionRef,
+}
+
+/// What the deck reads from a session token. The node never sees inside it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenClaims {
+    pub node: String,
+    pub session_id: Option<String>,
+    pub tab: Option<String>,
+    pub pane: Option<String>,
+    /// Unix seconds.
+    pub exp: i64,
+}
+
+/// Answers for deliveries and searches.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum Delivered {
+    /// Handed to the session's own messaging socket.
+    Socket,
+    /// Typed into the pane with `herdr agent prompt`.
+    Herdr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct TranscriptSearch {
+    pub hits: Vec<TranscriptHit>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CatchupReply {
+    pub catchup: Catchup,
+}
+
+/// One line on the node's local socket, from the CLI, the MCP headers helper or the menu bar app.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum LocalRequest {
+    /// A session token for the caller. The node checks the claimed Claude Code process against the connecting
+    /// process's ancestry before naming the session.
+    Token {
+        /// `CLAUDE_CODE_SESSION_ID`
+        session_id: Option<String>,
+        /// `CLAUDE_PID`
+        claude_pid: Option<u32>,
+        /// `HERDR_PANE_ID`
+        pane: Option<String>,
+    },
+    /// The node's own state, for `quietdeck ping`-style checks and the menu bar app.
+    Status,
+    /// The latest usage readings.
+    Usage,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum LocalResponse {
+    Token {
+        token: String,
+        deck_url: String,
+        expires_at: Timestamp,
+        caller: SessionRef,
+    },
+    Status(NodeStatus),
+    Usage { accounts: Vec<AccountUsage> },
+    Err { error: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct NodeStatus {
+    pub name: String,
+    pub deck_url: String,
+    pub connected: bool,
+    pub version: String,
+    pub runner: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frames_are_tagged() {
+        let f = NodeFrame::Request { id: 3, request: NodeRequest::MintToken { session: None } };
+        let v = serde_json::to_value(&f).unwrap();
+        assert_eq!(v["type"], "request");
+        assert_eq!(v["request"]["op"], "mint_token");
+        let back: NodeFrame = serde_json::from_value(v).unwrap();
+        assert_eq!(back, f);
+    }
+
+    #[test]
+    fn replies_carry_values_or_errors() {
+        let r = Reply::ok(&Delivered::Socket);
+        assert_eq!(r.clone().into_result::<Delivered>().unwrap(), Delivered::Socket);
+        let e = Reply::Err { error: "talira@laptop is offline".into() };
+        assert_eq!(e.into_result::<Delivered>().unwrap_err(), "talira@laptop is offline");
+    }
+}

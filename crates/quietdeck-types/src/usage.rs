@@ -129,7 +129,7 @@ pub struct UsagePush {
 pub enum UsageCommand {
     /// Start the browser sign-in for one sign-in, or for every one that needs it.
     SignIn { local_id: Option<String> },
-    /// Re-read now (the usage too, at most once per 30 s per account).
+    /// Re-read now (the usage too, at most once per 60 s per account).
     Check { local_id: Option<String> },
 }
 
