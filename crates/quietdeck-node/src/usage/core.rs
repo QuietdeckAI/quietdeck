@@ -880,12 +880,14 @@ impl<D: Deps> Coordinator<D> {
         account_id
     }
 
+    /// `why` is the session's reason for a move to another account, or for its rotation stopping, which the log keeps.
     pub fn patch_session(
         &self,
         id: &str,
         account_id: Option<&str>,
         is_blocked: Option<bool>,
         is_pending: Option<bool>,
+        why: Option<&str>,
     ) -> Result<(), HttpError> {
         let now = self.deps().now();
         let mut st = self.st();
@@ -896,6 +898,20 @@ impl<D: Deps> Coordinator<D> {
             Self::need(&st, a)?;
         }
         let before = st.sessions[i].clone();
+        let is_move = account_id.is_some_and(|a| a != before.account_id);
+        if is_move || why.is_some() {
+            let place = match (before.pid, &before.cwd) {
+                (Some(pid), Some(cwd)) => format!("pid {pid} in {cwd}"),
+                (Some(pid), None) => format!("pid {pid}"),
+                _ => id.to_string(),
+            };
+            let what = match account_id {
+                Some(a) if is_move => format!("account {} -> {a}", before.account_id),
+                _ => format!("on account {}", before.account_id),
+            };
+            let reason = why.map(|w| format!(" ({})", w.chars().take(300).collect::<String>())).unwrap_or_default();
+            self.deps().log(&format!("session {place}: {what}{reason}"));
+        }
         let mut next = before.clone();
         if let Some(a) = account_id {
             next.account_id = a.to_string();
@@ -1337,6 +1353,7 @@ impl<D: Deps> Coordinator<D> {
                     s("accountId"),
                     b.get("isBlocked").and_then(Value::as_bool),
                     b.get("isPending").and_then(Value::as_bool),
+                    s("why"),
                 )?;
                 self.ok(json!({}))
             }

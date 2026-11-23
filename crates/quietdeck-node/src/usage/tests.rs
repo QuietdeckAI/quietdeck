@@ -843,10 +843,39 @@ async fn a_removed_login_waits_for_its_sessions_to_move_off_then_is_signed_out_a
     c.remove("2").await.expect("removing");
     assert!(account(&c, "2").is_retiring);
     assert!(w.w().sign_outs.is_empty());
-    c.patch_session("s", Some("1"), None, None).expect("patched");
+    c.patch_session("s", Some("1"), None, None, None).expect("patched");
     settle().await;
     assert_eq!(w.w().sign_outs, [SLOT2]);
     assert!(!c.state().accounts.iter().any(|a| a.account.id == "2"));
+}
+
+#[tokio::test]
+async fn the_log_names_each_move_a_session_makes_and_why_and_a_rotation_that_stops() {
+    let w = World::new();
+    let c = started(&w, Some(&three_logins(&w))).await;
+    c.register("s", Some(4242), "", Some("/work"), true);
+    let patch = |body: Value| req("PATCH", "/sessions/s", &[], Some(body));
+    assert_eq!(
+        c.handle(patch(json!({ "accountId": "2", "isPending": true, "why": "account 1 has 2% of its week left" })))
+            .await
+            .status,
+        200
+    );
+    assert_eq!(c.handle(patch(json!({ "isPending": false }))).await.status, 200);
+    assert_eq!(
+        c.handle(patch(json!({ "why": "rotation paused after switching 1 -> 2 -> 1 -> 2 within a minute" })))
+            .await
+            .status,
+        200
+    );
+    let logs: Vec<String> = w.w().logs.iter().filter(|l| l.starts_with("session ")).cloned().collect();
+    assert_eq!(
+        logs,
+        [
+            "session pid 4242 in /work: account 1 -> 2 (account 1 has 2% of its week left)",
+            "session pid 4242 in /work: on account 2 (rotation paused after switching 1 -> 2 -> 1 -> 2 within a minute)",
+        ]
+    );
 }
 
 // ------------------------------------------------------------ the API
