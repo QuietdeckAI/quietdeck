@@ -3,5 +3,6 @@
 
 pub mod session;
 pub mod summary;
+pub mod usage;
 
 pub use session::{AgentKind, AgentStatus, SessionKey};
