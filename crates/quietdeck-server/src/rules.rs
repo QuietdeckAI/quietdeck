@@ -221,6 +221,8 @@ mod tests {
                 status_changed_at: jiff::Timestamp::now(),
                 resume_command: None,
                 running: true,
+                open_url: None,
+                opens_in: None,
             };
             sessions::upsert(&state.db, &state.config, "server", &info).await.unwrap();
         }

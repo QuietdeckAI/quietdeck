@@ -27,7 +27,12 @@ fn asked_by(caller: &Caller) -> String {
     }
 }
 
-async fn ask(state: &AppState, node: &str, request: DeckRequest, timeout: Duration) -> AppResult<serde_json::Value> {
+pub(crate) async fn ask(
+    state: &AppState,
+    node: &str,
+    request: DeckRequest,
+    timeout: Duration,
+) -> AppResult<serde_json::Value> {
     let reply = state.hub.request(node, request, timeout).await.map_err(|e| match e {
         HubError::Offline(_) => AppError::Offline(format!("{node} isn't connected to the deck")),
         HubError::Timeout(_) => AppError::Unavailable(format!("{node} didn't answer in time")),
@@ -167,6 +172,8 @@ mod tests {
             status_changed_at: Timestamp::now(),
             resume_command: None,
             running,
+            open_url: None,
+            opens_in: None,
         }
     }
 

@@ -177,6 +177,11 @@ pub enum DeckRequest {
     Catchup {
         session_id: String,
     },
+    /// Part of a session's transcript for the viewer. Answers [`crate::transcript::TranscriptPage`].
+    Transcript {
+        session_id: String,
+        query: crate::transcript::TranscriptQuery,
+    },
     Usage {
         command: UsageCommand,
     },

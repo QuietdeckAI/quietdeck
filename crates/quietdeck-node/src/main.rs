@@ -13,6 +13,7 @@ mod service;
 mod summaries;
 mod transcripts;
 mod usage;
+mod viewer;
 mod watch;
 
 use std::path::PathBuf;
@@ -111,8 +112,10 @@ async fn ask_local(req: &LocalRequest) -> anyhow::Result<LocalResponse> {
 
 async fn run() -> anyhow::Result<()> {
     let config = NodeConfig::load(&config::config_path())?;
-    let orchestrator: Arc<dyn orchestrator::Orchestrator> =
-        Arc::new(orchestrator::herdr::Herdr { program: config.programs.herdr.clone() });
+    let orchestrator: Arc<dyn orchestrator::Orchestrator> = Arc::new(orchestrator::herdr::Herdr {
+        program: config.programs.herdr.clone(),
+        machine: config.node.name.clone(),
+    });
     // A message the orchestrator types into a session by itself is typed like a person's: it isn't one.
     for message in orchestrator.own_messages() {
         summaries::set_auto_continue_message(&message);

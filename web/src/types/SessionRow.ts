@@ -28,4 +28,12 @@ resume_command: string | null,
 /**
  * Whether the agent is running now.
  */
-running: boolean, };
+running: boolean, 
+/**
+ * A link that brings the session forward in its orchestrator on the machine it runs on (herdr: `herdr://open`).
+ */
+open_url: string | null, 
+/**
+ * The orchestrator's name, for "Open in …".
+ */
+opens_in: string | null, };

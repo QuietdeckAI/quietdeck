@@ -52,6 +52,8 @@ test("nothing is reachable before sign-in", async ({ request }) => {
     "/api/passkeys",
     "/api/nodes",
     "/api/leases",
+    "/api/sessions/transcript?session=x",
+    "/api/sessions/catchup?session=x",
     "/api/events",
   ]) {
     expect((await request.get(path)).status(), path).toBe(401);
@@ -173,4 +175,20 @@ test("the Rules screen makes, archives and restores a rule", async () => {
   await row.getByRole("button", { name: "Restore" }).click();
   await expect(page.getByRole("heading", { name: "Archived" })).toBeHidden();
   await expect(page.getByText("No projects in deck.yaml")).toBeVisible();
+});
+
+test("the Sessions screen, its search and a session that isn't there", async () => {
+  await page.getByRole("link", { name: "Sessions" }).click();
+  await expect(page.getByRole("heading", { name: "Sessions", level: 1 })).toBeVisible();
+  await expect(page.getByText("No sessions yet.")).toBeVisible();
+  await page.getByLabel("Search sessions").fill("sc-1234");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page).toHaveURL(/\/sessions\?q=sc-1234$/);
+  await expect(page.getByText("No session mentions “sc-1234”.")).toBeVisible();
+  await page.getByRole("button", { name: "Clear the search" }).click();
+  await expect(page.getByText("No sessions yet.")).toBeVisible();
+  await page.goto("/sessions/laptop/not-a-session");
+  await expect(page.getByText("no session not-a-session@laptop")).toBeVisible();
+  await page.goto("/sessions/laptop/not-a-session/page");
+  await expect(page.getByText("no session not-a-session@laptop")).toBeVisible();
 });

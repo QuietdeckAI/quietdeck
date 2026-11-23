@@ -192,6 +192,29 @@ It finds the sessions that mention it: in their summaries on the deck, and in th
 machine. Transcripts never leave their machine; the deck only learns which sessions mention the ID and when they
 last did. Each machine searches its newest transcripts first, for a few seconds, and says how far back it got.
 
+## The Sessions screen
+
+**Sessions** lists every session on every machine, the most recently active first, with its machine, project, what
+it's doing and its summary sentence (click it for the paragraph). The search box takes words or an ID (`sc-1234`, an
+invoice number): it searches every session's summaries, and the transcripts on the machines that are connected. A
+machine that isn't connected is searched by summary only, and the results say so.
+
+**Open** shows one session:
+
+- **Since your last message:** a short catch-up of what happened after you last wrote in it, written on its machine.
+  The first one for a session takes a few seconds; after that it's served at once and rewritten as the session goes
+  on.
+- **The transcript,** read from the session's machine as you scroll and kept on that machine. It opens at your last
+  message; scrolling up loads earlier turns, compactions included, and new turns appear as they happen. Thinking and
+  tool calls fold into one line each (click to see a call's input and output), and wake-ups from background tasks and
+  watchers are dimmed. Claude Code sessions only for now.
+- **Subagents:** the subagents the session started, beside the transcript (under **Subagents** on a phone). Pick one
+  to read its transcript.
+- **Open in herdr** (on a computer) brings the session's tab forward on its machine, through herdr's `herdr://` link.
+
+**Page** shows the session's full summary, one update at a time, with **Prev** and **Next** and every update's
+sentence in a timeline below it.
+
 ## Starting, resuming and closing sessions
 
 The node follows herdr's event stream, so a session's status reaches the deck within a second of changing. A herdr

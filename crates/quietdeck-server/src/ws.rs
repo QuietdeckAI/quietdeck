@@ -240,6 +240,8 @@ mod tests {
             status_changed_at: jiff::Timestamp::now(),
             resume_command: None,
             running: true,
+            open_url: None,
+            opens_in: None,
         };
         sink.send(text(&NodeFrame::Sessions { sessions: vec![session] })).await.unwrap();
         let relay = NodeRequest::Relay { to: "target@server".into(), kind: DeliveryKind::Deck, body: "hello".into() };

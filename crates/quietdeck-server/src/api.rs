@@ -35,6 +35,8 @@ pub fn router() -> Router<AppState> {
         .route("/api/sessions", get(list_sessions))
         .route("/api/sessions/search", get(search_sessions))
         .route("/api/sessions/show", get(show_session))
+        .route("/api/sessions/transcript", get(session_transcript))
+        .route("/api/sessions/catchup", get(session_catchup))
         .route("/api/sessions/start", post(start_session))
         .route("/api/sessions/resume", post(resume_session))
         .route("/api/sessions/close", post(close_session))
@@ -281,6 +283,36 @@ async fn show_session(
     Query(q): Query<ShowQuery>,
 ) -> AppResult<Json<quietdeck_types::directory::SessionDetail>> {
     Ok(Json(crate::ops::show_session(&state, &q.session, q.timeline).await?))
+}
+
+#[derive(Deserialize)]
+pub struct TranscriptParams {
+    pub session: String,
+    pub subagent: Option<String>,
+    pub before: Option<u64>,
+    pub after: Option<u64>,
+}
+
+async fn session_transcript(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Query(q): Query<TranscriptParams>,
+) -> AppResult<Json<quietdeck_types::transcript::TranscriptPage>> {
+    let query = quietdeck_types::transcript::TranscriptQuery { subagent: q.subagent, before: q.before, after: q.after };
+    Ok(Json(ops::transcript(&state, &q.session, query).await?))
+}
+
+#[derive(Deserialize)]
+pub struct SessionParam {
+    pub session: String,
+}
+
+async fn session_catchup(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Query(q): Query<SessionParam>,
+) -> AppResult<Json<quietdeck_types::summary::Catchup>> {
+    Ok(Json(ops::catchup(&state, &q.session).await?))
 }
 
 /// The owner, or one of the owner's sessions: starting or resuming a session is something either may do, like

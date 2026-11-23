@@ -240,7 +240,7 @@ fn str_field(v: &Value, key: &str) -> Option<String> {
 }
 
 /// Python truthiness, for the `a or b or c` fallbacks ported from claude-summarizer.
-fn truthy(v: &Value) -> bool {
+pub(crate) fn truthy(v: &Value) -> bool {
     match v {
         Value::Null => false,
         Value::Bool(b) => *b,
@@ -257,7 +257,7 @@ fn first_truthy<'a>(v: &'a Value, keys: &[&str]) -> Option<&'a Value> {
 
 // ---------------------------------------------------------------- Claude Code
 
-const SKIP_ORIGINS: &[&str] = &["task-notification", "plugin", "auto-continuation"];
+pub(crate) const SKIP_ORIGINS: &[&str] = &["task-notification", "plugin", "auto-continuation"];
 pub const NOISE_COMMANDS: &[&str] = &[
     "/mcp",
     "/model",
@@ -301,11 +301,13 @@ pub const NOISE_COMMANDS: &[&str] = &[
 const QUIET_TOOLS: &[&str] =
     &["Read", "Grep", "Glob", "ToolSearch", "TaskOutput", "TodoWrite", "TaskList", "TaskGet", "LSP"];
 
-static SYSTEM_REMINDER: LazyLock<Regex> =
+pub(crate) static SYSTEM_REMINDER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?s)<system-reminder>.*?</system-reminder>").unwrap());
-static COMMAND: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<command-name>(.*?)</command-name>").unwrap());
-static COMMAND_ARGS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<command-args>(.*?)</command-args>").unwrap());
-static PEER_BODY: LazyLock<Regex> = LazyLock::new(|| {
+pub(crate) static COMMAND: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)<command-name>(.*?)</command-name>").unwrap());
+pub(crate) static COMMAND_ARGS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)<command-args>(.*?)</command-args>").unwrap());
+pub(crate) static PEER_BODY: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?s)<(?:cross-session-message|agent-message)[^>]*>(.*?)</(?:cross-session-message|agent-message)>")
         .unwrap()
 });
@@ -483,7 +485,7 @@ fn arg<'a>(args: &'a Value, keys: &[&str]) -> &'a Value {
     first_truthy(args, keys).unwrap_or(&EMPTY)
 }
 
-fn tool_line(name: &str, args: &Value, home: &str) -> Option<String> {
+pub(crate) fn tool_line(name: &str, args: &Value, home: &str) -> Option<String> {
     if QUIET_TOOLS.contains(&name) {
         return None;
     }

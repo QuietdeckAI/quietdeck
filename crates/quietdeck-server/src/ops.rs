@@ -9,7 +9,7 @@ use quietdeck_types::card::{
     ActionRecord, ActionReport, Card, CardAdded, CardInput, CardSection, CardState, Released, RunBy,
 };
 use quietdeck_types::decision::{ApproveAll, Approving, Decide, Inbox, ReportReceipt, StopResult};
-use quietdeck_types::directory::{HitSource, PartialSearch, TranscriptHit, WhoHas, WhoHasHit};
+use quietdeck_types::directory::{HitSource, PartialSearch, SessionRow, TranscriptHit, WhoHas, WhoHasHit};
 use quietdeck_types::node::{DeckRequest, Delivered, TranscriptSearch};
 use quietdeck_types::relay::{DeliveryError, DeliveryKind, MsgSend};
 use quietdeck_types::rules::{
@@ -584,6 +584,33 @@ async fn tell_agent(state: &AppState, w: &decisions::Waiting) {
 }
 
 /// One session by ID, `tab@node` or tab, with its summary points when asked.
+/// One session, which must be on a single machine.
+async fn one_session(state: &AppState, address: &str) -> AppResult<SessionRow> {
+    Ok(show_session(state, address, false).await?.session)
+}
+
+/// A page of a session's transcript, read on its machine. The deck passes it on and keeps nothing.
+pub async fn transcript(
+    state: &AppState,
+    address: &str,
+    query: quietdeck_types::transcript::TranscriptQuery,
+) -> AppResult<quietdeck_types::transcript::TranscriptPage> {
+    let s = one_session(state, address).await?;
+    let request = DeckRequest::Transcript { session_id: s.info.session_id.clone(), query };
+    let v = crate::control::ask(state, &s.node, request, Duration::from_secs(20)).await?;
+    serde_json::from_value(v).map_err(|e| AppError::Internal(e.into()))
+}
+
+/// "Since your last message", from the session's machine. The first one for a session waits for a model call.
+pub async fn catchup(state: &AppState, address: &str) -> AppResult<quietdeck_types::summary::Catchup> {
+    let s = one_session(state, address).await?;
+    let request = DeckRequest::Catchup { session_id: s.info.session_id.clone() };
+    let v = crate::control::ask(state, &s.node, request, Duration::from_secs(120)).await?;
+    let reply: quietdeck_types::node::CatchupReply =
+        serde_json::from_value(v).map_err(|e| AppError::Internal(e.into()))?;
+    Ok(reply.catchup)
+}
+
 pub async fn show_session(
     state: &AppState,
     address: &str,

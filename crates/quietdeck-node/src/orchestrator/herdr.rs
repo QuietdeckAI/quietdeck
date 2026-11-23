@@ -17,9 +17,11 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use super::{Event, EventStream, OpenTab, Opened, Orchestrator, StreamError};
 
-/// herdr, run as `program` (`programs.herdr` in node.yaml).
+/// herdr, run as `program` (`programs.herdr` in node.yaml), on the machine named `machine`.
 pub struct Herdr {
     pub program: String,
+    /// The machine's name, which herdr's `herdr://open` link takes to find it among herdr's saved machines.
+    pub machine: String,
 }
 
 #[async_trait]
@@ -29,7 +31,12 @@ impl Orchestrator for Herdr {
     }
 
     async fn sessions(&self) -> anyhow::Result<Vec<SessionInfo>> {
-        snapshot(&self.program).await
+        let mut sessions = snapshot(&self.program).await?;
+        for s in &mut sessions {
+            s.open_url = s.tab.as_deref().map(|tab| open_url(&self.machine, tab));
+            s.opens_in = Some("herdr".into());
+        }
+        Ok(sessions)
     }
 
     async fn subscribe(&self) -> Result<Box<dyn EventStream>, StreamError> {
@@ -155,9 +162,21 @@ fn join(agents: AgentList, tabs: TabList) -> Vec<SessionInfo> {
                     .unwrap_or_else(Timestamp::now),
                 resume_command: None,
                 running: true,
+                open_url: None,
+                opens_in: None,
             })
         })
         .collect()
+}
+
+/// herdr's link that focuses a tab and brings its terminal forward, on this machine's herdr or a saved one.
+fn open_url(machine: &str, tab: &str) -> String {
+    let query = form_urlencoded::Serializer::new(String::new())
+        .append_pair("machine", machine)
+        .append_pair("tab", tab)
+        .finish();
+    // A literal + is already %2B, so every + left stands for a space.
+    format!("herdr://open?{}", query.replace('+', "%20"))
 }
 
 /// The auto-continue message herdr's config.toml sets, if any (`[session.auto_continue] message`).
@@ -388,6 +407,11 @@ mod tests {
         assert_eq!(s.len(), 1, "no session ID, or not an agent: left out");
         assert_eq!(s[0].tab.as_deref(), Some("billing"));
         assert_eq!(s[0].status, AgentStatus::Blocked);
+    }
+
+    #[test]
+    fn the_open_link_names_the_machine_and_tab() {
+        assert_eq!(open_url("mac", "esign cert+1"), "herdr://open?machine=mac&tab=esign%20cert%2B1");
     }
 
     // Lines as a herdr server sent them (patched branch, 23 November 2026).

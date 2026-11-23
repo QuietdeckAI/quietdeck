@@ -215,7 +215,10 @@ mod tests {
     }
 
     fn no_orchestrator() -> std::sync::Arc<dyn crate::orchestrator::Orchestrator> {
-        std::sync::Arc::new(crate::orchestrator::herdr::Herdr { program: "herdr-that-does-not-exist".into() })
+        std::sync::Arc::new(crate::orchestrator::herdr::Herdr {
+            program: "herdr-that-does-not-exist".into(),
+            machine: "m".into(),
+        })
     }
 
     fn delivery(id: &str, session_id: &str, address: Option<&str>) -> Delivery {

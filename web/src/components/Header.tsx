@@ -9,6 +9,11 @@ const LINKS = [
     match: (p: string) => p === "/" || p.startsWith("/later"),
   },
   {
+    to: "/sessions",
+    label: "Sessions",
+    match: (p: string) => p.startsWith("/sessions"),
+  },
+  {
     to: "/history",
     label: "History",
     match: (p: string) => p.startsWith("/history"),
@@ -30,12 +35,14 @@ export function Header() {
   const path = usePath();
   return (
     <header className="border-b border-rule">
-      <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-4 px-4">
+      <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-2 px-4 sm:gap-4">
         <Link
           to="/"
-          className="font-display text-xl font-medium tracking-tight text-ink"
+          className="flex shrink-0 items-center font-display text-xl font-medium tracking-tight text-ink"
         >
-          Quietdeck
+          {/* Five screens leave no room for the wordmark on a phone: the app's icon stands in for it. */}
+          <img src="/icon.svg" alt="" className="size-7 rounded-md sm:hidden" />
+          <span className="max-sm:sr-only">Quietdeck</span>
         </Link>
         <nav className="flex items-center gap-1" aria-label="Screens">
           {LINKS.map((l) => (

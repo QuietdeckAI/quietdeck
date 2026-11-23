@@ -31,10 +31,12 @@ struct Row {
     pushed_at: i64,
     closed_at: Option<i64>,
     ended: Option<String>,
+    open_url: Option<String>,
+    opens_in: Option<String>,
 }
 
 const COLUMNS: &str = "node, session_id, agent, workspace, tab, address, cwd, project, status, status_changed_at, \
-    resume_command, running, sentence, paragraph, page, last_activity, pushed_at, closed_at, ended";
+    resume_command, running, sentence, paragraph, page, last_activity, pushed_at, closed_at, ended, open_url, opens_in";
 
 impl Row {
     fn into_row(self, node_online: bool, links: Vec<SessionLink>) -> anyhow::Result<SessionRow> {
@@ -55,6 +57,8 @@ impl Row {
                 status_changed_at: ts(self.status_changed_at),
                 resume_command: resume,
                 running: self.running != 0,
+                open_url: self.open_url,
+                opens_in: self.opens_in,
             },
             project: self.project,
             sentence: self.sentence,
@@ -126,12 +130,13 @@ pub async fn upsert(db: &Db, config: &DeckConfig, node: &str, s: &SessionInfo) -
     let mut tx = db.begin().await?;
     sqlx::query(
         "INSERT INTO sessions (node, session_id, agent, workspace, tab, address, cwd, project, status, status_changed_at, \
-           resume_command, running, pushed_at, closed_at, blocked_since) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?) \
+           resume_command, running, pushed_at, closed_at, blocked_since, open_url, opens_in) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?) \
          ON CONFLICT (node, session_id) DO UPDATE SET agent = excluded.agent, workspace = excluded.workspace, \
            tab = excluded.tab, address = excluded.address, cwd = excluded.cwd, project = excluded.project, \
            status = excluded.status, status_changed_at = excluded.status_changed_at, \
            resume_command = excluded.resume_command, running = excluded.running, pushed_at = excluded.pushed_at, \
+           open_url = excluded.open_url, opens_in = excluded.opens_in, \
            closed_at = CASE WHEN excluded.running = 1 THEN NULL ELSE sessions.closed_at END, \
            ended = CASE WHEN excluded.running = 1 THEN NULL ELSE sessions.ended END, \
            blocked_since = CASE WHEN excluded.status = 'blocked' \
@@ -151,6 +156,8 @@ pub async fn upsert(db: &Db, config: &DeckConfig, node: &str, s: &SessionInfo) -
     .bind(s.running as i64)
     .bind(now)
     .bind(blocked_since)
+    .bind(&s.open_url)
+    .bind(&s.opens_in)
     .execute(&mut *tx)
     .await?;
     refresh_fts(&mut tx, node, &s.session_id).await?;
@@ -570,6 +577,8 @@ mod tests {
             status_changed_at: Timestamp::now(),
             resume_command: None,
             running: true,
+            open_url: None,
+            opens_in: None,
         }
     }
 

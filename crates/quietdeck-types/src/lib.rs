@@ -13,6 +13,7 @@ pub mod rules;
 pub mod session;
 pub mod summary;
 pub mod timeline;
+pub mod transcript;
 pub mod usage;
 
 pub use action::{Action, ActionType, Compose, MessageRef, SessionRef};

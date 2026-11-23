@@ -30,6 +30,12 @@ pub struct SessionInfo {
     pub resume_command: Option<String>,
     /// Whether the agent is running now.
     pub running: bool,
+    /// A link that brings the session forward in its orchestrator on the machine it runs on (herdr: `herdr://open`).
+    #[serde(default)]
+    pub open_url: Option<String>,
+    /// The orchestrator's name, for "Open in …".
+    #[serde(default)]
+    pub opens_in: Option<String>,
 }
 
 /// A session as the deck serves it.

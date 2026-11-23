@@ -23,7 +23,7 @@ has no tabs, use whatever name a person gives the session.
 | Method | What it does |
 | --- | --- |
 | `name()` | A short name for logs and messages (`"herdr"`). |
-| `sessions()` | Every agent session running on this machine, as `SessionInfo`: session ID, agent (Claude Code or Codex), tab, address, working directory, status and when it last changed. Leave out agents that don't have a session ID yet. An error means the orchestrator isn't running. |
+| `sessions()` | Every agent session running on this machine, as `SessionInfo`: session ID, agent (Claude Code or Codex), tab, address, working directory, status and when it last changed. Set `open_url` to a link that brings the session forward on this machine, if your orchestrator has one, and `opens_in` to its name: the deck shows "Open in <name>". Leave out agents that don't have a session ID yet. An error means the orchestrator isn't running. |
 | `subscribe()` | Its live events, as an `EventStream`. Return `StreamError::Refused` if it can't stream every session's events: the node then reads `sessions()` every 3 seconds instead, and tries the stream again every minute. Return `StreamError::Io` when it isn't reachable. |
 | `open(tab)` | Open a new tab running an agent, without taking focus from the person: `OpenTab` has the label, an absolute working directory, the agent and the agent's own arguments (the node builds those: `--name`, `--resume`, the model). Answer once the agent takes input, with its address and session ID if the agent has reported it already. On failure, answer with a sentence the person can act on. |
 | `close(session_id)` | Close the tab a running session is in. |

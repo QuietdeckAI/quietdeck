@@ -220,6 +220,12 @@ async fn answer(node: &Node, request: DeckRequest) -> Reply {
             },
             None => Reply::Err { error: "summaries are off on this node".into() },
         },
+        DeckRequest::Transcript { session_id, query } => {
+            match crate::viewer::page(node.home.clone(), session_id, query).await {
+                Ok(page) => Reply::ok(&page),
+                Err(error) => Reply::Err { error },
+            }
+        }
         DeckRequest::StartSession { spec } => match crate::control::start(node, spec).await {
             Ok(started) => Reply::ok(&started),
             Err(error) => Reply::Err { error },

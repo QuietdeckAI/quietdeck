@@ -39,8 +39,15 @@ export function Button({ className, variant, size, asChild, loading, children, d
       aria-busy={loading || undefined}
       {...props}
     >
-      {loading && <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden />}
-      {children}
+      {asChild ? (
+        // Slot takes exactly one child: the element it renders as.
+        children
+      ) : (
+        <>
+          {loading && <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden />}
+          {children}
+        </>
+      )}
     </Comp>
   );
 }

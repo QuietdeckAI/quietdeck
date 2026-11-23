@@ -8,6 +8,9 @@ import { HistoryScreen } from "@/screens/History";
 import { InboxScreen } from "@/screens/Inbox";
 import { LaterScreen } from "@/screens/Later";
 import { RulesScreen } from "@/screens/Rules";
+import { SessionScreen } from "@/screens/Session";
+import { SessionPageScreen } from "@/screens/SessionPage";
+import { SessionsScreen } from "@/screens/Sessions";
 import { SettingsScreen } from "@/screens/Settings";
 import { SignInScreen } from "@/screens/SignIn";
 import type { AuthState } from "@/types/AuthState";
@@ -53,5 +56,12 @@ function Screen() {
   if (path.startsWith("/later")) return <LaterScreen />;
   if (path.startsWith("/rules")) return <RulesScreen />;
   if (path.startsWith("/settings")) return <SettingsScreen />;
+  if (path.startsWith("/sessions")) {
+    // /sessions, /sessions/<machine>/<session ID>, /sessions/<machine>/<session ID>/page
+    const [, , node, sessionId, page] = path.split("/").map(decodeURIComponent);
+    if (node && sessionId && page === "page") return <SessionPageScreen key={`${node}/${sessionId}`} node={node} sessionId={sessionId} />;
+    if (node && sessionId) return <SessionScreen key={`${node}/${sessionId}`} node={node} sessionId={sessionId} />;
+    return <SessionsScreen />;
+  }
   return <InboxScreen />;
 }
