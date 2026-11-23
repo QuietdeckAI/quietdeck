@@ -171,6 +171,9 @@ quietdeck msg send --to <tab>@<machine> "Hello from the other machine"
 The message appears in that session at its next turn, with a line telling it how to answer. Messages to a session
 that isn't running fail at once and aren't kept; Quietdeck never queues messages between agents.
 
+Your agents learn when to use it from your global instructions: [Instructions for your agents](agent-instructions.md)
+has the section to paste in.
+
 ```sh
 quietdeck who-has <some ID you've worked on>
 ```
