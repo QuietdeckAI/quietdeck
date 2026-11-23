@@ -109,9 +109,11 @@ mod tests {
             "Session: tab \"(no tab)\", agent codex, directory ?, session ID abc.\n\nCurrent page: none yet (first summary of this session).\n\n---\nNew activity (SPAN):\n\nACT\n"
         );
         let sys = summary_system("Sam");
-        assert!(sys.starts_with(
-            "You keep the running record of one of Sam's AI coding agent sessions."
-        ));
+        assert!(
+            sys.starts_with(
+                "You keep the running record of one of Sam's AI coding agent sessions."
+            )
+        );
         assert!(!sys.contains("{user}"));
         assert!(sys.ends_with("refer to records by their IDs instead.\n"));
         let schema: serde_json::Value = serde_json::from_str(SUMMARY_SCHEMA).unwrap();

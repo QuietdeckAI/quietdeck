@@ -419,6 +419,28 @@ impl Driver {
     /// Transcripts with unread content whose session isn't running.
     fn queue_sweep(&mut self) {
         self.paused = false;
+        // A machine that ran claude-summarizer: until its offsets are imported, a sweep would summarise six months of
+        // history again (about 1,100 calls on the first machine). Idle summaries still run.
+        let old_state = self
+            .engine
+            .config
+            .roots
+            .home_path()
+            .join(".local/state/claude-summarizer/state.json");
+        if old_state.exists()
+            && self
+                .engine
+                .state
+                .lock()
+                .expect("state lock")
+                .imported_at
+                .is_none()
+        {
+            tracing::warn!(
+                "summaries: sweep held until claude-summarizer's history is imported (quietdeck-node import-summaries <dir>)"
+            );
+            return;
+        }
         let cutoff =
             SystemTime::now() - Duration::from_secs(self.engine.config.max_age_days as u64 * 86400);
         let running: HashSet<String> = self.sched.running_sessions().into_iter().collect();

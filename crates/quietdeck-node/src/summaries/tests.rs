@@ -686,6 +686,26 @@ async fn the_start_up_sweep_takes_sessions_that_ended_and_leaves_running_ones() 
     assert_eq!(fake.prompts().len(), 2);
 }
 
+#[tokio::test(start_paused = true)]
+async fn no_sweep_before_claude_summarizers_offsets_are_imported() {
+    let h = home();
+    append(&h, "ended", &[human("ended", "Old work", 50)]);
+    let old = h.home.join(".local/state/claude-summarizer");
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(old.join("state.json"), r#"{"files": {}}"#).unwrap();
+    let fake = Fake::new(vec![]);
+    let r = run(&h, &fake, true);
+    advance(35).await;
+    assert!(fake.prompts().is_empty(), "held");
+    // Idle summaries still run.
+    r.signals
+        .send(status("ended", AgentStatus::Idle))
+        .await
+        .unwrap();
+    advance(61).await;
+    assert_eq!(fake.prompts().len(), 1);
+}
+
 // ---------------------------------------------------------------- catch-up and import
 
 #[tokio::test]
