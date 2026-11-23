@@ -169,7 +169,8 @@ async fn parent_of(pid: u32) -> Option<u32> {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let out = tokio::process::Command::new("ps").args(["-o", "ppid=", "-p", &pid.to_string()]).output().await.ok()?;
+        let out =
+            tokio::process::Command::new("ps").args(["-o", "ppid=", "-p", &pid.to_string()]).output().await.ok()?;
         String::from_utf8_lossy(&out.stdout).trim().parse().ok()
     }
 }

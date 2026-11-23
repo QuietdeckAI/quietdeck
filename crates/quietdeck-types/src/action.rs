@@ -361,7 +361,8 @@ mod tests {
 
     #[test]
     fn archive_round_trips_with_its_type_tag() {
-        let a: Action = serde_json::from_value(json!({"type": "archive", "account": "personal", "thread_id": "t1"})).unwrap();
+        let a: Action =
+            serde_json::from_value(json!({"type": "archive", "account": "personal", "thread_id": "t1"})).unwrap();
         assert_eq!(a.action_type(), ActionType::Archive);
         assert_eq!(serde_json::to_value(&a).unwrap()["type"], "archive");
         a.check().unwrap();
@@ -390,15 +391,17 @@ mod tests {
 
     #[test]
     fn calendar_must_end_after_it_starts() {
-        let a: Action = serde_json::from_value(json!({"type": "calendar", "account": "personal", "calendar": "primary",
+        let a: Action =
+            serde_json::from_value(json!({"type": "calendar", "account": "personal", "calendar": "primary",
             "title": "Call", "start": "2026-11-24T10:00:00Z", "end": "2026-11-24T09:00:00Z", "time_zone": "UTC"}))
-        .unwrap();
+            .unwrap();
         assert!(a.check().unwrap_err().contains("end must be after start"));
     }
 
     #[test]
     fn story_ops_are_tagged() {
-        let a: Action = serde_json::from_value(json!({"type": "story", "op": "comment", "story_id": "123", "text": "x"})).unwrap();
+        let a: Action =
+            serde_json::from_value(json!({"type": "story", "op": "comment", "story_id": "123", "text": "x"})).unwrap();
         a.check().unwrap();
         let a: Action = serde_json::from_value(json!({"type": "story", "op": "create", "board": "engineering",
             "story_type": "bug", "title": "", "description": ""}))

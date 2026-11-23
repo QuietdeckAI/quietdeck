@@ -94,10 +94,11 @@ async fn hydrate(db: &Db, r: CardRow) -> anyhow::Result<Card> {
 }
 
 pub async fn get(db: &Db, id: i64) -> anyhow::Result<Option<Card>> {
-    let row: Option<CardRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {CARD_COLUMNS} FROM cards WHERE id = ?")))
-        .bind(id)
-        .fetch_optional(db)
-        .await?;
+    let row: Option<CardRow> =
+        sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {CARD_COLUMNS} FROM cards WHERE id = ?")))
+            .bind(id)
+            .fetch_optional(db)
+            .await?;
     match row {
         Some(r) => Ok(Some(hydrate(db, r).await?)),
         None => Ok(None),
@@ -124,12 +125,11 @@ pub async fn add(
     let now = now_ms();
     let mut tx = db.begin().await?;
 
-    let later: Option<(i64,)> =
-        sqlx::query_as("SELECT left_at FROM later WHERE account = ? AND thread_key = ?")
-            .bind(&input.account)
-            .bind(&input.thread_key)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let later: Option<(i64,)> = sqlx::query_as("SELECT left_at FROM later WHERE account = ? AND thread_key = ?")
+        .bind(&input.account)
+        .bind(&input.thread_key)
+        .fetch_optional(&mut *tx)
+        .await?;
     if let Some((left_at,)) = later {
         match input.last_message_at {
             Some(at) if at.as_millisecond() > left_at => {

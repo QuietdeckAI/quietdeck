@@ -68,12 +68,8 @@ pub fn card_full(c: &Card) -> String {
 }
 
 pub fn card_added(a: &CardAdded) -> String {
-    let mut s = format!(
-        "{} c_{} (version {}).",
-        if a.replaced { "Updated" } else { "Posted" },
-        a.card.id,
-        a.card.version
-    );
+    let mut s =
+        format!("{} c_{} (version {}).", if a.replaced { "Updated" } else { "Posted" }, a.card.id, a.card.version);
     if let Some(m) = &a.auto {
         s.push_str(&format!(" Automatic: {} ({}).", if m.allow { "allowed" } else { "denied" }, m.reason));
     }
@@ -83,13 +79,7 @@ pub fn card_added(a: &CardAdded) -> String {
 pub fn session_line(r: &SessionRow) -> String {
     let status = if r.info.running { snake(&r.info.status) } else { "ended".into() };
     let offline = if r.node_online { "" } else { " [node offline]" };
-    format!(
-        "{:<28} {:<8} {}{}",
-        r.address(),
-        status,
-        r.sentence.as_deref().unwrap_or("-"),
-        offline
-    )
+    format!("{:<28} {:<8} {}{}", r.address(), status, r.sentence.as_deref().unwrap_or("-"), offline)
 }
 
 pub fn who_has(w: &WhoHas) -> String {

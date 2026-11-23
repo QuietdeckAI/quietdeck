@@ -388,7 +388,8 @@ mod tests {
 
     #[test]
     fn reports_flatten_their_result() {
-        let r: ActionReport = serde_json::from_value(json!({"action_id": 4, "result": "failed", "error": "401"})).unwrap();
+        let r: ActionReport =
+            serde_json::from_value(json!({"action_id": 4, "result": "failed", "error": "401"})).unwrap();
         assert_eq!(r.result, ActionResult::Failed { error: "401".into() });
         let r: ActionReport = serde_json::from_value(json!({"action_id": 4, "result": "done"})).unwrap();
         assert_eq!(r.result, ActionResult::Done { outcome: None });

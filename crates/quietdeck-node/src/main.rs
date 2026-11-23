@@ -214,7 +214,9 @@ async fn watch_sessions(node: Arc<Node>, signals: mpsc::Sender<SessionSignal>) {
                     cwd: s.cwd.clone(),
                     transcript: None,
                 };
-                let _ = signals.send(SessionSignal::Status { session: facts, status: s.status, at: s.status_changed_at }).await;
+                let _ = signals
+                    .send(SessionSignal::Status { session: facts, status: s.status, at: s.status_changed_at })
+                    .await;
             }
         }
         for b in &before {

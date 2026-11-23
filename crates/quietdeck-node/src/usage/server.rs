@@ -49,21 +49,13 @@ pub fn take_lock(file: &Path) -> std::io::Result<Option<i32>> {
     use std::os::unix::fs::OpenOptionsExt;
     let me = std::process::id() as i32;
     for _ in 0..2 {
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(file)
-        {
+        match std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(file) {
             Ok(mut f) => {
                 f.write_all(me.to_string().as_bytes())?;
                 return Ok(None);
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                let holder = std::fs::read_to_string(file)
-                    .ok()
-                    .and_then(|t| t.trim().parse::<i32>().ok())
-                    .unwrap_or(0);
+                let holder = std::fs::read_to_string(file).ok().and_then(|t| t.trim().parse::<i32>().ok()).unwrap_or(0);
                 if holder > 0 && holder != me && is_running(holder) {
                     return Ok(Some(holder));
                 }
@@ -75,10 +67,7 @@ pub fn take_lock(file: &Path) -> std::io::Result<Option<i32>> {
             Err(e) => return Err(e),
         }
     }
-    Err(std::io::Error::other(format!(
-        "could not take {}",
-        file.display()
-    )))
+    Err(std::io::Error::other(format!("could not take {}", file.display())))
 }
 
 /// Opens the API on `dir/coordinator.sock` (the directory mode 0700, the socket 0600).
@@ -109,10 +98,7 @@ fn json_response(status: u16, body: &Value) -> HttpResponse {
     let text = body.to_string();
     let mut res = HttpResponse::new(Body::from(text));
     *res.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    res.headers_mut().insert(
-        header::CONTENT_TYPE,
-        header::HeaderValue::from_static("application/json"),
-    );
+    res.headers_mut().insert(header::CONTENT_TYPE, header::HeaderValue::from_static("application/json"));
     res
 }
 
@@ -122,10 +108,8 @@ async fn answer<D: Deps>(
     uri: Uri,
     body: Bytes,
 ) -> HttpResponse {
-    let query: HashMap<String, String> = uri
-        .query()
-        .map(|q| form_urlencoded::parse(q.as_bytes()).into_owned().collect())
-        .unwrap_or_default();
+    let query: HashMap<String, String> =
+        uri.query().map(|q| form_urlencoded::parse(q.as_bytes()).into_owned().collect()).unwrap_or_default();
     let body = if body.is_empty() {
         None
     } else {
@@ -138,21 +122,12 @@ async fn answer<D: Deps>(
     let _guard = match query.get("session") {
         Some(session) if is_poll => {
             coordinator.poll_opened(session);
-            Some(PollGuard {
-                coordinator: coordinator.clone(),
-                session: session.clone(),
-            })
+            Some(PollGuard { coordinator: coordinator.clone(), session: session.clone() })
         }
         _ => None,
     };
-    let res = coordinator
-        .handle(Request {
-            method: method.to_string(),
-            path: uri.path().to_string(),
-            query,
-            body,
-        })
-        .await;
+    let res =
+        coordinator.handle(Request { method: method.to_string(), path: uri.path().to_string(), query, body }).await;
     // The node runs the API for as long as it runs: a coordinator's `cli.ts stop` or upgrade can't end it.
     if res.shutdown {
         return json_response(
@@ -169,10 +144,8 @@ pub async fn serve<D: Deps>(
     coordinator: Coordinator<D>,
     stopped: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
-    let router = Router::new()
-        .fallback(answer::<D>)
-        .layer(DefaultBodyLimit::max(1024 * 1024))
-        .with_state(coordinator.clone());
+    let router =
+        Router::new().fallback(answer::<D>).layer(DefaultBodyLimit::max(1024 * 1024)).with_state(coordinator.clone());
     let (done_tx, done_rx) = tokio::sync::oneshot::channel::<()>();
     let shutdown = async move {
         stopped.await;
@@ -209,10 +182,8 @@ pub async fn call(
         stream.write_all(request.as_bytes()).await?;
         let mut raw = Vec::new();
         stream.read_to_end(&mut raw).await?;
-        let split = raw
-            .windows(4)
-            .position(|w| w == b"\r\n\r\n")
-            .ok_or_else(|| std::io::Error::other("no HTTP response"))?;
+        let split =
+            raw.windows(4).position(|w| w == b"\r\n\r\n").ok_or_else(|| std::io::Error::other("no HTTP response"))?;
         let head = String::from_utf8_lossy(&raw[..split]).to_ascii_lowercase();
         let rest = &raw[split + 4..];
         let status = head
@@ -220,14 +191,8 @@ pub async fn call(
             .nth(1)
             .and_then(|s| s.parse().ok())
             .ok_or_else(|| std::io::Error::other("no HTTP status"))?;
-        let is_chunked = head
-            .lines()
-            .any(|l| l.starts_with("transfer-encoding:") && l.contains("chunked"));
-        let payload = if is_chunked {
-            dechunk(rest)
-        } else {
-            rest.to_vec()
-        };
+        let is_chunked = head.lines().any(|l| l.starts_with("transfer-encoding:") && l.contains("chunked"));
+        let payload = if is_chunked { dechunk(rest) } else { rest.to_vec() };
         let value = serde_json::from_slice(&payload).unwrap_or(Value::Null);
         Ok((status, value))
     };

@@ -217,7 +217,10 @@ mod tests {
     #[test]
     fn the_envelope_escapes_the_name_and_claims_no_mode() {
         let e = envelope("a \"b\" <c>", "hello");
-        assert_eq!(e, "<cross-session-message from-name=\"a &quot;b&quot; &lt;c&gt;\">\nhello\n</cross-session-message>");
+        assert_eq!(
+            e,
+            "<cross-session-message from-name=\"a &quot;b&quot; &lt;c&gt;\">\nhello\n</cross-session-message>"
+        );
         assert!(!e.contains("from-mode"));
     }
 
@@ -279,7 +282,8 @@ mod tests {
         let pid = std::process::id();
         std::fs::write(
             sessions.join(format!("{pid}.json")),
-            serde_json::json!({"pid": pid, "sessionId": "s1", "peerProtocol": 1, "messagingSocketPath": sock_s}).to_string(),
+            serde_json::json!({"pid": pid, "sessionId": "s1", "peerProtocol": 1, "messagingSocketPath": sock_s})
+                .to_string(),
         )
         .unwrap();
         let reg = registration_for_pid(&sessions, pid).await.unwrap();

@@ -94,9 +94,8 @@ pub fn verify_session_token(key: &[u8], token: &str, now_secs: i64) -> Result<To
     let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(key).expect("HMAC takes any key length");
     mac.update(payload.as_bytes());
     mac.verify_slice(&sig).map_err(|_| "session token signature doesn't match")?;
-    let claims: TokenClaims =
-        serde_json::from_slice(&B64.decode(payload).map_err(|_| "malformed session token")?)
-            .map_err(|_| "malformed session token")?;
+    let claims: TokenClaims = serde_json::from_slice(&B64.decode(payload).map_err(|_| "malformed session token")?)
+        .map_err(|_| "malformed session token")?;
     if claims.exp < now_secs {
         return Err("session token expired: ask the node for a new one");
     }
@@ -220,7 +219,13 @@ mod tests {
     use super::*;
 
     fn claims(exp: i64) -> TokenClaims {
-        TokenClaims { node: "laptop".into(), session_id: Some("s1".into()), tab: Some("billing".into()), pane: None, exp }
+        TokenClaims {
+            node: "laptop".into(),
+            session_id: Some("s1".into()),
+            tab: Some("billing".into()),
+            pane: None,
+            exp,
+        }
     }
 
     #[test]

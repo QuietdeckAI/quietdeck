@@ -43,7 +43,10 @@ pub fn socket_path() -> PathBuf {
 pub async fn ask_node(req: &LocalRequest) -> anyhow::Result<LocalResponse> {
     let path = socket_path();
     let stream = tokio::net::UnixStream::connect(&path).await.map_err(|e| {
-        anyhow::anyhow!("this machine's Quietdeck node isn't running ({}: {e}). Start it with quietdeck-node", path.display())
+        anyhow::anyhow!(
+            "this machine's Quietdeck node isn't running ({}: {e}). Start it with quietdeck-node",
+            path.display()
+        )
     })?;
     let (r, mut w) = stream.into_split();
     w.write_all(format!("{}\n", serde_json::to_string(req)?).as_bytes()).await?;

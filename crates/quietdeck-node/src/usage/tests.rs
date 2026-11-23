@@ -70,11 +70,7 @@ struct World(Arc<Mutex<W>>);
 
 impl World {
     fn new() -> World {
-        World(Arc::new(Mutex::new(W {
-            now: now0(),
-            next_timer: 1,
-            ..Default::default()
-        })))
+        World(Arc::new(Mutex::new(W { now: now0(), next_timer: 1, ..Default::default() })))
     }
 
     fn w(&self) -> std::sync::MutexGuard<'_, W> {
@@ -149,10 +145,7 @@ impl Deps for World {
         let mut w = self.w();
         w.usage_calls.push(token.into());
         if let Some((status, retry_after_ms)) = w.failing.get(token) {
-            return UsageAnswer::Failed {
-                status: *status,
-                retry_after_ms: *retry_after_ms,
-            };
+            return UsageAnswer::Failed { status: *status, retry_after_ms: *retry_after_ms };
         }
         let Some((five, week)) = w.usage.get(token).copied() else {
             return UsageAnswer::Rejected;
@@ -171,11 +164,7 @@ impl Deps for World {
         let mut w = self.w();
         w.profile_calls.push(token.into());
         let email = w.owners.get(token)?.clone();
-        let tier = w
-            .tiers
-            .get(token)
-            .cloned()
-            .unwrap_or("default_claude_max_20x".into());
+        let tier = w.tiers.get(token).cloned().unwrap_or("default_claude_max_20x".into());
         Some(json!({
             "account": { "uuid": format!("acct-{email}"), "email": email },
             "organization": { "uuid": format!("org-{email}"), "name": "Org", "rate_limit_tier": tier },
@@ -202,11 +191,7 @@ impl Deps for World {
         let cancelled = Arc::new(Mutex::new(false));
         let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
         let cancel_tx = Arc::new(Mutex::new(Some(cancel_tx)));
-        self.w().sign_ins.push(SignInCall {
-            slot: slot.into(),
-            finish: Some(tx),
-            cancelled: cancelled.clone(),
-        });
+        self.w().sign_ins.push(SignInCall { slot: slot.into(), finish: Some(tx), cancelled: cancelled.clone() });
         let done = async move {
             tokio::select! {
                 r = rx => r.unwrap_or((None, String::new())),
@@ -276,12 +261,7 @@ fn three_logins(w: &World) -> Value {
 async fn started(w: &World, persisted: Option<&Value>) -> Coordinator<World> {
     let c = Coordinator::new(
         w.clone(),
-        Info {
-            version: "0.4.0".into(),
-            pid: 1,
-            started_at: now0(),
-            is_managed: false,
-        },
+        Info { version: "0.4.0".into(), pid: 1, started_at: now0(), is_managed: false },
         persisted,
     );
     c.start().await;
@@ -290,32 +270,19 @@ async fn started(w: &World, persisted: Option<&Value>) -> Coordinator<World> {
 }
 
 fn account(c: &Coordinator<World>, id: &str) -> AccountState {
-    c.state()
-        .accounts
-        .into_iter()
-        .find(|a| a.account.id == id)
-        .unwrap_or_else(|| panic!("account {id}"))
+    c.state().accounts.into_iter().find(|a| a.account.id == id).unwrap_or_else(|| panic!("account {id}"))
 }
 
 fn five(c: &Coordinator<World>, id: &str) -> Option<f64> {
-    account(c, id)
-        .reading
-        .and_then(|r| r.five_hour)
-        .map(|w| w.pct)
+    account(c, id).reading.and_then(|r| r.five_hour).map(|w| w.pct)
 }
 
 fn week(c: &Coordinator<World>, id: &str) -> Option<f64> {
-    account(c, id)
-        .reading
-        .and_then(|r| r.seven_day)
-        .map(|w| w.pct)
+    account(c, id).reading.and_then(|r| r.seven_day).map(|w| w.pct)
 }
 
 fn reading(five: Option<f64>, week: Option<f64>, at: Ms) -> Reading {
-    let win = |pct: f64, resets: &str| UsageWindow {
-        pct,
-        resets_at: Some(resets.into()),
-    };
+    let win = |pct: f64, resets: &str| UsageWindow { pct, resets_at: Some(resets.into()) };
     Reading {
         five_hour: five.map(|p| win(p, "2026-11-09T12:00:00Z")),
         seven_day: week.map(|p| win(p, "2026-11-14T03:00:00Z")),
@@ -328,10 +295,7 @@ fn req(method: &str, path: &str, query: &[(&str, &str)], body: Option<Value>) ->
     Request {
         method: method.into(),
         path: path.into(),
-        query: query
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect(),
+        query: query.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
         body,
     }
 }
@@ -349,21 +313,11 @@ async fn reads_each_login_once_at_start_and_polls_once_per_login_however_many_se
     let c = started(&w, Some(&three_logins(&w))).await;
     assert_eq!(sorted(w.w().usage_calls.clone()), ["t1", "t2", "t3"]);
     for i in 0..30 {
-        c.register(
-            &format!("s{i}"),
-            None,
-            if i % 2 == 0 { "" } else { SLOT2 },
-            None,
-            true,
-        );
+        c.register(&format!("s{i}"), None, if i % 2 == 0 { "" } else { SLOT2 }, None, true);
     }
     w.w().usage_calls.clear();
     w.advance(POLL_MS + TICK_MS).await;
-    assert_eq!(
-        sorted(w.w().usage_calls.clone()),
-        ["t1", "t2", "t3"],
-        "one poll per login in a poll period"
-    );
+    assert_eq!(sorted(w.w().usage_calls.clone()), ["t1", "t2", "t3"], "one poll per login in a poll period");
     assert_eq!(account(&c, "1").session_count, 15);
     assert_eq!(account(&c, "2").session_count, 15);
 }
@@ -375,14 +329,10 @@ async fn a_sessions_readings_keep_its_login_fresh_so_it_isnt_polled() {
     w.w().usage_calls.clear();
     for minute in 1..=12 {
         w.advance(60_000).await;
-        c.report("1", reading(Some(20.0 + minute as f64), None, w.now()))
-            .expect("reported");
+        c.report("1", reading(Some(20.0 + minute as f64), None, w.now())).expect("reported");
     }
     let calls = w.w().usage_calls.clone();
-    assert!(
-        !calls.contains(&"t1".to_string()),
-        "login 1 was never polled"
-    );
+    assert!(!calls.contains(&"t1".to_string()), "login 1 was never polled");
     assert!(calls.contains(&"t2".to_string()), "idle logins still are");
     assert_eq!(five(&c, "1"), Some(32.0));
 }
@@ -392,11 +342,9 @@ async fn a_reading_that_shows_the_same_moves_its_time_on_without_waking_long_pol
     let w = World::new();
     let c = started(&w, Some(&three_logins(&w))).await;
     let before = c.state().version;
-    c.report("1", reading(Some(20.2), Some(30.0), w.now() + 1))
-        .expect("reported");
+    c.report("1", reading(Some(20.2), Some(30.0), w.now() + 1)).expect("reported");
     assert_eq!(c.state().version, before);
-    c.report("1", reading(Some(25.0), Some(30.0), w.now() + 2))
-        .expect("reported");
+    c.report("1", reading(Some(25.0), Some(30.0), w.now() + 2)).expect("reported");
     assert_eq!(c.state().version, before + 1);
 }
 
@@ -407,10 +355,7 @@ async fn an_older_reading_never_replaces_a_newer_one() {
     c.report(
         "1",
         Reading {
-            five_hour: Some(UsageWindow {
-                pct: 50.0,
-                resets_at: None,
-            }),
+            five_hour: Some(UsageWindow { pct: 50.0, resets_at: None }),
             seven_day: None,
             models: None,
             at: w.now() - 10_000,
@@ -427,14 +372,7 @@ async fn a_keychain_that_cannot_be_read_is_said_once_and_leaves_the_health_as_it
     w.w().stored.insert(SLOT2.into(), Stored::Unreadable(51));
     w.advance(TICK_MS).await;
     w.advance(TICK_MS).await;
-    assert_eq!(
-        c.state()
-            .notices
-            .iter()
-            .filter(|n| n.text.contains("keychain"))
-            .count(),
-        1
-    );
+    assert_eq!(c.state().notices.iter().filter(|n| n.text.contains("keychain")).count(), 1);
     assert_eq!(account(&c, "2").health.kind(), "ok");
 }
 
@@ -444,17 +382,12 @@ async fn a_keychain_that_cannot_be_read_is_said_once_and_leaves_the_health_as_it
 async fn an_idle_login_whose_token_expired_has_claude_code_refresh_it() {
     let w = World::new();
     let persisted = three_logins(&w);
-    w.w()
-        .stored
-        .insert(SLOT3.into(), blob("t3-old", now0() - HOUR));
+    w.w().stored.insert(SLOT3.into(), blob("t3-old", now0() - HOUR));
     w.w().refresh_to.insert(SLOT3.into(), "t3".into());
     let c = started(&w, Some(&persisted)).await;
     assert_eq!(w.w().refreshes, [SLOT3]);
     let calls = w.w().usage_calls.clone();
-    assert!(
-        calls.contains(&"t3".into()),
-        "read with the refreshed token"
-    );
+    assert!(calls.contains(&"t3".into()), "read with the refreshed token");
     assert!(!calls.contains(&"t3-old".into()));
     assert_eq!(week(&c, "3"), Some(70.0));
     assert_eq!(account(&c, "3").health.kind(), "ok");
@@ -467,9 +400,7 @@ async fn an_idle_login_whose_token_expired_has_claude_code_refresh_it() {
 async fn a_login_a_session_is_on_is_left_for_that_session_to_refresh() {
     let w = World::new();
     let persisted = three_logins(&w);
-    w.w()
-        .stored
-        .insert(SLOT3.into(), blob("t3-old", now0() - HOUR));
+    w.w().stored.insert(SLOT3.into(), blob("t3-old", now0() - HOUR));
     w.w().refresh_to.insert(SLOT3.into(), "t3".into());
     let c = started(&w, Some(&persisted)).await;
     {
@@ -482,27 +413,17 @@ async fn a_login_a_session_is_on_is_left_for_that_session_to_refresh() {
     c.register("s1", None, SLOT2, None, true);
     w.advance(POLL_MS + TICK_MS).await;
     assert!(w.w().refreshes.is_empty());
-    assert!(
-        !w.w().usage_calls.contains(&"t2-old".into()),
-        "an expired token is never sent"
-    );
+    assert!(!w.w().usage_calls.contains(&"t2-old".into()), "an expired token is never sent");
 }
 
 #[tokio::test]
 async fn a_refresh_that_fails_is_logged_and_tried_again_only_after_a_while() {
     let w = World::new();
     let persisted = three_logins(&w);
-    w.w()
-        .stored
-        .insert(SLOT3.into(), blob("t3-old", now0() - HOUR));
+    w.w().stored.insert(SLOT3.into(), blob("t3-old", now0() - HOUR));
     let c = started(&w, Some(&persisted)).await;
     assert_eq!(w.w().refreshes, [SLOT3]);
-    assert!(
-        w.w()
-            .logs
-            .iter()
-            .any(|l| l.contains("account 3: Claude Code could not refresh"))
-    );
+    assert!(w.w().logs.iter().any(|l| l.contains("account 3: Claude Code could not refresh")));
     w.advance(POLL_MS + TICK_MS).await;
     assert_eq!(w.w().refreshes, [SLOT3], "not at the next poll");
     w.w().refresh_to.insert(SLOT3.into(), "t3".into());
@@ -517,8 +438,7 @@ async fn a_refresh_that_fails_is_logged_and_tried_again_only_after_a_while() {
 async fn a_sessions_reading_replaces_the_logins_and_the_state_holds_no_move_decision() {
     let w = World::new();
     let c = started(&w, Some(&three_logins(&w))).await;
-    c.report("1", reading(Some(95.0), None, w.now() + 1))
-        .expect("reported");
+    c.report("1", reading(Some(95.0), None, w.now() + 1)).expect("reported");
     assert_eq!(five(&c, "1"), Some(95.0));
     assert!(is_spent(account(&c, "1").reading.as_ref(), w.now(), None));
     let body = serde_json::to_value(account(&c, "1")).expect("json");
@@ -528,8 +448,7 @@ async fn a_sessions_reading_replaces_the_logins_and_the_state_holds_no_move_deci
 }
 
 #[tokio::test]
-async fn a_turn_that_hits_the_limit_first_counts_the_5_hour_window_full_with_one_call_for_many_sessions()
- {
+async fn a_turn_that_hits_the_limit_first_counts_the_5_hour_window_full_with_one_call_for_many_sessions() {
     let w = World::new();
     let c = started(&w, Some(&three_logins(&w))).await;
     w.w().usage_calls.clear();
@@ -577,33 +496,15 @@ async fn a_logins_fable_week_is_read_from_the_usage_endpoint_and_a_responses_rea
     let persisted = three_logins(&w);
     {
         let mut x = w.w();
-        x.usage = HashMap::from([
-            ("t1".into(), (None, 30.0)),
-            ("t2".into(), (None, 50.0)),
-            ("t3".into(), (None, 70.0)),
-        ]);
-        x.fable = HashMap::from([
-            ("t1".into(), 99.0),
-            ("t2".into(), 10.0),
-            ("t3".into(), 40.0),
-        ]);
+        x.usage =
+            HashMap::from([("t1".into(), (None, 30.0)), ("t2".into(), (None, 50.0)), ("t3".into(), (None, 70.0))]);
+        x.fable = HashMap::from([("t1".into(), 99.0), ("t2".into(), 10.0), ("t3".into(), 40.0)]);
     }
     let c = started(&w, Some(&persisted)).await;
-    let fable = |c: &Coordinator<World>| {
-        account(c, "1")
-            .reading
-            .and_then(|r| r.models)
-            .and_then(|m| m.get("Fable").cloned())
-    };
-    assert_eq!(
-        fable(&c),
-        Some(UsageWindow {
-            pct: 99.0,
-            resets_at: Some("2026-11-14T03:00:00Z".into())
-        })
-    );
-    c.report("1", reading(None, Some(31.0), w.now() + 1))
-        .expect("reported");
+    let fable =
+        |c: &Coordinator<World>| account(c, "1").reading.and_then(|r| r.models).and_then(|m| m.get("Fable").cloned());
+    assert_eq!(fable(&c), Some(UsageWindow { pct: 99.0, resets_at: Some("2026-11-14T03:00:00Z".into()) }));
+    c.report("1", reading(None, Some(31.0), w.now() + 1)).expect("reported");
     assert_eq!(week(&c, "1"), Some(31.0));
     assert_eq!(fable(&c).map(|w| w.pct), Some(99.0));
 }
@@ -611,8 +512,7 @@ async fn a_logins_fable_week_is_read_from_the_usage_endpoint_and_a_responses_rea
 // ------------------------------------------------------------ usage calls
 
 #[tokio::test]
-async fn after_a_failed_call_the_next_waits_two_minutes_then_twice_as_long_and_a_longer_retry_after()
- {
+async fn after_a_failed_call_the_next_waits_two_minutes_then_twice_as_long_and_a_longer_retry_after() {
     let w = World::new();
     let c = started(&w, Some(&three_logins(&w))).await;
     w.w().usage_calls.clear();
@@ -657,10 +557,7 @@ fn a_retry_after_header_reads_as_seconds_or_as_a_date() {
     use super::deps::retry_after;
     let now = parse_iso("2026-11-10T00:00:00Z").expect("a time");
     assert_eq!(retry_after(Some("120"), now), Some(120_000));
-    assert_eq!(
-        retry_after(Some("Tue, 10 Nov 2026 00:05:00 GMT"), now),
-        Some(300_000)
-    );
+    assert_eq!(retry_after(Some("Tue, 10 Nov 2026 00:05:00 GMT"), now), Some(300_000));
     assert_eq!(retry_after(None, now), None);
     assert_eq!(retry_after(Some("soon"), now), None);
 }
@@ -671,9 +568,7 @@ fn a_retry_after_header_reads_as_seconds_or_as_a_date() {
 async fn combined_usage_weighs_each_login_by_its_plan_and_leaves_out_logins_that_need_a_sign_in() {
     let w = World::new();
     let persisted = three_logins(&w);
-    w.w()
-        .tiers
-        .insert("t3".into(), "default_claude_max_5x".into());
+    w.w().tiers.insert("t3".into(), "default_claude_max_5x".into());
     let c = started(&w, Some(&persisted)).await;
     assert_eq!(account(&c, "1").weight, 10);
     assert_eq!(account(&c, "3").weight, 5);
@@ -686,10 +581,7 @@ async fn combined_usage_weighs_each_login_by_its_plan_and_leaves_out_logins_that
     let combined = c.state().combined.five_hour.expect("a window");
     assert_eq!(combined.pct, round((10.0 * 20.0 + 5.0 * 60.0) / 15.0));
     assert_eq!(combined.accounts, 2);
-    assert_eq!(
-        combined.next_reset_at.as_deref(),
-        Some("2026-11-09T12:00:00.000Z")
-    );
+    assert_eq!(combined.next_reset_at.as_deref(), Some("2026-11-09T12:00:00.000Z"));
 }
 
 #[tokio::test]
@@ -724,8 +616,7 @@ async fn long_polls_answer_at_once_when_the_state_moved_on_the_next_change_or_af
     wait(v, 50_000.0);
     settle().await;
     assert!(!done());
-    c.patch_settings(json!({ "rotateTo": "room" }).as_object().expect("object"))
-        .expect("patched");
+    c.patch_settings(json!({ "rotateTo": "room" }).as_object().expect("object")).expect("patched");
     settle().await;
     assert!(done(), "woken by a change");
 
@@ -746,14 +637,7 @@ async fn get_state_through_the_api_waits_the_same_way() {
     {
         let (c, answer) = (c.clone(), answer.clone());
         tokio::spawn(async move {
-            let r = c
-                .handle(req(
-                    "GET",
-                    "/state",
-                    &[("since", &v), ("wait", "5000")],
-                    None,
-                ))
-                .await;
+            let r = c.handle(req("GET", "/state", &[("since", &v), ("wait", "5000")], None)).await;
             *answer.lock().expect("lock") = Some(r.status);
         });
     }
@@ -778,10 +662,7 @@ async fn a_new_sign_in_in_a_slot_is_asked_about_once_and_names_the_login() {
     assert_eq!(two.account_uuid.as_deref(), Some("acct-two@example.com"));
     w.w().profile_calls.clear();
     w.advance(TICK_MS).await;
-    assert!(
-        w.w().profile_calls.is_empty(),
-        "the same token is not asked about again"
-    );
+    assert!(w.w().profile_calls.is_empty(), "the same token is not asked about again");
 }
 
 #[tokio::test]
@@ -795,10 +676,7 @@ async fn a_slot_that_holds_another_logins_sign_in_needs_its_own_again() {
         x.usage.insert("t2b".into(), (Some(40.0), 50.0));
     }
     w.advance(TICK_MS).await;
-    assert_eq!(
-        account(&c, "3").health,
-        Health::login_needed("signed in as account 2 now")
-    );
+    assert_eq!(account(&c, "3").health, Health::login_needed("signed in as account 2 now"));
 }
 
 #[tokio::test]
@@ -812,14 +690,10 @@ async fn a_login_that_signs_claude_codes_login_in_to_another_account_renames_it_
         x.usage.insert("t9".into(), (Some(5.0), 5.0));
     }
     c.check("1", Usage::Fresh).await;
-    assert_eq!(
-        account(&c, "1").account.email.as_deref(),
-        Some("nine@example.com")
+    assert_eq!(account(&c, "1").account.email.as_deref(), Some("nine@example.com"));
+    assert!(
+        c.state().notices.iter().any(|n| { n.text.starts_with("Claude Code's login, account 1, is nine@example.com") })
     );
-    assert!(c.state().notices.iter().any(|n| {
-        n.text
-            .starts_with("Claude Code's login, account 1, is nine@example.com")
-    }));
 }
 
 // ------------------------------------------------------------ sign-in
@@ -835,10 +709,7 @@ async fn signs_in_every_login_that_needs_it_one_at_a_time_and_adopts_who_signed_
     c.sign_in(None).expect("queued");
     assert_eq!(w.w().sign_ins.len(), 1);
     assert_eq!(account(&c, "2").health.kind(), "logging-in");
-    assert_eq!(
-        c.state().sign_in.map(|s| s.account_id).as_deref(),
-        Some("2")
-    );
+    assert_eq!(c.state().sign_in.map(|s| s.account_id).as_deref(), Some("2"));
     {
         let mut x = w.w();
         x.stored.insert(SLOT2.into(), live("t2"));
@@ -877,16 +748,8 @@ async fn a_sign_in_as_a_login_already_on_the_list_asks_for_another_account() {
     );
     w.finish_sign_in(0, Some(0), "");
     settle().await;
-    assert_eq!(
-        account(&c, "3").health,
-        Health::login_needed("that was account 1 (one@example.com · Org) again")
-    );
-    assert!(
-        c.state()
-            .notices
-            .iter()
-            .any(|n| n.text.contains("Sign out of claude.ai in your browser"))
-    );
+    assert_eq!(account(&c, "3").health, Health::login_needed("that was account 1 (one@example.com · Org) again"));
+    assert!(c.state().notices.iter().any(|n| n.text.contains("Sign out of claude.ai in your browser")));
 }
 
 #[tokio::test]
@@ -899,12 +762,7 @@ async fn a_sign_in_that_fails_says_why_and_cancel_ends_the_queue() {
     c.sign_in(None).expect("queued");
     w.finish_sign_in(0, Some(1), "browser closed");
     settle().await;
-    assert!(
-        c.state()
-            .notices
-            .iter()
-            .any(|n| n.text == "Sign-in for Claude account 2 did not finish: browser closed")
-    );
+    assert!(c.state().notices.iter().any(|n| n.text == "Sign-in for Claude account 2 did not finish: browser closed"));
     c.cancel_sign_in();
     settle().await;
     assert!(*w.w().sign_ins[1].cancelled.lock().expect("lock"));
@@ -937,10 +795,7 @@ async fn a_session_on_a_slot_nobody_registered_adopts_it_as_a_new_login() {
     let id = c.register("s", None, slot, None, true);
     settle().await;
     assert_eq!(id, "4");
-    assert_eq!(
-        account(&c, "4").account.email.as_deref(),
-        Some("four@example.com")
-    );
+    assert_eq!(account(&c, "4").account.email.as_deref(), Some("four@example.com"));
 }
 
 #[tokio::test]
@@ -948,22 +803,10 @@ async fn a_session_id_arrives_percent_encoded_in_a_path_and_is_found() {
     let w = World::new();
     let c = started(&w, Some(&three_logins(&w))).await;
     c.register("session-1:4242", None, "", None, true);
-    let answer = c
-        .handle(req(
-            "PATCH",
-            "/sessions/session-1%3A4242",
-            &[],
-            Some(json!({ "accountId": "2" })),
-        ))
-        .await;
+    let answer = c.handle(req("PATCH", "/sessions/session-1%3A4242", &[], Some(json!({ "accountId": "2" })))).await;
     assert_eq!(answer.status, 200);
     assert_eq!(c.state().sessions[0].account_id, "2");
-    assert_eq!(
-        c.handle(req("PATCH", "/sessions/%E0%A4%A", &[], Some(json!({}))))
-            .await
-            .status,
-        400
-    );
+    assert_eq!(c.handle(req("PATCH", "/sessions/%E0%A4%A", &[], Some(json!({})))).await.status, 400);
 }
 
 #[tokio::test]
@@ -976,8 +819,7 @@ async fn a_session_whose_process_ended_or_that_went_quiet_is_dropped() {
     c.register("quiet", None, "", None, true);
     c.register("polling", None, "", None, true);
     c.poll_opened("polling");
-    let ids =
-        |c: &Coordinator<World>| sorted(c.state().sessions.into_iter().map(|s| s.id).collect());
+    let ids = |c: &Coordinator<World>| sorted(c.state().sessions.into_iter().map(|s| s.id).collect());
     w.advance(TICK_MS).await;
     assert_eq!(ids(&c), ["live", "polling", "quiet"]);
     w.advance(STALE_SESSION_MS + TICK_MS).await;
@@ -990,12 +832,7 @@ async fn a_session_whose_process_ended_or_that_went_quiet_is_dropped() {
 async fn claude_codes_own_login_cant_be_removed() {
     let w = World::new();
     let c = started(&w, Some(&three_logins(&w))).await;
-    assert_eq!(
-        c.handle(req("POST", "/accounts/1/remove", &[], Some(json!({}))))
-            .await
-            .status,
-        400
-    );
+    assert_eq!(c.handle(req("POST", "/accounts/1/remove", &[], Some(json!({})))).await.status, 400);
 }
 
 #[tokio::test]
@@ -1006,8 +843,7 @@ async fn a_removed_login_waits_for_its_sessions_to_move_off_then_is_signed_out_a
     c.remove("2").await.expect("removing");
     assert!(account(&c, "2").is_retiring);
     assert!(w.w().sign_outs.is_empty());
-    c.patch_session("s", Some("1"), None, None)
-        .expect("patched");
+    c.patch_session("s", Some("1"), None, None).expect("patched");
     settle().await;
     assert_eq!(w.w().sign_outs, [SLOT2]);
     assert!(!c.state().accounts.iter().any(|a| a.account.id == "2"));
@@ -1021,38 +857,13 @@ async fn the_api_refuses_what_it_does_not_know_and_readings_that_are_not_reading
     let c = started(&w, Some(&three_logins(&w))).await;
     assert_eq!(c.handle(req("GET", "/nope", &[], None)).await.status, 404);
     assert_eq!(
-        c.handle(req(
-            "POST",
-            "/readings",
-            &[],
-            Some(json!({ "accountId": "1", "reading": { "pct": 3 } }))
-        ))
-        .await
-        .status,
+        c.handle(req("POST", "/readings", &[], Some(json!({ "accountId": "1", "reading": { "pct": 3 } }))))
+            .await
+            .status,
         400
     );
-    assert_eq!(
-        c.handle(req(
-            "PATCH",
-            "/settings",
-            &[],
-            Some(json!({ "rotateTo": "sideways" }))
-        ))
-        .await
-        .status,
-        400
-    );
-    assert_eq!(
-        c.handle(req(
-            "PATCH",
-            "/sessions/ghost",
-            &[],
-            Some(json!({ "accountId": "1" }))
-        ))
-        .await
-        .status,
-        404
-    );
+    assert_eq!(c.handle(req("PATCH", "/settings", &[], Some(json!({ "rotateTo": "sideways" })))).await.status, 400);
+    assert_eq!(c.handle(req("PATCH", "/sessions/ghost", &[], Some(json!({ "accountId": "1" })))).await.status, 404);
 }
 
 #[tokio::test]
@@ -1068,12 +879,9 @@ async fn hello_names_the_node_so_the_plugin_leaves_it_alone() {
 async fn keeps_what_it_learned_across_a_restart_in_the_typescript_coordinators_format() {
     let w = World::new();
     let c = started(&w, Some(&three_logins(&w))).await;
-    c.patch_settings(json!({ "rotateTo": "order" }).as_object().expect("object"))
-        .expect("patched");
+    c.patch_settings(json!({ "rotateTo": "order" }).as_object().expect("object")).expect("patched");
     c.patch_chrome(
-        json!({ "accountId": "2", "seen": { "accountId": "2", "isSeen": true } })
-            .as_object()
-            .expect("object"),
+        json!({ "accountId": "2", "seen": { "accountId": "2", "isSeen": true } }).as_object().expect("object"),
     )
     .expect("patched");
     c.stop();
@@ -1102,10 +910,7 @@ async fn the_snapshot_keys_claude_logins_by_account_and_org_and_carries_no_token
     assert_eq!(two.account_key, "acct-two@example.com/org-two@example.com");
     assert_eq!(two.local_id, "2");
     assert_eq!(two.session_count, 1);
-    assert_eq!(
-        two.source,
-        Some(quietdeck_types::usage::ReadingSource::Poll)
-    );
+    assert_eq!(two.source, Some(quietdeck_types::usage::ReadingSource::Poll));
     let kinds: Vec<_> = two.windows.iter().map(|w| (w.kind, w.pct)).collect();
     assert_eq!(
         kinds,
@@ -1124,17 +929,12 @@ async fn the_snapshot_keys_claude_logins_by_account_and_org_and_carries_no_token
 
 #[tokio::test]
 async fn serves_the_api_on_its_socket_and_wont_be_shut_down_by_a_client() {
-    let dir = tempfile::Builder::new()
-        .prefix("qd")
-        .tempdir_in("/tmp")
-        .expect("tempdir");
+    let dir = tempfile::Builder::new().prefix("qd").tempdir_in("/tmp").expect("tempdir");
     let w = World::new();
     let c = started(&w, Some(&three_logins(&w))).await;
     let listener = super::server::bind(dir.path()).expect("bound");
     let mode = |p: &std::path::Path| {
-        std::os::unix::fs::PermissionsExt::mode(
-            &std::fs::metadata(p).expect("metadata").permissions(),
-        ) & 0o777
+        std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(p).expect("metadata").permissions()) & 0o777
     };
     let sock = super::server::socket_path(dir.path());
     assert_eq!(mode(&sock), 0o600);
@@ -1146,39 +946,22 @@ async fn serves_the_api_on_its_socket_and_wont_be_shut_down_by_a_client() {
     let call = |method: &'static str, path: String, body: Option<Value>| {
         let sock = sock.clone();
         async move {
-            super::server::call(
-                &sock,
-                method,
-                &path,
-                body.as_ref(),
-                std::time::Duration::from_secs(5),
-            )
-            .await
-            .expect("answered")
+            super::server::call(&sock, method, &path, body.as_ref(), std::time::Duration::from_secs(5))
+                .await
+                .expect("answered")
         }
     };
     let (status, hello) = call("GET", "/hello".into(), None).await;
-    assert_eq!(
-        (status, hello["name"].as_str()),
-        (200, Some("quietdeck-node"))
-    );
-    let (status, body) = call(
-        "POST",
-        "/sessions".into(),
-        Some(json!({ "id": "s1", "slot": SLOT2, "isInteractive": true })),
-    )
-    .await;
+    assert_eq!((status, hello["name"].as_str()), (200, Some("quietdeck-node")));
+    let (status, body) =
+        call("POST", "/sessions".into(), Some(json!({ "id": "s1", "slot": SLOT2, "isInteractive": true }))).await;
     assert_eq!((status, body["accountId"].as_str()), (200, Some("2")));
     assert_eq!(body["state"]["accounts"][1]["sessionCount"], 1);
     let (status, _) = call("POST", "/shutdown".into(), None).await;
     assert_eq!(status, 409, "the node keeps the API running");
     // A long poll counts as the session being alive while it is open, and ends when the server stops.
     let v = c.state().version;
-    let poll = tokio::spawn(call(
-        "GET",
-        format!("/state?since={v}&wait=50000&session=s1"),
-        None,
-    ));
+    let poll = tokio::spawn(call("GET", format!("/state?since={v}&wait=50000&session=s1"), None));
     settle().await;
     let _ = stop_tx.send(());
     let (status, _) = poll.await.expect("joined");
@@ -1194,13 +977,9 @@ async fn serves_the_api_on_its_socket_and_wont_be_shut_down_by_a_client() {
 #[ignore = "reads this machine's sign-ins and calls the providers"]
 async fn live_snapshot_on_this_machine() {
     let home = std::path::PathBuf::from(std::env::var("HOME").expect("HOME"));
-    let rotator_dir = std::env::var("QUIETDECK_USAGE_ROTATOR_DIR")
-        .map(Into::into)
-        .expect("QUIETDECK_USAGE_ROTATOR_DIR");
-    let claude = std::process::Command::new("which")
-        .arg("claude")
-        .output()
-        .expect("which");
+    let rotator_dir =
+        std::env::var("QUIETDECK_USAGE_ROTATOR_DIR").map(Into::into).expect("QUIETDECK_USAGE_ROTATOR_DIR");
+    let claude = std::process::Command::new("which").arg("claude").output().expect("which");
     let env = super::UsageEnv {
         rotator_dir,
         home: home.clone(),
@@ -1208,15 +987,9 @@ async fn live_snapshot_on_this_machine() {
         state_dir: home.join(".cache/quietdeck-usage-live"),
     };
     let (tx, mut rx) = tokio::sync::mpsc::channel(16);
-    let handle = super::spawn(
-        quietdeck_types::usage::UsageConfig::default(),
-        env.clone(),
-        tx,
-    );
+    let handle = super::spawn(quietdeck_types::usage::UsageConfig::default(), env.clone(), tx);
     let until = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
-    while let Ok(Some(super::UsageEvent::Snapshot(s))) =
-        tokio::time::timeout_at(until, rx.recv()).await
-    {
+    while let Ok(Some(super::UsageEvent::Snapshot(s))) = tokio::time::timeout_at(until, rx.recv()).await {
         println!("snapshot: {} accounts", s.len());
     }
     for a in handle.snapshot().await {
@@ -1225,15 +998,7 @@ async fn live_snapshot_on_this_machine() {
             .windows
             .iter()
             .map(|w| {
-                format!(
-                    "{:?}{}={}%",
-                    w.kind,
-                    w.model
-                        .as_deref()
-                        .map(|m| format!("({m})"))
-                        .unwrap_or_default(),
-                    w.pct
-                )
+                format!("{:?}{}={}%", w.kind, w.model.as_deref().map(|m| format!("({m})")).unwrap_or_default(), w.pct)
             })
             .collect();
         println!(
@@ -1249,18 +1014,9 @@ async fn live_snapshot_on_this_machine() {
         );
     }
     let sock = super::server::socket_path(&env.rotator_dir);
-    if let Ok((status, body)) = super::server::call(
-        &sock,
-        "GET",
-        "/hello",
-        None,
-        std::time::Duration::from_secs(5),
-    )
-    .await
+    if let Ok((status, body)) =
+        super::server::call(&sock, "GET", "/hello", None, std::time::Duration::from_secs(5)).await
     {
-        println!(
-            "/hello {status}: name={} version={}",
-            body["name"], body["version"]
-        );
+        println!("/hello {status}: name={} version={}", body["name"], body["version"]);
     }
 }

@@ -24,10 +24,8 @@ pub struct Imported {
     pub problems: Vec<String>,
 }
 
-static UPDATE_NAME: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\d{4}-\d\d-\d\dT\d\d\.md$").unwrap());
-static SECTION: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^## (Sentence|Paragraph|Page)[ \t]*$").unwrap());
+static UPDATE_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{4}-\d\d-\d\dT\d\d\.md$").unwrap());
+static SECTION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^## (Sentence|Paragraph|Page)[ \t]*$").unwrap());
 
 /// claude-summarizer wrote minutes-only times (`2026-10-23T11:18+13:00`).
 fn parse_time(s: &str) -> Option<Timestamp> {
@@ -42,25 +40,16 @@ fn parse_time(s: &str) -> Option<Timestamp> {
 pub fn parse_update(text: &str) -> (BTreeMap<String, Value>, BTreeMap<String, String>) {
     let mut front = BTreeMap::new();
     let mut body = text;
-    if let Some((head, tail)) = text
-        .strip_prefix("---\n")
-        .and_then(|rest| rest.split_once("\n---\n"))
-    {
+    if let Some((head, tail)) = text.strip_prefix("---\n").and_then(|rest| rest.split_once("\n---\n")) {
         for line in head.lines() {
             if let Some((k, v)) = line.split_once(": ") {
-                front.insert(
-                    k.to_owned(),
-                    serde_json::from_str(v).unwrap_or_else(|_| Value::String(v.to_owned())),
-                );
+                front.insert(k.to_owned(), serde_json::from_str(v).unwrap_or_else(|_| Value::String(v.to_owned())));
             }
         }
         body = tail;
     }
     let mut tiers = BTreeMap::new();
-    let heads: Vec<_> = SECTION
-        .captures_iter(body)
-        .map(|c| (c.get(0).unwrap(), c[1].to_lowercase()))
-        .collect();
+    let heads: Vec<_> = SECTION.captures_iter(body).map(|c| (c.get(0).unwrap(), c[1].to_lowercase())).collect();
     for (i, (m, name)) in heads.iter().enumerate() {
         let end = heads.get(i + 1).map_or(body.len(), |(n, _)| n.start());
         tiers.insert(name.clone(), body[m.end()..end].trim().to_owned());
@@ -69,18 +58,12 @@ pub fn parse_update(text: &str) -> (BTreeMap<String, Value>, BTreeMap<String, St
 }
 
 fn s(v: Option<&Value>) -> Option<String> {
-    v.and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .map(str::to_owned)
+    v.and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_owned)
 }
 
 /// Read claude-summarizer's vault and state into records for the deck, and seed `state` with its offsets and each
 /// session's latest page. Offsets already in `state` are kept (the node may have read further).
-pub fn import(
-    vault: &Path,
-    old_state: Option<&Path>,
-    state: &mut State,
-) -> std::io::Result<Imported> {
+pub fn import(vault: &Path, old_state: Option<&Path>, state: &mut State) -> std::io::Result<Imported> {
     let index: Value = serde_json::from_slice(&std::fs::read(vault.join("index.json"))?)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     import_index(vault, &index, old_state, state)
@@ -92,11 +75,7 @@ pub fn claude_summarizer_vault(home: &Path) -> PathBuf {
     let configured = std::fs::read(&config)
         .ok()
         .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-        .and_then(|v| {
-            v.get("vault_dir")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        });
+        .and_then(|v| v.get("vault_dir").and_then(Value::as_str).map(str::to_owned));
     match configured {
         Some(d) if d.starts_with("~/") => home.join(&d[2..]),
         Some(d) if !d.is_empty() => PathBuf::from(d),
@@ -124,33 +103,19 @@ pub fn seed_from_claude_summarizer(home: &Path, state: &mut State) -> Option<usi
             Some(got.offsets)
         }
         Err(e) => {
-            tracing::warn!(
-                "summaries: can't adopt claude-summarizer's offsets from {}: {e}",
-                old_state.display()
-            );
+            tracing::warn!("summaries: can't adopt claude-summarizer's offsets from {}: {e}", old_state.display());
             None
         }
     }
 }
 
-fn import_index(
-    vault: &Path,
-    index: &Value,
-    old_state: Option<&Path>,
-    state: &mut State,
-) -> std::io::Result<Imported> {
+fn import_index(vault: &Path, index: &Value, old_state: Option<&Path>, state: &mut State) -> std::io::Result<Imported> {
     let mut out = Imported::default();
     let empty = serde_json::Map::new();
-    let sessions = index
-        .get("sessions")
-        .and_then(Value::as_object)
-        .unwrap_or(&empty);
+    let sessions = index.get("sessions").and_then(Value::as_object).unwrap_or(&empty);
     for (sid, entry) in sessions {
-        let agent = if entry.get("agent").and_then(Value::as_str) == Some("codex") {
-            Agent::Codex
-        } else {
-            Agent::Claude
-        };
+        let agent =
+            if entry.get("agent").and_then(Value::as_str) == Some("codex") { Agent::Codex } else { Agent::Claude };
         let tab = s(entry.get("tab")).or_else(|| s(entry.get("former_tab")));
         let dir = s(entry.get("dir"));
         let Some(folder) = s(entry.get("folder")) else {
@@ -179,13 +144,11 @@ fn import_index(
             let tier = |k: &str| tiers.get(k).cloned().unwrap_or_default();
             let time = |k: &str| s(front.get(k)).and_then(|v| parse_time(&v));
             let (Some(from), Some(to)) = (time("activity_from"), time("activity_to")) else {
-                out.problems
-                    .push(format!("{}: no activity times", path.display()));
+                out.problems.push(format!("{}: no activity times", path.display()));
                 continue;
             };
             if tier("sentence").is_empty() || tier("page").is_empty() {
-                out.problems
-                    .push(format!("{}: missing a tier", path.display()));
+                out.problems.push(format!("{}: missing a tier", path.display()));
                 continue;
             }
             let record = SummaryRecord {
@@ -236,12 +199,7 @@ fn import_index(
     if let Some(old) = old_state.filter(|p| p.exists()) {
         let v: Value = serde_json::from_slice(&std::fs::read(old)?)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        for (path, f) in v
-            .get("files")
-            .and_then(Value::as_object)
-            .into_iter()
-            .flatten()
-        {
+        for (path, f) in v.get("files").and_then(Value::as_object).into_iter().flatten() {
             let path = PathBuf::from(path);
             if state.files.contains_key(&path) {
                 continue;
@@ -250,14 +208,7 @@ fn import_index(
                 continue;
             };
             // A pending failure count restarts: the node retries that chunk three more times.
-            state.files.insert(
-                path,
-                FileState {
-                    offset,
-                    skip: s(f.get("skip")),
-                    ..Default::default()
-                },
-            );
+            state.files.insert(path, FileState { offset, skip: s(f.get("skip")), ..Default::default() });
             out.offsets += 1;
         }
     }
@@ -277,14 +228,8 @@ mod tests {
         assert_eq!(front["tab"], Value::String("ci".into()));
         assert_eq!(tiers["sentence"], "One line.");
         assert_eq!(tiers["page"], "# Heading\n\n## Not a tier heading\n\nBody.");
-        assert_eq!(
-            parse_time("2026-10-23T11:18+13:00"),
-            Some("2026-10-22T22:18:00Z".parse().unwrap())
-        );
-        assert_eq!(
-            parse_time("2026-11-21T18:35:57+13:00"),
-            Some("2026-11-21T05:35:57Z".parse().unwrap())
-        );
+        assert_eq!(parse_time("2026-10-23T11:18+13:00"), Some("2026-10-22T22:18:00Z".parse().unwrap()));
+        assert_eq!(parse_time("2026-11-21T18:35:57+13:00"), Some("2026-11-21T05:35:57Z".parse().unwrap()));
     }
 
     #[test]
@@ -295,9 +240,7 @@ mod tests {
         std::fs::write(vault.join("ci/2026-10-23T23.md"), UPDATE).unwrap();
         std::fs::write(
             vault.join("ci/2026-10-24T09.md"),
-            UPDATE
-                .replace("One line.", "Later line.")
-                .replace("23:21", "09:40"),
+            UPDATE.replace("One line.", "Later line.").replace("23:21", "09:40"),
         )
         .unwrap();
         std::fs::write(vault.join("ci/notes.md"), "not an update").unwrap();
@@ -307,49 +250,21 @@ mod tests {
         let old = vault.join("state.json");
         std::fs::write(&old, r#"{"files": {"/t/s1.jsonl": {"offset": 500}, "/t/h.jsonl": {"offset": 9, "skip": "headless run (sdk-cli)"}, "/t/f.jsonl": {"offset": 7, "failed_at": 90, "failures": 2}, "/t/mine.jsonl": {"offset": 1}}}"#).unwrap();
         let mut state = State::default();
-        state.files.insert(
-            "/t/mine.jsonl".into(),
-            FileState {
-                offset: 77,
-                ..Default::default()
-            },
-        );
+        state.files.insert("/t/mine.jsonl".into(), FileState { offset: 77, ..Default::default() });
         let got = import(vault, Some(&old), &mut state).unwrap();
         assert_eq!(got.sessions, 2);
         assert_eq!(got.records.len(), 2);
         assert_eq!(got.records[1].sentence, "Later line.");
-        assert_eq!(
-            got.records[1].period,
-            SummaryPeriod::Hour("2026-10-24T09".into())
-        );
+        assert_eq!(got.records[1].period, SummaryPeriod::Hour("2026-10-24T09".into()));
         assert_eq!(got.records[0].origin, RecordOrigin::ClaudeSummarizer);
         assert_eq!(state.sessions["s1"].page_hour, "2026-10-24T09");
-        assert_eq!(
-            state.sessions["s1"].transcripts,
-            vec![PathBuf::from("/t/s1.jsonl")]
-        );
-        assert_eq!(
-            state.sessions["s1"].last_activity,
-            Some(Timestamp::from_millisecond(1_795_000_000_500).unwrap())
-        );
+        assert_eq!(state.sessions["s1"].transcripts, vec![PathBuf::from("/t/s1.jsonl")]);
+        assert_eq!(state.sessions["s1"].last_activity, Some(Timestamp::from_millisecond(1_795_000_000_500).unwrap()));
         assert_eq!(got.offsets, 3);
         assert_eq!(state.files[Path::new("/t/s1.jsonl")].offset, 500);
-        assert_eq!(
-            state.files[Path::new("/t/h.jsonl")].skip.as_deref(),
-            Some("headless run (sdk-cli)")
-        );
-        assert_eq!(
-            state.files[Path::new("/t/f.jsonl")],
-            FileState {
-                offset: 7,
-                ..Default::default()
-            }
-        );
-        assert_eq!(
-            state.files[Path::new("/t/mine.jsonl")].offset,
-            77,
-            "the node's own offsets win"
-        );
+        assert_eq!(state.files[Path::new("/t/h.jsonl")].skip.as_deref(), Some("headless run (sdk-cli)"));
+        assert_eq!(state.files[Path::new("/t/f.jsonl")], FileState { offset: 7, ..Default::default() });
+        assert_eq!(state.files[Path::new("/t/mine.jsonl")].offset, 77, "the node's own offsets win");
         assert!(state.imported_at.is_some());
     }
 }

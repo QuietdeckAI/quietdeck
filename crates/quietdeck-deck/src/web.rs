@@ -18,8 +18,10 @@ pub async fn serve(uri: Uri) -> Response {
         return ([(header::CONTENT_TYPE, mime.as_ref()), (header::CACHE_CONTROL, cache)], file.data).into_response();
     }
     match Assets::get("index.html") {
-        Some(index) => ([(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CACHE_CONTROL, "no-cache")], index.data)
-            .into_response(),
+        Some(index) => {
+            ([(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CACHE_CONTROL, "no-cache")], index.data)
+                .into_response()
+        }
         None => (StatusCode::OK, "Quietdeck's deck is running. This build has no web app (web/dist was empty).")
             .into_response(),
     }

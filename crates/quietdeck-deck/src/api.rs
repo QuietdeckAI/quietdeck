@@ -112,11 +112,19 @@ async fn search_sessions(
     Ok(Json(sessions::search(&state.db, &state.hub, &q.q, q.limit.unwrap_or(20)).await?))
 }
 
-async fn who_has(State(state): State<AppState>, Authed(_): Authed, Query(q): Query<SearchQuery>) -> AppResult<Json<WhoHas>> {
+async fn who_has(
+    State(state): State<AppState>,
+    Authed(_): Authed,
+    Query(q): Query<SearchQuery>,
+) -> AppResult<Json<WhoHas>> {
     Ok(Json(ops::who_has(&state, &q.q).await?))
 }
 
-async fn msg_send(State(state): State<AppState>, Agent(me): Agent, Json(msg): Json<MsgSend>) -> AppResult<Json<Delivered>> {
+async fn msg_send(
+    State(state): State<AppState>,
+    Agent(me): Agent,
+    Json(msg): Json<MsgSend>,
+) -> AppResult<Json<Delivered>> {
     Ok(Json(ops::msg_send(&state, &me, msg).await?))
 }
 
@@ -134,7 +142,11 @@ pub struct HistoryQuery {
     pub since: Option<String>,
 }
 
-async fn history(State(state): State<AppState>, Agent(me): Agent, Query(q): Query<HistoryQuery>) -> AppResult<Json<History>> {
+async fn history(
+    State(state): State<AppState>,
+    Agent(me): Agent,
+    Query(q): Query<HistoryQuery>,
+) -> AppResult<Json<History>> {
     Ok(Json(ops::history(&state, &me, q.since.as_deref().unwrap_or("last")).await?))
 }
 

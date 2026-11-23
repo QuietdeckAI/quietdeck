@@ -26,25 +26,15 @@ pub fn split_at_anchor(events: &[Event]) -> (Option<&Event>, &[Event]) {
 impl Engine {
     /// The session's main transcript: the most recently modified one.
     fn main_transcript(&self, session_id: &str, agent: Agent) -> Option<Source> {
-        self.locate(session_id, agent)
-            .into_iter()
-            .max_by_key(|s| transcript::modified(&s.path))
+        self.locate(session_id, agent).into_iter().max_by_key(|s| transcript::modified(&s.path))
     }
 
     /// The cached catch-up, marked stale when the transcript has grown since it was written; None if there's none.
     /// The second value says whether a new one should be written.
     pub fn cached_catchup(&self, session_id: &str, agent: Agent) -> (Option<Catchup>, bool) {
-        let size = self
-            .main_transcript(session_id, agent)
-            .and_then(|s| std::fs::metadata(&s.path).ok())
-            .map(|m| m.len());
-        let cached = self
-            .state
-            .lock()
-            .expect("state lock")
-            .catchups
-            .get(session_id)
-            .cloned();
+        let size =
+            self.main_transcript(session_id, agent).and_then(|s| std::fs::metadata(&s.path).ok()).map(|m| m.len());
+        let cached = self.state.lock().expect("state lock").catchups.get(session_id).cloned();
         match (cached, size) {
             (Some(mut c), Some(size)) => {
                 c.stale = c.offset != size;
@@ -67,9 +57,7 @@ impl Engine {
             return Ok(None);
         };
         let (src, home) = (source.clone(), self.config.roots.home.clone());
-        let res = match tokio::task::spawn_blocking(move || transcript::read(&src, 0, &home))
-            .await
-            .expect("read task")
+        let res = match tokio::task::spawn_blocking(move || transcript::read(&src, 0, &home)).await.expect("read task")
         {
             Ok(res) => res,
             Err(e) => {
@@ -82,11 +70,7 @@ impl Engine {
         }
         let (anchor_event, after) = split_at_anchor(&res.events);
         let tz = &self.config.tz;
-        let anchor = anchor_event.map(|e| CatchupAnchor {
-            uuid: e.uuid.clone(),
-            at: e.ts,
-            end: e.end,
-        });
+        let anchor = anchor_event.map(|e| CatchupAnchor { uuid: e.uuid.clone(), at: e.ts, end: e.end });
         info.session_id = session_id.to_owned();
         info.agent = Some(agent);
         if info.dir.is_none() {
@@ -99,13 +83,7 @@ impl Engine {
                 Some(a) => a,
                 None => return Err(Stop::NoAccount),
             };
-            let page = self
-                .state
-                .lock()
-                .expect("state lock")
-                .sessions
-                .get(session_id)
-                .map(|s| s.page.clone());
+            let page = self.state.lock().expect("state lock").sessions.get(session_id).map(|s| s.page.clone());
             let (message, at) = match anchor_event {
                 Some(e) => (condense::clip(&e.text, 2500), condense::stamp(e.ts, tz)),
                 None => ("(none in this transcript)".to_owned(), "never".to_owned()),
@@ -123,12 +101,7 @@ impl Engine {
                 prompt: user_prompt,
                 account,
             };
-            match self
-                .model
-                .call(req)
-                .await
-                .and_then(|(v, _)| parse_catchup(&v))
-            {
+            match self.model.call(req).await.and_then(|(v, _)| parse_catchup(&v)) {
                 Ok(text) => text,
                 Err(CallError::Limit(m)) => return Err(Stop::Limit(m)),
                 Err(e) => {
@@ -145,11 +118,7 @@ impl Engine {
             offset: res.end,
             stale: false,
         };
-        self.state
-            .lock()
-            .expect("state lock")
-            .catchups
-            .insert(session_id.to_owned(), catchup.clone());
+        self.state.lock().expect("state lock").catchups.insert(session_id.to_owned(), catchup.clone());
         self.save();
         Ok(Some(catchup))
     }
@@ -160,13 +129,7 @@ mod tests {
     use super::*;
 
     fn ev(kind: Kind, text: &str, end: u64) -> Event {
-        Event {
-            kind,
-            text: text.into(),
-            ts: Timestamp::UNIX_EPOCH,
-            end,
-            uuid: Some(format!("u{end}")),
-        }
+        Event { kind, text: text.into(), ts: Timestamp::UNIX_EPOCH, end, uuid: Some(format!("u{end}")) }
     }
 
     #[test]

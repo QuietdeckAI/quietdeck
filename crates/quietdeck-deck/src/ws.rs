@@ -23,7 +23,11 @@ const SILENT_LIMIT: Duration = Duration::from_secs(60);
 /// Biggest frame a node may send: a full sessions snapshot with summaries fits easily.
 const MAX_FRAME: usize = 8 * 1024 * 1024;
 
-pub async fn upgrade(State(state): State<AppState>, headers: HeaderMap, ws: WebSocketUpgrade) -> Result<Response, AppError> {
+pub async fn upgrade(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Result<Response, AppError> {
     let token = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -100,10 +104,7 @@ async fn run(state: AppState, node: String, socket: WebSocket) {
     tracing::info!(%node, "node disconnected");
 }
 
-async fn send(
-    sink: &mut futures::stream::SplitSink<WebSocket, Message>,
-    frame: &DeckFrame,
-) -> Result<(), axum::Error> {
+async fn send(sink: &mut futures::stream::SplitSink<WebSocket, Message>, frame: &DeckFrame) -> Result<(), axum::Error> {
     let text = serde_json::to_string(frame).expect("deck frames serialise");
     sink.send(Message::Text(text.into())).await
 }

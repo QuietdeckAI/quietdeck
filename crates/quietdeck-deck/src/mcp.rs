@@ -157,7 +157,11 @@ impl Mcp {
     }
 
     #[tool(description = "List cards, newest first.")]
-    async fn cards(&self, Parameters(args): Parameters<CardsArgs>, ctx: RequestContext<RoleServer>) -> Result<CallToolResult, ErrorData> {
+    async fn cards(
+        &self,
+        Parameters(args): Parameters<CardsArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
         let r = async {
             self.caller(&ctx).await?;
             let f = cards::ListFilter { open: args.open, account: args.account, ..Default::default() };
@@ -198,7 +202,11 @@ impl Mcp {
 
     #[tool(description = "Who has this ID? Searches every session's summaries, and the raw transcripts on every \
         connected machine. Says which machines were offline (searched by summary only).")]
-    async fn who_has(&self, Parameters(args): Parameters<SearchArgs>, ctx: RequestContext<RoleServer>) -> Result<CallToolResult, ErrorData> {
+    async fn who_has(
+        &self,
+        Parameters(args): Parameters<SearchArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
         let r = async {
             self.caller(&ctx).await?;
             ops::who_has(&self.state, &args.q).await
@@ -209,7 +217,11 @@ impl Mcp {
 
     #[tool(description = "Send a message to a session on another machine (`tab` or `tab@node`). Fails at once when \
         that session is offline: then find another way or try again later. Use SendMessage on the same machine.")]
-    async fn msg_send(&self, Parameters(msg): Parameters<MsgSend>, ctx: RequestContext<RoleServer>) -> Result<CallToolResult, ErrorData> {
+    async fn msg_send(
+        &self,
+        Parameters(msg): Parameters<MsgSend>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
         let r = async { ops::msg_send(&self.state, &self.agent(&ctx).await?, msg).await }.await;
         tool_try!(r)
     }
@@ -225,7 +237,11 @@ impl Mcp {
     }
 
     #[tool(description = "What happened since you last asked: timeline entries and cards that changed.")]
-    async fn history(&self, Parameters(args): Parameters<HistoryArgs>, ctx: RequestContext<RoleServer>) -> Result<CallToolResult, ErrorData> {
+    async fn history(
+        &self,
+        Parameters(args): Parameters<HistoryArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
         let r = async {
             let me = self.agent(&ctx).await?;
             ops::history(&self.state, &me, args.since.as_deref().unwrap_or("last")).await

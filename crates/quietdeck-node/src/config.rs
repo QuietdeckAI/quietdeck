@@ -74,9 +74,7 @@ pub fn default_token_file() -> PathBuf {
 }
 
 pub fn state_dir() -> PathBuf {
-    std::env::var_os("QUIETDECK_STATE_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home().join(".local/state/quietdeck"))
+    std::env::var_os("QUIETDECK_STATE_DIR").map(PathBuf::from).unwrap_or_else(|| home().join(".local/state/quietdeck"))
 }
 
 /// The local socket the CLI, the MCP headers helper and the menu bar app use.
@@ -95,9 +93,11 @@ pub fn socket_path() -> PathBuf {
 
 impl NodeConfig {
     pub fn load(path: &Path) -> anyhow::Result<NodeConfig> {
-        let text = std::fs::read_to_string(path)
-            .map_err(|e| anyhow::anyhow!("reading {}: {e} (enrol this machine with `quietdeck node enroll`)", path.display()))?;
-        let c: NodeConfig = yaml_serde::from_str(&text).map_err(|e| anyhow::anyhow!("reading {}: {e}", path.display()))?;
+        let text = std::fs::read_to_string(path).map_err(|e| {
+            anyhow::anyhow!("reading {}: {e} (enrol this machine with `quietdeck node enroll`)", path.display())
+        })?;
+        let c: NodeConfig =
+            yaml_serde::from_str(&text).map_err(|e| anyhow::anyhow!("reading {}: {e}", path.display()))?;
         if c.node.token_file.is_some() && c.node.token_env.is_some() {
             anyhow::bail!("{}: set node.token_file or node.token_env, not both", path.display());
         }

@@ -73,10 +73,8 @@ pub async fn seen(db: &Db, node: &str) -> anyhow::Result<()> {
 }
 
 pub async fn runner_info(db: &Db, node: &str) -> anyhow::Result<Option<RunnerInfo>> {
-    let row: Option<(Option<String>,)> = sqlx::query_as("SELECT runner_info FROM nodes WHERE name = ?")
-        .bind(node)
-        .fetch_optional(db)
-        .await?;
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT runner_info FROM nodes WHERE name = ?").bind(node).fetch_optional(db).await?;
     row.and_then(|r| r.0).map(|s| from_json(&s)).transpose()
 }
 

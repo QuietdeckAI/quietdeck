@@ -57,11 +57,7 @@ pub struct Reading {
 pub enum Health {
     #[serde(rename_all = "camelCase")]
     Ok {
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "de_opt_ms"
-        )]
+        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "de_opt_ms")]
         refresh_expires_at: Option<Ms>,
     },
     LoginNeeded {
@@ -217,8 +213,7 @@ pub fn rotate_to_from(value: Option<&Value>) -> String {
 }
 
 fn one_of<T: for<'de> Deserialize<'de>>(v: Option<&Value>) -> Option<T> {
-    v.filter(|v| v.is_string())
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
+    v.filter(|v| v.is_string()).and_then(|v| serde_json::from_value(v.clone()).ok())
 }
 
 /// The footer's look as stored; any part missing or unknown is the default's.
@@ -228,12 +223,8 @@ pub fn footer_style_from(value: Option<&Value>) -> FooterStyle {
     FooterStyle {
         session: one_of(get("session")).unwrap_or(d.session),
         week: one_of(get("week")).unwrap_or(d.week),
-        session_percent: get("sessionPercent")
-            .and_then(Value::as_bool)
-            .unwrap_or(d.session_percent),
-        week_percent: get("weekPercent")
-            .and_then(Value::as_bool)
-            .unwrap_or(d.week_percent),
+        session_percent: get("sessionPercent").and_then(Value::as_bool).unwrap_or(d.session_percent),
+        week_percent: get("weekPercent").and_then(Value::as_bool).unwrap_or(d.week_percent),
         active: one_of(get("active")).unwrap_or(d.active),
         fill: one_of(get("fill")).unwrap_or(d.fill),
     }
@@ -289,45 +280,25 @@ fn limits_five_hour(r: Option<&Reading>) -> bool {
 
 /// A login's reading once a turn hit its usage limit before its usage showed it: the limiting window full.
 pub fn spent_reading(r: Option<&Reading>, now: Ms, scope: Option<&str>) -> Reading {
-    let mut out = r.cloned().unwrap_or(Reading {
-        five_hour: None,
-        seven_day: None,
-        models: None,
-        at: now,
-    });
+    let mut out = r.cloned().unwrap_or(Reading { five_hour: None, seven_day: None, models: None, at: now });
     out.at = now;
     if let Some(scope) = scope {
         let week = window_pct(r.and_then(|r| r.seven_day.as_ref()), now).unwrap_or(0.0);
         if week < LEAVE_SEVEN_DAY && !limits_five_hour(r) {
-            let resets_at = model_window(r, Some(scope))
-                .or(r.and_then(|r| r.seven_day.as_ref()))
-                .and_then(|w| w.resets_at.clone());
-            out.models.get_or_insert_with(BTreeMap::new).insert(
-                scope.to_string(),
-                UsageWindow {
-                    pct: 100.0,
-                    resets_at,
-                },
-            );
+            let resets_at =
+                model_window(r, Some(scope)).or(r.and_then(|r| r.seven_day.as_ref())).and_then(|w| w.resets_at.clone());
+            out.models
+                .get_or_insert_with(BTreeMap::new)
+                .insert(scope.to_string(), UsageWindow { pct: 100.0, resets_at });
             return out;
         }
     }
     if limits_five_hour(r) {
-        let resets_at = r
-            .and_then(|r| r.five_hour.as_ref())
-            .and_then(|w| w.resets_at.clone());
-        out.five_hour = Some(UsageWindow {
-            pct: 100.0,
-            resets_at,
-        });
+        let resets_at = r.and_then(|r| r.five_hour.as_ref()).and_then(|w| w.resets_at.clone());
+        out.five_hour = Some(UsageWindow { pct: 100.0, resets_at });
     } else {
-        let resets_at = r
-            .and_then(|r| r.seven_day.as_ref())
-            .and_then(|w| w.resets_at.clone());
-        out.seven_day = Some(UsageWindow {
-            pct: 100.0,
-            resets_at,
-        });
+        let resets_at = r.and_then(|r| r.seven_day.as_ref()).and_then(|w| w.resets_at.clone());
+        out.seven_day = Some(UsageWindow { pct: 100.0, resets_at });
     }
     out
 }
@@ -335,13 +306,7 @@ pub fn spent_reading(r: Option<&Reading>, now: Ms, scope: Option<&str>) -> Readi
 fn window_from(v: Option<&Value>) -> Option<UsageWindow> {
     let o = v?.as_object()?;
     let pct = o.get("utilization")?.as_f64()?;
-    Some(UsageWindow {
-        pct,
-        resets_at: o
-            .get("resets_at")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-    })
+    Some(UsageWindow { pct, resets_at: o.get("resets_at").and_then(Value::as_str).map(str::to_string) })
 }
 
 /// A model family's own weeks from the usage body's `limits`: each `weekly_scoped` limit scoped to a model.
@@ -350,31 +315,17 @@ fn model_windows_from(limits: Option<&Value>) -> Option<BTreeMap<String, UsageWi
     for limit in limits?.as_array()? {
         let Some(l) = limit.as_object() else { continue };
         let scope = l.get("scope");
-        let model = scope
-            .and_then(|s| s.get("model"))
-            .and_then(|m| m.get("display_name"))
-            .and_then(Value::as_str);
-        let surface = scope
-            .and_then(|s| s.get("surface"))
-            .filter(|s| !s.is_null());
+        let model = scope.and_then(|s| s.get("model")).and_then(|m| m.get("display_name")).and_then(Value::as_str);
+        let surface = scope.and_then(|s| s.get("surface")).filter(|s| !s.is_null());
         let (Some(model), Some(pct)) = (model, l.get("percent").and_then(Value::as_f64)) else {
             continue;
         };
-        if l.get("kind").and_then(Value::as_str) != Some("weekly_scoped")
-            || model.is_empty()
-            || surface.is_some()
-        {
+        if l.get("kind").and_then(Value::as_str) != Some("weekly_scoped") || model.is_empty() || surface.is_some() {
             continue;
         }
         models.insert(
             model.to_string(),
-            UsageWindow {
-                pct,
-                resets_at: l
-                    .get("resets_at")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
-            },
+            UsageWindow { pct, resets_at: l.get("resets_at").and_then(Value::as_str).map(str::to_string) },
         );
     }
     (!models.is_empty()).then_some(models)
@@ -389,24 +340,13 @@ pub fn reading_from_usage(body: &Value, now: Ms) -> Option<Reading> {
     if five_hour.is_none() && seven_day.is_none() && models.is_none() {
         return None;
     }
-    Some(Reading {
-        five_hour,
-        seven_day,
-        models,
-        at: now,
-    })
+    Some(Reading { five_hour, seven_day, models, at: now })
 }
 
 fn client_window(v: Option<&Value>) -> Option<UsageWindow> {
     let o = v?.as_object()?;
     let pct = o.get("pct")?.as_f64().filter(|p| p.is_finite())?;
-    Some(UsageWindow {
-        pct,
-        resets_at: o
-            .get("resetsAt")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-    })
+    Some(UsageWindow { pct, resets_at: o.get("resetsAt").and_then(Value::as_str).map(str::to_string) })
 }
 
 /// A reading a client sent, checked: None when it isn't one.
@@ -418,22 +358,13 @@ pub fn reading_from_client(v: &Value) -> Option<Reading> {
     let models: BTreeMap<String, UsageWindow> = o
         .get("models")
         .and_then(Value::as_object)
-        .map(|m| {
-            m.iter()
-                .filter_map(|(k, w)| client_window(Some(w)).map(|w| (k.clone(), w)))
-                .collect()
-        })
+        .map(|m| m.iter().filter_map(|(k, w)| client_window(Some(w)).map(|w| (k.clone(), w))).collect())
         .unwrap_or_default();
     let models = (!models.is_empty()).then_some(models);
     if five_hour.is_none() && seven_day.is_none() && models.is_none() {
         return None;
     }
-    Some(Reading {
-        five_hour,
-        seven_day,
-        models,
-        at,
-    })
+    Some(Reading { five_hour, seven_day, models, at })
 }
 
 /// Two readings that show the same: within half a point on each window, with the same resets.
@@ -445,16 +376,10 @@ pub fn same_reading(a: Option<&Reading>, b: &Reading) -> bool {
         _ => false,
     };
     let empty = BTreeMap::new();
-    let (am, bm) = (
-        a.models.as_ref().unwrap_or(&empty),
-        b.models.as_ref().unwrap_or(&empty),
-    );
+    let (am, bm) = (a.models.as_ref().unwrap_or(&empty), b.models.as_ref().unwrap_or(&empty));
     same(a.five_hour.as_ref(), b.five_hour.as_ref())
         && same(a.seven_day.as_ref(), b.seven_day.as_ref())
-        && am
-            .keys()
-            .chain(bm.keys())
-            .all(|n| same(am.get(n), bm.get(n)))
+        && am.keys().chain(bm.keys()).all(|n| same(am.get(n), bm.get(n)))
 }
 
 /// The part of a stored login that matters here.
@@ -474,18 +399,9 @@ pub fn credential_from(text: &str) -> Option<Credential> {
     Some(Credential {
         access_token: o.get("accessToken")?.as_str()?.to_string(),
         expires_at: o.get("expiresAt")?.as_f64()? as i64,
-        refresh_token_expires_at: o
-            .get("refreshTokenExpiresAt")
-            .and_then(Value::as_f64)
-            .map(|n| n as i64),
-        refresh_token: o
-            .get("refreshToken")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        plan: o
-            .get("subscriptionType")
-            .and_then(Value::as_str)
-            .map(str::to_string),
+        refresh_token_expires_at: o.get("refreshTokenExpiresAt").and_then(Value::as_f64).map(|n| n as i64),
+        refresh_token: o.get("refreshToken").and_then(Value::as_str).map(str::to_string),
+        plan: o.get("subscriptionType").and_then(Value::as_str).map(str::to_string),
     })
 }
 
@@ -499,9 +415,7 @@ pub fn health_of(cred: Option<&Credential>, now: Ms) -> Health {
     {
         return Health::login_needed("sign-in expired");
     }
-    Health::Ok {
-        refresh_expires_at: cred.refresh_token_expires_at.filter(|&at| at != 0),
-    }
+    Health::Ok { refresh_expires_at: cred.refresh_token_expires_at.filter(|&at| at != 0) }
 }
 
 /// "2 (two@example.com · Org)", or the number before the profile has been read.
@@ -538,11 +452,7 @@ pub fn fingerprint(token: &str) -> String {
 
 /// The file Claude Code keeps a slot's login in where there is no keychain (Linux).
 pub fn credentials_file(slot: &str, home: Option<&str>) -> Option<String> {
-    let dir = if slot.is_empty() {
-        format!("{}/.claude", home.filter(|h| !h.is_empty())?)
-    } else {
-        slot.to_string()
-    };
+    let dir = if slot.is_empty() { format!("{}/.claude", home.filter(|h| !h.is_empty())?) } else { slot.to_string() };
     let nfc: String = dir.nfc().collect();
     Some(format!("{nfc}/.credentials.json"))
 }
@@ -552,20 +462,13 @@ pub fn slot_env(slot: &str) -> Vec<(String, String)> {
     if slot.is_empty() {
         vec![("CLAUDE_SECURESTORAGE_CONFIG_DIR".into(), String::new())]
     } else {
-        vec![
-            ("CLAUDE_SECURESTORAGE_CONFIG_DIR".into(), slot.into()),
-            ("CLAUDE_CONFIG_DIR".into(), slot.into()),
-        ]
+        vec![("CLAUDE_SECURESTORAGE_CONFIG_DIR".into(), slot.into()), ("CLAUDE_CONFIG_DIR".into(), slot.into())]
     }
 }
 
 pub fn keychain_user(user: Option<&str>) -> String {
     match user {
-        Some(u)
-            if !u.is_empty()
-                && u.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) =>
-        {
+        Some(u) if !u.is_empty() && u.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) => {
             u.into()
         }
         _ => "claude-code-user".into(),
@@ -605,11 +508,7 @@ pub fn identity_from_status(stdout: &str) -> Option<Identity> {
 /// Who a token signs in, from the body of GET /api/oauth/profile.
 pub fn identity_from_profile(body: Option<&Value>) -> Option<Identity> {
     let body = body?.as_object()?;
-    let field = |obj: &str, k: &str| {
-        body.get(obj)
-            .and_then(Value::as_object)
-            .and_then(|o| str_field(o, k))
-    };
+    let field = |obj: &str, k: &str| body.get(obj).and_then(Value::as_object).and_then(|o| str_field(o, k));
     let email = field("account", "email").filter(|e| !e.is_empty())?;
     Some(Identity {
         account_uuid: field("account", "uuid").filter(|u| !u.is_empty()),
@@ -623,9 +522,7 @@ pub fn identity_from_profile(body: Option<&Value>) -> Option<Identity> {
 
 /// The same login: one email in one organization.
 pub fn same_login(a: &Identity, b: &Identity) -> bool {
-    a.email.is_some()
-        && a.email == b.email
-        && a.org_id.as_deref().unwrap_or("") == b.org_id.as_deref().unwrap_or("")
+    a.email.is_some() && a.email == b.email && a.org_id.as_deref().unwrap_or("") == b.org_id.as_deref().unwrap_or("")
 }
 
 /// A listed login is the account `who` signed in as: by its email, and its organization once known.
@@ -706,10 +603,7 @@ pub fn combined_usage(
             next_reset_at: soonest.map(iso),
         })
     };
-    Combined {
-        five_hour: combine(&|r| r.five_hour.as_ref()),
-        seven_day: combine(&|r| r.seven_day.as_ref()),
-    }
+    Combined { five_hour: combine(&|r| r.five_hour.as_ref()), seven_day: combine(&|r| r.seven_day.as_ref()) }
 }
 
 #[cfg(test)]
@@ -722,10 +616,7 @@ mod tests {
         assert_eq!(keychain_item(""), "Claude Code-credentials");
         // As the TypeScript computes it for the same folder.
         let item = keychain_item("/Users/tester/.claude/accounts/2");
-        assert!(
-            item.starts_with("Claude Code-credentials-")
-                && item.len() == "Claude Code-credentials-".len() + 8
-        );
+        assert!(item.starts_with("Claude Code-credentials-") && item.len() == "Claude Code-credentials-".len() + 8);
     }
 
     #[test]
@@ -747,10 +638,7 @@ mod tests {
     #[test]
     fn a_window_is_empty_once_it_has_reset() {
         let now = parse_iso("2026-11-09T10:00:00Z").unwrap();
-        let w = UsageWindow {
-            pct: 95.0,
-            resets_at: Some("2026-11-09T09:00:00Z".into()),
-        };
+        let w = UsageWindow { pct: 95.0, resets_at: Some("2026-11-09T09:00:00Z".into()) };
         assert_eq!(window_pct(Some(&w), now), Some(0.0));
     }
 
@@ -763,45 +651,20 @@ mod tests {
     #[test]
     fn combined_weighs_by_plan_and_skips_logins_needing_a_sign_in() {
         let accounts = vec![
-            Account {
-                id: "1".into(),
-                tier: Some("default_claude_max_20x".into()),
-                ..Default::default()
-            },
-            Account {
-                id: "2".into(),
-                tier: Some("default_claude_max_5x".into()),
-                ..Default::default()
-            },
-            Account {
-                id: "3".into(),
-                ..Default::default()
-            },
+            Account { id: "1".into(), tier: Some("default_claude_max_20x".into()), ..Default::default() },
+            Account { id: "2".into(), tier: Some("default_claude_max_5x".into()), ..Default::default() },
+            Account { id: "3".into(), ..Default::default() },
         ];
         let r = |pct: f64| Reading {
             five_hour: None,
-            seven_day: Some(UsageWindow {
-                pct,
-                resets_at: None,
-            }),
+            seven_day: Some(UsageWindow { pct, resets_at: None }),
             models: None,
             at: 0,
         };
-        let readings = BTreeMap::from([
-            ("1".into(), r(30.0)),
-            ("2".into(), r(60.0)),
-            ("3".into(), r(90.0)),
-        ]);
+        let readings = BTreeMap::from([("1".into(), r(30.0)), ("2".into(), r(60.0)), ("3".into(), r(90.0))]);
         let health = BTreeMap::from([("3".to_string(), Health::login_needed("x"))]);
         let c = combined_usage(&accounts, &readings, &health, 0);
-        assert_eq!(
-            c.seven_day.unwrap(),
-            CombinedWindow {
-                pct: 40.0,
-                accounts: 2,
-                next_reset_at: None
-            }
-        );
+        assert_eq!(c.seven_day.unwrap(), CombinedWindow { pct: 40.0, accounts: 2, next_reset_at: None });
     }
 
     #[test]
@@ -811,14 +674,10 @@ mod tests {
             json!({ "kind": "login-needed", "why": "x" })
         );
         assert_eq!(
-            serde_json::to_value(Health::Ok {
-                refresh_expires_at: Some(5)
-            })
-            .unwrap(),
+            serde_json::to_value(Health::Ok { refresh_expires_at: Some(5) }).unwrap(),
             json!({ "kind": "ok", "refreshExpiresAt": 5 })
         );
-        let h: Health =
-            serde_json::from_value(json!({ "kind": "logging-in", "since": 1.0 })).unwrap();
+        let h: Health = serde_json::from_value(json!({ "kind": "logging-in", "since": 1.0 })).unwrap();
         assert_eq!(h, Health::LoggingIn { since: 1 });
     }
 }

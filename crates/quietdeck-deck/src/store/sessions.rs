@@ -108,7 +108,12 @@ pub async fn upsert(db: &Db, config: &DeckConfig, node: &str, s: &SessionInfo) -
 }
 
 /// A full snapshot: upsert each, and mark the node's other sessions as not running.
-pub async fn replace_snapshot(db: &Db, config: &DeckConfig, node: &str, sessions: &[SessionInfo]) -> anyhow::Result<()> {
+pub async fn replace_snapshot(
+    db: &Db,
+    config: &DeckConfig,
+    node: &str,
+    sessions: &[SessionInfo],
+) -> anyhow::Result<()> {
     for s in sessions {
         upsert(db, config, node, s).await?;
     }
@@ -302,11 +307,13 @@ pub async fn list(db: &Db, hub: &crate::hub::Hub, f: &ListFilter) -> anyhow::Res
 }
 
 pub async fn get(db: &Db, hub: &crate::hub::Hub, node: &str, session_id: &str) -> anyhow::Result<Option<SessionRow>> {
-    let rows = sqlx::query_as::<_, Row>(sqlx::AssertSqlSafe(format!("SELECT {COLUMNS} FROM sessions WHERE node = ? AND session_id = ?")))
-        .bind(node)
-        .bind(session_id)
-        .fetch_all(db)
-        .await?;
+    let rows = sqlx::query_as::<_, Row>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLUMNS} FROM sessions WHERE node = ? AND session_id = ?"
+    )))
+    .bind(node)
+    .bind(session_id)
+    .fetch_all(db)
+    .await?;
     Ok(hydrate(db, hub, rows).await?.pop())
 }
 
@@ -462,9 +469,14 @@ mod tests {
         let db = crate::db::memory().await;
         let hub = Hub::default();
         let cfg = DeckConfig::default();
-        replace_snapshot(&db, &cfg, "laptop", &[info("s1", "billing", AgentStatus::Idle), info("s2", "web", AgentStatus::Working)])
-            .await
-            .unwrap();
+        replace_snapshot(
+            &db,
+            &cfg,
+            "laptop",
+            &[info("s1", "billing", AgentStatus::Idle), info("s2", "web", AgentStatus::Working)],
+        )
+        .await
+        .unwrap();
         assert_eq!(list(&db, &hub, &ListFilter::default()).await.unwrap().len(), 2);
         replace_snapshot(&db, &cfg, "laptop", &[info("s1", "billing", AgentStatus::Blocked)]).await.unwrap();
         let running = list(&db, &hub, &ListFilter::default()).await.unwrap();
@@ -480,15 +492,32 @@ mod tests {
         let db = crate::db::memory().await;
         let hub = Hub::default();
         upsert(&db, &DeckConfig::default(), "laptop", &info("s1", "certs", AgentStatus::Idle)).await.unwrap();
-        apply_summary(&db, "laptop", &SummaryEvent::Summary(record("s1", "2026-11-23T14", "Ordering the sc-1234 certificate", "2026-11-23T14:30:00Z")))
-            .await
-            .unwrap();
-        apply_summary(&db, "laptop", &SummaryEvent::Summary(record("s1", "2026-11-23T10", "Older work on invoices", "2026-11-23T10:30:00Z")))
-            .await
-            .unwrap();
+        apply_summary(
+            &db,
+            "laptop",
+            &SummaryEvent::Summary(record(
+                "s1",
+                "2026-11-23T14",
+                "Ordering the sc-1234 certificate",
+                "2026-11-23T14:30:00Z",
+            )),
+        )
+        .await
+        .unwrap();
+        apply_summary(
+            &db,
+            "laptop",
+            &SummaryEvent::Summary(record("s1", "2026-11-23T10", "Older work on invoices", "2026-11-23T10:30:00Z")),
+        )
+        .await
+        .unwrap();
         let found = search(&db, &hub, "certificate", 10).await.unwrap();
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].sentence.as_deref(), Some("Ordering the sc-1234 certificate"), "an older hour doesn't replace the latest");
+        assert_eq!(
+            found[0].sentence.as_deref(),
+            Some("Ordering the sc-1234 certificate"),
+            "an older hour doesn't replace the latest"
+        );
         let hits = summary_hits(&db, "sc-1234").await.unwrap();
         assert_eq!(hits.len(), 1);
         let hits = summary_hits(&db, "invoices").await.unwrap();

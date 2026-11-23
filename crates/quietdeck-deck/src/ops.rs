@@ -73,9 +73,8 @@ pub async fn who_has(state: &AppState, query: &str) -> AppResult<WhoHas> {
         let hub = state.hub.clone();
         let q = query.to_string();
         async move {
-            let r = hub
-                .request(node, DeckRequest::SearchTranscripts { query: q, limit: 50 }, Duration::from_secs(9))
-                .await;
+            let r =
+                hub.request(node, DeckRequest::SearchTranscripts { query: q, limit: 50 }, Duration::from_secs(9)).await;
             (node.clone(), r.ok().and_then(|reply| reply.into_result::<TranscriptSearch>().ok()))
         }
     });
@@ -121,7 +120,9 @@ pub async fn msg_send(state: &AppState, me: &SessionRef, msg: MsgSend) -> AppRes
     crate::relay::send(&state.db, &state.hub, &msg.to, DeliveryKind::Message { from: me.clone() }, msg.text)
         .await
         .map_err(|e| match e {
-            DeliveryError::SessionOffline { .. } | DeliveryError::NodeOffline { .. } => AppError::Offline(e.to_string()),
+            DeliveryError::SessionOffline { .. } | DeliveryError::NodeOffline { .. } => {
+                AppError::Offline(e.to_string())
+            }
             DeliveryError::Ambiguous { .. } => AppError::BadRequest(e.to_string()),
             DeliveryError::Failed { .. } => AppError::Unavailable(e.to_string()),
         })
@@ -132,7 +133,9 @@ pub async fn timeline_add(state: &AppState, caller: &Caller, e: TimelineAdd) -> 
     let source = match caller {
         Caller::Session { .. } => EntrySource::Agent,
         Caller::Node { .. } => EntrySource::Runner,
-        Caller::Owner { .. } => return Err(AppError::Forbidden("timeline entries come from agents and runners".into())),
+        Caller::Owner { .. } => {
+            return Err(AppError::Forbidden("timeline entries come from agents and runners".into()));
+        }
     };
     Ok(timeline::add(&state.db, source, &e).await?)
 }
@@ -145,11 +148,12 @@ fn cursor_key(me: &SessionRef) -> String {
 pub async fn history(state: &AppState, me: &SessionRef, since: &str) -> AppResult<History> {
     let until = now_ms();
     let since_ms = if since == "last" {
-        let row: Option<(i64,)> = sqlx::query_as("SELECT read_until FROM history_cursors WHERE node = ? AND session_key = ?")
-            .bind(&me.node)
-            .bind(cursor_key(me))
-            .fetch_optional(&state.db)
-            .await?;
+        let row: Option<(i64,)> =
+            sqlx::query_as("SELECT read_until FROM history_cursors WHERE node = ? AND session_key = ?")
+                .bind(&me.node)
+                .bind(cursor_key(me))
+                .fetch_optional(&state.db)
+                .await?;
         row.map(|r| r.0).unwrap_or(until - 24 * 3600 * 1000)
     } else {
         since

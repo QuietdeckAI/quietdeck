@@ -7,9 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
-use quietdeck_types::node::{
-    CatchupReply, DeckFrame, DeckRequest, NodeFrame, NodeRequest, PROTOCOL_VERSION, Reply,
-};
+use quietdeck_types::node::{CatchupReply, DeckFrame, DeckRequest, NodeFrame, NodeRequest, PROTOCOL_VERSION, Reply};
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;

@@ -25,9 +25,7 @@ pub fn retry_after(header: Option<&str>, now: Ms) -> Option<Ms> {
     if let Ok(seconds) = header.parse::<f64>() {
         return Some((seconds * 1000.0).max(0.0) as Ms);
     }
-    let at = jiff::fmt::rfc2822::parse(header)
-        .ok()
-        .map(|z| z.timestamp().as_millisecond())?;
+    let at = jiff::fmt::rfc2822::parse(header).ok().map(|z| z.timestamp().as_millisecond())?;
     Some((at - now).max(0))
 }
 
@@ -37,9 +35,7 @@ pub fn clean_env() -> Vec<(String, String)> {
     std::env::vars()
         .filter(|(name, _)| {
             name == "CLAUDE_ACCOUNT_ROTATOR_DIR"
-                || !(name.starts_with("CLAUDE_")
-                    || name.starts_with("ANTHROPIC_")
-                    || name == "CLAUDECODE")
+                || !(name.starts_with("CLAUDE_") || name.starts_with("ANTHROPIC_") || name == "CLAUDECODE")
         })
         .collect()
 }
@@ -75,11 +71,7 @@ impl Logger {
 
 fn open_private(file: &Path) -> std::io::Result<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .mode(0o600)
-        .open(file)
+    std::fs::OpenOptions::new().create(true).append(true).mode(0o600).open(file)
 }
 
 struct Output {
@@ -89,19 +81,9 @@ struct Output {
 }
 
 /// Runs a program with argv (never a shell) and a time limit; -1 when it couldn't run or ran too long.
-async fn run(
-    program: &Path,
-    args: &[&str],
-    env: &[(String, String)],
-    timeout: Duration,
-    cwd: Option<&Path>,
-) -> Output {
+async fn run(program: &Path, args: &[&str], env: &[(String, String)], timeout: Duration, cwd: Option<&Path>) -> Output {
     let mut cmd = Command::new(program);
-    cmd.args(args)
-        .env_clear()
-        .envs(env.iter().map(|(k, v)| (k, v)))
-        .stdin(Stdio::null())
-        .kill_on_drop(true);
+    cmd.args(args).env_clear().envs(env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).kill_on_drop(true);
     if let Some(cwd) = cwd {
         cmd.current_dir(cwd);
     }
@@ -111,16 +93,8 @@ async fn run(
             stdout: String::from_utf8_lossy(&out.stdout).into(),
             stderr: String::from_utf8_lossy(&out.stderr).into(),
         },
-        Ok(Err(e)) => Output {
-            code: -1,
-            stdout: String::new(),
-            stderr: e.to_string(),
-        },
-        Err(_) => Output {
-            code: -1,
-            stdout: String::new(),
-            stderr: "timed out".into(),
-        },
+        Ok(Err(e)) => Output { code: -1, stdout: String::new(), stderr: e.to_string() },
+        Err(_) => Output { code: -1, stdout: String::new(), stderr: "timed out".into() },
     }
 }
 
@@ -147,10 +121,7 @@ pub struct RealDeps {
 
 impl RealDeps {
     pub fn new(home: PathBuf, claude: PathBuf, state_file: PathBuf, logger: Logger) -> Self {
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(20))
-            .build()
-            .unwrap_or_default();
+        let http = reqwest::Client::builder().timeout(Duration::from_secs(20)).build().unwrap_or_default();
         RealDeps {
             home,
             claude,
@@ -175,11 +146,7 @@ impl RealDeps {
 
     /// Writes the state file now (as the process exits).
     pub fn flush(&self) {
-        let pending = self
-            .pending
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take();
+        let pending = self.pending.lock().unwrap_or_else(|e| e.into_inner()).take();
         if let Some(p) = pending {
             write_state(&self.state_file, &p, &self.logger);
         }
@@ -192,12 +159,7 @@ fn write_state(file: &Path, p: &Persisted, logger: &Logger) {
         use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
         let text = serde_json::to_string_pretty(p).map_err(std::io::Error::other)?;
-        let mut f = std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&tmp)?;
+        let mut f = std::fs::OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open(&tmp)?;
         f.write_all(format!("{text}\n").as_bytes())?;
         std::fs::rename(&tmp, file)
     };
@@ -252,33 +214,20 @@ impl Deps for RealDeps {
                     return UsageAnswer::Rejected;
                 }
                 if !res.status().is_success() {
-                    let header = res
-                        .headers()
-                        .get("retry-after")
-                        .and_then(|v| v.to_str().ok())
-                        .map(str::to_string);
-                    return UsageAnswer::Failed {
-                        status,
-                        retry_after_ms: retry_after(header.as_deref(), self.now()),
-                    };
+                    let header = res.headers().get("retry-after").and_then(|v| v.to_str().ok()).map(str::to_string);
+                    return UsageAnswer::Failed { status, retry_after_ms: retry_after(header.as_deref(), self.now()) };
                 }
                 match res.json::<Value>().await {
                     Ok(body) => UsageAnswer::Ok(body),
                     Err(e) => {
                         self.log(&format!("usage call failed: {e}"));
-                        UsageAnswer::Failed {
-                            status: 0,
-                            retry_after_ms: None,
-                        }
+                        UsageAnswer::Failed { status: 0, retry_after_ms: None }
                     }
                 }
             }
             Err(e) => {
                 self.log(&format!("usage call failed: {e}"));
-                UsageAnswer::Failed {
-                    status: 0,
-                    retry_after_ms: None,
-                }
+                UsageAnswer::Failed { status: 0, retry_after_ms: None }
             }
         }
     }
@@ -303,11 +252,7 @@ impl Deps for RealDeps {
             None,
         )
         .await;
-        if out.code == 0 {
-            identity_from_status(&out.stdout)
-        } else {
-            None
-        }
+        if out.code == 0 { identity_from_status(&out.stdout) } else { None }
     }
 
     async fn refresh_token(&self, slot: &str) -> bool {
@@ -318,23 +263,14 @@ impl Deps for RealDeps {
         let tmp = std::env::temp_dir();
         let out = run(
             &self.claude,
-            &[
-                "-p",
-                "/usage",
-                "--strict-mcp-config",
-                "--no-session-persistence",
-            ],
+            &["-p", "/usage", "--strict-mcp-config", "--no-session-persistence"],
             &env,
             Duration::from_secs(90),
             Some(&tmp),
         )
         .await;
         if out.code != 0 {
-            let who = if slot.is_empty() {
-                "the normal login"
-            } else {
-                slot
-            };
+            let who = if slot.is_empty() { "the normal login" } else { slot };
             self.log(&format!(
                 "refresh run for {who} exited {}: {}",
                 out.code,
@@ -394,14 +330,8 @@ impl Deps for RealDeps {
     }
 
     async fn sign_out(&self, slot: &str) {
-        let out = run(
-            &self.claude,
-            &["auth", "logout"],
-            &with_slot(&self.env, slot),
-            Duration::from_secs(20),
-            None,
-        )
-        .await;
+        let out =
+            run(&self.claude, &["auth", "logout"], &with_slot(&self.env, slot), Duration::from_secs(20), None).await;
         if out.code != 0 {
             self.log(&format!("signing out {slot} failed: {}", out.stderr.trim()));
         }
@@ -410,16 +340,9 @@ impl Deps for RealDeps {
     async fn make_slot(&self, id: &str) -> Result<String, String> {
         use std::os::unix::fs::DirBuilderExt;
         let slot = self.home.join(".claude").join("accounts").join(id);
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&slot)
+        std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&slot).map_err(|e| e.to_string())?;
+        std::fs::write(slot.join("README"), format!("Claude account {id}, kept by the account-rotator mod.\n"))
             .map_err(|e| e.to_string())?;
-        std::fs::write(
-            slot.join("README"),
-            format!("Claude account {id}, kept by the account-rotator mod.\n"),
-        )
-        .map_err(|e| e.to_string())?;
         Ok(slot.to_string_lossy().into_owned())
     }
 
@@ -444,12 +367,8 @@ impl Deps for RealDeps {
             return;
         }
         *is_saving = true;
-        let (pending, flag, file, logger) = (
-            self.pending.clone(),
-            self.is_saving.clone(),
-            self.state_file.clone(),
-            self.logger.clone(),
-        );
+        let (pending, flag, file, logger) =
+            (self.pending.clone(), self.is_saving.clone(), self.state_file.clone(), self.logger.clone());
         // Many changes in a burst are written once, half a second after the first.
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(500)).await;
@@ -474,10 +393,7 @@ mod tests {
     fn retry_after_reads_seconds_and_dates() {
         let now = parse_iso("2026-11-09T10:00:00Z").unwrap_or_default();
         assert_eq!(retry_after(Some("120"), now), Some(120_000));
-        assert_eq!(
-            retry_after(Some("Mon, 09 Nov 2026 10:01:00 GMT"), now),
-            Some(60_000)
-        );
+        assert_eq!(retry_after(Some("Mon, 09 Nov 2026 10:01:00 GMT"), now), Some(60_000));
         assert_eq!(retry_after(Some("soon"), now), None);
         assert_eq!(retry_after(None, now), None);
     }

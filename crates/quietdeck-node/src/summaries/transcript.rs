@@ -87,18 +87,12 @@ pub fn discover(roots: &Roots, cutoff: SystemTime) -> Vec<Source> {
     let mut out = Vec::new();
     for path in glob_depth(&roots.claude_projects, 1) {
         if modified(&path).is_some_and(|m| m >= cutoff) {
-            out.push(Source {
-                path,
-                agent: Agent::Claude,
-            });
+            out.push(Source { path, agent: Agent::Claude });
         }
     }
     for path in glob_depth(&roots.codex_sessions, 3) {
         if modified(&path).is_some_and(|m| m >= cutoff) {
-            out.push(Source {
-                path,
-                agent: Agent::Codex,
-            });
+            out.push(Source { path, agent: Agent::Codex });
         }
     }
     out
@@ -128,9 +122,7 @@ fn glob_depth(root: &Path, depth: usize) -> Vec<PathBuf> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().is_some_and(|e| e == "jsonl")
-                && entry.file_type().is_ok_and(|t| t.is_file())
-            {
+            if path.extension().is_some_and(|e| e == "jsonl") && entry.file_type().is_ok_and(|t| t.is_file()) {
                 files.push(path);
             }
         }
@@ -148,22 +140,15 @@ pub fn parse_ts(value: Option<&Value>) -> Option<Timestamp> {
 }
 
 fn mtime_ts(path: &Path) -> Timestamp {
-    modified(path)
-        .and_then(|m| Timestamp::try_from(m).ok())
-        .unwrap_or_else(Timestamp::now)
+    modified(path).and_then(|m| Timestamp::try_from(m).ok()).unwrap_or_else(Timestamp::now)
 }
 
 /// Read complete lines from `offset` on. The session ID and cwd come from the file's first records, so a read from a
 /// later offset still peeks at the head for them.
 pub fn read(source: &Source, offset: u64, home: &str) -> std::io::Result<ReadResult> {
     let meta = head_meta(source)?;
-    let mut result = ReadResult {
-        session_id: meta.session_id,
-        cwd: meta.cwd,
-        skip: meta.skip,
-        end: offset,
-        ..Default::default()
-    };
+    let mut result =
+        ReadResult { session_id: meta.session_id, cwd: meta.cwd, skip: meta.skip, end: offset, ..Default::default() };
     if result.skip.is_some() {
         result.end = std::fs::metadata(&source.path)?.len();
         return Ok(result);
@@ -185,14 +170,9 @@ pub fn read(source: &Source, offset: u64, home: &str) -> std::io::Result<ReadRes
             continue;
         };
         let record = Value::Object(record);
-        let ts = parse_ts(record.get("timestamp"))
-            .or(last_ts)
-            .unwrap_or_else(|| mtime_ts(&source.path));
+        let ts = parse_ts(record.get("timestamp")).or(last_ts).unwrap_or_else(|| mtime_ts(&source.path));
         last_ts = Some(ts);
-        let uuid = record
-            .get("uuid")
-            .and_then(Value::as_str)
-            .map(str::to_owned);
+        let uuid = record.get("uuid").and_then(Value::as_str).map(str::to_owned);
         let parsed = match source.agent {
             Agent::Claude => claude_record(&record, home),
             Agent::Codex => codex_record(&record),
@@ -200,13 +180,7 @@ pub fn read(source: &Source, offset: u64, home: &str) -> std::io::Result<ReadRes
         for (kind, text) in parsed {
             let text = text.trim();
             if !text.is_empty() {
-                result.events.push(Event {
-                    kind,
-                    text: text.to_owned(),
-                    ts,
-                    end: pos,
-                    uuid: uuid.clone(),
-                });
+                result.events.push(Event { kind, text: text.to_owned(), ts, end: pos, uuid: uuid.clone() });
             }
         }
     }
@@ -233,19 +207,13 @@ fn head_meta(source: &Source) -> std::io::Result<HeadMeta> {
             .unwrap_or(Value::Null);
         meta.session_id = str_field(&payload, "id").or_else(|| str_field(&payload, "session_id"));
         meta.cwd = str_field(&payload, "cwd");
-        let source_ok = matches!(
-            payload.get("source").and_then(Value::as_str),
-            Some("cli" | "vscode")
-        );
+        let source_ok = matches!(payload.get("source").and_then(Value::as_str), Some("cli" | "vscode"));
         if payload.get("originator").and_then(Value::as_str) == Some("codex_exec") || !source_ok {
             meta.skip = Some("codex exec run (a review a Claude session started)".into());
         }
         return Ok(meta);
     }
-    meta.session_id = source
-        .path
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned());
+    meta.session_id = source.path.file_stem().map(|s| s.to_string_lossy().into_owned());
     for _ in 0..200 {
         raw.clear();
         if file.read_until(b'\n', &mut raw)? == 0 {
@@ -330,43 +298,27 @@ pub const NOISE_COMMANDS: &[&str] = &[
     "/upgrade",
     "/btw",
 ];
-const QUIET_TOOLS: &[&str] = &[
-    "Read",
-    "Grep",
-    "Glob",
-    "ToolSearch",
-    "TaskOutput",
-    "TodoWrite",
-    "TaskList",
-    "TaskGet",
-    "LSP",
-];
+const QUIET_TOOLS: &[&str] =
+    &["Read", "Grep", "Glob", "ToolSearch", "TaskOutput", "TodoWrite", "TaskList", "TaskGet", "LSP"];
 
 static SYSTEM_REMINDER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?s)<system-reminder>.*?</system-reminder>").unwrap());
-static COMMAND: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)<command-name>(.*?)</command-name>").unwrap());
-static COMMAND_ARGS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)<command-args>(.*?)</command-args>").unwrap());
+static COMMAND: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<command-name>(.*?)</command-name>").unwrap());
+static COMMAND_ARGS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<command-args>(.*?)</command-args>").unwrap());
 static PEER_BODY: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?s)<(?:cross-session-message|agent-message)[^>]*>(.*?)</(?:cross-session-message|agent-message)>").unwrap()
+    Regex::new(r"(?s)<(?:cross-session-message|agent-message)[^>]*>(.*?)</(?:cross-session-message|agent-message)>")
+        .unwrap()
 });
 
 fn user_text(text: &str) -> Option<String> {
     let cleaned = SYSTEM_REMINDER.replace_all(text, "");
     let text = cleaned.trim();
-    if text.is_empty()
-        || text.starts_with("This session is being continued from a previous conversation")
-    {
+    if text.is_empty() || text.starts_with("This session is being continued from a previous conversation") {
         return None;
     }
-    if [
-        "<local-command-",
-        "<artifact-content-authored-by-others",
-        "<task-notification",
-    ]
-    .iter()
-    .any(|p| text.starts_with(p))
+    if ["<local-command-", "<artifact-content-authored-by-others", "<task-notification"]
+        .iter()
+        .any(|p| text.starts_with(p))
     {
         return None;
     }
@@ -381,10 +333,7 @@ fn user_text(text: &str) -> Option<String> {
         if NOISE_COMMANDS.contains(&name.as_str()) {
             return None;
         }
-        let args = COMMAND_ARGS
-            .captures(text)
-            .map(|a| a[1].trim().to_owned())
-            .unwrap_or_default();
+        let args = COMMAND_ARGS.captures(text).map(|a| a[1].trim().to_owned()).unwrap_or_default();
         return Some(format!("{name} {args}").trim().to_owned());
     }
     Some(text.to_owned())
@@ -399,10 +348,7 @@ pub fn claude_record(record: &Value, home: &str) -> Vec<(Kind, String)> {
             if record.get("isCompactSummary").is_some_and(truthy) {
                 return out;
             }
-            let origin = record
-                .get("origin")
-                .and_then(|o| o.get("kind"))
-                .and_then(Value::as_str);
+            let origin = record.get("origin").and_then(|o| o.get("kind")).and_then(Value::as_str);
             if origin.is_some_and(|o| SKIP_ORIGINS.contains(&o)) {
                 return out;
             }
@@ -413,42 +359,24 @@ pub fn claude_record(record: &Value, home: &str) -> Vec<(Kind, String)> {
             let texts: Vec<String> = match content {
                 Some(Value::String(s)) => vec![s.clone()],
                 Some(Value::Array(blocks)) => {
-                    if blocks
-                        .iter()
-                        .any(|b| b.get("type").and_then(Value::as_str) == Some("tool_result"))
-                    {
+                    if blocks.iter().any(|b| b.get("type").and_then(Value::as_str) == Some("tool_result")) {
                         return out;
                     }
                     let mut texts: Vec<String> = blocks
                         .iter()
                         .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
-                        .map(|b| {
-                            b.get("text")
-                                .and_then(Value::as_str)
-                                .unwrap_or("")
-                                .to_owned()
-                        })
+                        .map(|b| b.get("text").and_then(Value::as_str).unwrap_or("").to_owned())
                         .collect();
-                    if blocks
-                        .iter()
-                        .any(|b| b.get("type").and_then(Value::as_str) == Some("image"))
-                    {
+                    if blocks.iter().any(|b| b.get("type").and_then(Value::as_str) == Some("image")) {
                         texts.push("[image attached]".into());
                     }
                     texts
                 }
                 _ => return out,
             };
-            let joined = texts
-                .into_iter()
-                .filter(|t| !t.is_empty())
-                .collect::<Vec<_>>()
-                .join("\n");
+            let joined = texts.into_iter().filter(|t| !t.is_empty()).collect::<Vec<_>>().join("\n");
             if origin == Some("peer") {
-                let body = PEER_BODY
-                    .captures(&joined)
-                    .map(|m| m[1].to_owned())
-                    .unwrap_or_else(|| joined.clone());
+                let body = PEER_BODY.captures(&joined).map(|m| m[1].to_owned()).unwrap_or_else(|| joined.clone());
                 let body = SYSTEM_REMINDER.replace_all(&body, "").trim().to_owned();
                 if !body.is_empty() {
                     out.push((Kind::Peer, body));
@@ -465,14 +393,9 @@ pub fn claude_record(record: &Value, home: &str) -> Vec<(Kind, String)> {
             };
             for block in blocks {
                 match block.get("type").and_then(Value::as_str) {
-                    Some("text") => out.push((
-                        Kind::Assistant,
-                        block
-                            .get("text")
-                            .and_then(Value::as_str)
-                            .unwrap_or("")
-                            .to_owned(),
-                    )),
+                    Some("text") => {
+                        out.push((Kind::Assistant, block.get("text").and_then(Value::as_str).unwrap_or("").to_owned()))
+                    }
                     Some("tool_use") => {
                         let name = block.get("name").and_then(Value::as_str).unwrap_or("?");
                         let input = block
@@ -498,24 +421,13 @@ pub fn claude_record(record: &Value, home: &str) -> Vec<(Kind, String)> {
 pub fn python_json(value: &Value) -> String {
     struct PyFormatter;
     impl serde_json::ser::Formatter for PyFormatter {
-        fn begin_array_value<W: ?Sized + std::io::Write>(
-            &mut self,
-            w: &mut W,
-            first: bool,
-        ) -> std::io::Result<()> {
+        fn begin_array_value<W: ?Sized + std::io::Write>(&mut self, w: &mut W, first: bool) -> std::io::Result<()> {
             if first { Ok(()) } else { w.write_all(b", ") }
         }
-        fn begin_object_key<W: ?Sized + std::io::Write>(
-            &mut self,
-            w: &mut W,
-            first: bool,
-        ) -> std::io::Result<()> {
+        fn begin_object_key<W: ?Sized + std::io::Write>(&mut self, w: &mut W, first: bool) -> std::io::Result<()> {
             if first { Ok(()) } else { w.write_all(b", ") }
         }
-        fn begin_object_value<W: ?Sized + std::io::Write>(
-            &mut self,
-            w: &mut W,
-        ) -> std::io::Result<()> {
+        fn begin_object_value<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
             w.write_all(b": ")
         }
     }
@@ -532,11 +444,7 @@ pub fn short(value: &Value, n: usize) -> String {
         other => python_json(other),
     };
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if text.chars().count() <= n {
-        text
-    } else {
-        text.chars().take(n - 1).collect::<String>() + "…"
-    }
+    if text.chars().count() <= n { text } else { text.chars().take(n - 1).collect::<String>() + "…" }
 }
 
 fn arg<'a>(args: &'a Value, keys: &[&str]) -> &'a Value {
@@ -554,39 +462,21 @@ fn tool_line(name: &str, args: &Value, home: &str) -> Option<String> {
         other => python_json(other),
     };
     Some(match name {
-        "Bash" => format!(
-            "Bash: {}",
-            short(arg(args, &["description", "command"]), 140)
-        ),
+        "Bash" => format!("Bash: {}", short(arg(args, &["description", "command"]), 140)),
         "Edit" | "Write" | "NotebookEdit" | "MultiEdit" => {
             let path = plain(arg(args, &["file_path", "notebook_path"]));
-            let path = if home.is_empty() {
-                path
-            } else {
-                path.replace(home, "~")
-            };
+            let path = if home.is_empty() { path } else { path.replace(home, "~") };
             format!("{name} {path}")
         }
-        "Agent" | "Task" => format!(
-            "Agent: {}",
-            short(arg(args, &["description", "prompt"]), 140)
-        ),
+        "Agent" | "Task" => format!("Agent: {}", short(arg(args, &["description", "prompt"]), 140)),
         "Skill" => {
-            let skill = args
-                .get("skill")
-                .map(plain)
-                .unwrap_or_else(|| "None".into());
-            format!("Skill {skill} {}", short(arg(args, &["args"]), 80))
-                .trim()
-                .to_owned()
+            let skill = args.get("skill").map(plain).unwrap_or_else(|| "None".into());
+            format!("Skill {skill} {}", short(arg(args, &["args"]), 80)).trim().to_owned()
         }
         "SendMessage" => format!(
             "SendMessage to {}: {}",
             args.get("to").map(plain).unwrap_or_else(|| "None".into()),
-            short(
-                args.get("message").unwrap_or(&Value::String(String::new())),
-                120
-            )
+            short(args.get("message").unwrap_or(&Value::String(String::new())), 120)
         ),
         "WebSearch" | "WebFetch" => format!("{name}: {}", short(arg(args, &["query", "url"]), 120)),
         _ => format!("{name}: {}", short(args, 120)),
@@ -614,11 +504,7 @@ pub fn codex_record(record: &Value) -> Vec<(Kind, String)> {
     let p = record.get("payload").cloned().unwrap_or(Value::Null);
     match p.get("type").and_then(Value::as_str) {
         Some("message") => {
-            let parts = p
-                .get("content")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
+            let parts = p.get("content").and_then(Value::as_array).cloned().unwrap_or_default();
             let text = parts
                 .iter()
                 .filter(|c| c.is_object())
@@ -628,8 +514,7 @@ pub fn codex_record(record: &Value) -> Vec<(Kind, String)> {
             match p.get("role").and_then(Value::as_str) {
                 Some("user") => {
                     let text = text.trim();
-                    if !text.is_empty() && !CODEX_SKIP_PREFIXES.iter().any(|x| text.starts_with(x))
-                    {
+                    if !text.is_empty() && !CODEX_SKIP_PREFIXES.iter().any(|x| text.starts_with(x)) {
                         out.push((Kind::Human, text.to_owned()));
                     }
                 }
@@ -639,11 +524,7 @@ pub fn codex_record(record: &Value) -> Vec<(Kind, String)> {
         }
         Some(kind @ ("function_call" | "custom_tool_call" | "local_shell_call")) => {
             let args = arg(&p, &["arguments", "input", "action"]);
-            let name = p
-                .get("name")
-                .and_then(Value::as_str)
-                .filter(|s| !s.is_empty())
-                .unwrap_or(kind);
+            let name = p.get("name").and_then(Value::as_str).filter(|s| !s.is_empty()).unwrap_or(kind);
             out.push((Kind::Tool, format!("{name}: {}", short(args, 140))));
         }
         _ => {}
@@ -666,10 +547,7 @@ mod tests {
     fn peer_messages_are_kept_although_marked_meta() {
         let r = json!({"type": "user", "isMeta": true, "origin": {"kind": "peer", "name": "esign ui"},
             "message": {"role": "user", "content": "Another Claude session sent a message:\n<cross-session-message from=\"uds:/tmp/x.sock\">Heads-up: signed PDFs gain a caption.<system-reminder>ignore</system-reminder></cross-session-message>"}});
-        assert_eq!(
-            kinds(r),
-            vec![(Kind::Peer, "Heads-up: signed PDFs gain a caption.".into())]
-        );
+        assert_eq!(kinds(r), vec![(Kind::Peer, "Heads-up: signed PDFs gain a caption.".into())]);
     }
 
     #[test]
@@ -698,14 +576,10 @@ mod tests {
         assert_eq!(kinds(r), vec![(Kind::Human, "Pick up sc-6413.".into())]);
         let r = json!({"type": "user", "message": {"content": "<command-message>wrap-up-session</command-message>\n<command-name>/wrap-up-session</command-name>\n<command-args>now</command-args>"}});
         assert_eq!(kinds(r), vec![(Kind::Human, "/wrap-up-session now".into())]);
-        let r =
-            json!({"type": "user", "message": {"content": "<command-name>loop</command-name>"}});
+        let r = json!({"type": "user", "message": {"content": "<command-name>loop</command-name>"}});
         assert_eq!(kinds(r), vec![(Kind::Human, "/loop".into())]);
         let r = json!({"type": "user", "message": {"content": [{"type": "text", "text": "look"}, {"type": "image", "source": {}}]}});
-        assert_eq!(
-            kinds(r),
-            vec![(Kind::Human, "look\n[image attached]".into())]
-        );
+        assert_eq!(kinds(r), vec![(Kind::Human, "look\n[image attached]".into())]);
     }
 
     #[test]
@@ -743,28 +617,14 @@ mod tests {
     #[test]
     fn codex_records() {
         let user = json!({"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "fix the build"}]}});
-        assert_eq!(
-            codex_record(&user),
-            vec![(Kind::Human, "fix the build".into())]
-        );
+        assert_eq!(codex_record(&user), vec![(Kind::Human, "fix the build".into())]);
         let env = json!({"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"text": "<environment_context>x"}]}});
         assert_eq!(codex_record(&env), vec![]);
         let call = json!({"type": "response_item", "payload": {"type": "function_call", "name": "shell", "arguments": "{\"cmd\":\"ls\"}"}});
-        assert_eq!(
-            codex_record(&call),
-            vec![(Kind::Tool, "shell: {\"cmd\":\"ls\"}".into())]
-        );
-        let local = json!({"type": "response_item", "payload": {"type": "local_shell_call", "action": {"command": ["ls"]}}});
-        assert_eq!(
-            codex_record(&local),
-            vec![(
-                Kind::Tool,
-                r#"local_shell_call: {"command": ["ls"]}"#.into()
-            )]
-        );
-        assert_eq!(
-            codex_record(&json!({"type": "event_msg", "payload": {}})),
-            vec![]
-        );
+        assert_eq!(codex_record(&call), vec![(Kind::Tool, "shell: {\"cmd\":\"ls\"}".into())]);
+        let local =
+            json!({"type": "response_item", "payload": {"type": "local_shell_call", "action": {"command": ["ls"]}}});
+        assert_eq!(codex_record(&local), vec![(Kind::Tool, r#"local_shell_call: {"command": ["ls"]}"#.into())]);
+        assert_eq!(codex_record(&json!({"type": "event_msg", "payload": {}})), vec![]);
     }
 }

@@ -59,8 +59,9 @@ pub struct State {
 impl State {
     pub fn load(path: &Path) -> std::io::Result<State> {
         match std::fs::read(path) {
-            Ok(bytes) => serde_json::from_slice(&bytes)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            Ok(bytes) => {
+                serde_json::from_slice(&bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(State::default()),
             Err(e) => Err(e),
         }
@@ -71,10 +72,7 @@ impl State {
             std::fs::create_dir_all(dir)?;
         }
         let tmp = path.with_extension(format!("tmp{}", std::process::id()));
-        std::fs::write(
-            &tmp,
-            serde_json::to_vec_pretty(self).expect("state serialises"),
-        )?;
+        std::fs::write(&tmp, serde_json::to_vec_pretty(self).expect("state serialises"))?;
         std::fs::rename(&tmp, path)
     }
 }

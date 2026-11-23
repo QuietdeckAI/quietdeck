@@ -205,11 +205,7 @@ fn read_arg(s: &str) -> anyhow::Result<String> {
 }
 
 fn read_file_arg(s: &str) -> anyhow::Result<String> {
-    if s == "-" {
-        read_arg(s)
-    } else {
-        std::fs::read_to_string(s).map_err(|e| anyhow::anyhow!("{s}: {e}"))
-    }
+    if s == "-" { read_arg(s) } else { std::fs::read_to_string(s).map_err(|e| anyhow::anyhow!("{s}: {e}")) }
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -224,7 +220,9 @@ async fn main() {
 async fn run(cli: Cli) -> anyhow::Result<()> {
     let json = cli.json;
     match cli.command {
-        Command::Node { command: NodeCommand::Enroll { code, deck, name, token_file } } => enroll(code, deck, name, token_file).await,
+        Command::Node { command: NodeCommand::Enroll { code, deck, name, token_file } } => {
+            enroll(code, deck, name, token_file).await
+        }
         Command::Node { command: NodeCommand::Status } => {
             let status = client::node_status().await?;
             print::out(json, &status, |s| {
@@ -254,7 +252,9 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Sessions(args) => {
             let c = Client::connect().await?;
             let rows: Vec<quietdeck_types::directory::SessionRow> = match args.command {
-                Some(SessionsCommand::Search { words }) => c.get("/api/sessions/search", &[("q", words.join(" "))]).await?,
+                Some(SessionsCommand::Search { words }) => {
+                    c.get("/api/sessions/search", &[("q", words.join(" "))]).await?
+                }
                 None => {
                     let mut q = vec![("all", args.all.to_string())];
                     if let Some(n) = args.node {
@@ -272,7 +272,8 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Command::Msg { command: MsgCommand::Send { to, text } } => {
             let c = Client::connect().await?;
-            let r: quietdeck_types::node::Delivered = c.post("/api/msg", &MsgSend { to: to.clone(), text: read_arg(&text)? }).await?;
+            let r: quietdeck_types::node::Delivered =
+                c.post("/api/msg", &MsgSend { to: to.clone(), text: read_arg(&text)? }).await?;
             print::out(json, &r, |_| format!("Delivered to {to}."))
         }
         Command::Timeline { command: TimelineCommand::Add { kind, text, account, refs, lease } } => {
@@ -295,7 +296,8 @@ async fn card(json: bool, command: CardCommand) -> anyhow::Result<()> {
     match command {
         CardCommand::Add { file, needs_agent, grant, auto } => {
             let text = read_file_arg(&file)?;
-            let mut input: CardInput = serde_json::from_str(&text).map_err(|e| anyhow::anyhow!("the card's JSON: {e}"))?;
+            let mut input: CardInput =
+                serde_json::from_str(&text).map_err(|e| anyhow::anyhow!("the card's JSON: {e}"))?;
             if needs_agent {
                 input.needs_agent = true;
             }
@@ -315,7 +317,8 @@ async fn card(json: bool, command: CardCommand) -> anyhow::Result<()> {
             } else {
                 anyhow::bail!("say how: --archived-in-gmail, --handled-elsewhere <note> or --rechecked [note]");
             };
-            let card: quietdeck_types::card::Card = c.post(&format!("/api/cards/{}/resolve", parse_id(&id)?), &how).await?;
+            let card: quietdeck_types::card::Card =
+                c.post(&format!("/api/cards/{}/resolve", parse_id(&id)?), &how).await?;
             print::out(json, &card, print::card_line)
         }
         CardCommand::Show { id } => {
@@ -339,14 +342,23 @@ async fn enroll(code: String, deck: String, name: Option<String>, token_file: Op
     client::write_secret_file(&token_path, &enrolled.token)?;
     let yaml = config_dir.join("node.yaml");
     if yaml.exists() {
-        println!("Enrolled as {}. Token saved to {}. node.yaml already exists; check node.name and node.deck in it.", enrolled.node, token_path.display());
+        println!(
+            "Enrolled as {}. Token saved to {}. node.yaml already exists; check node.name and node.deck in it.",
+            enrolled.node,
+            token_path.display()
+        );
     } else {
         let token_ref = client::tilde(&token_path);
         std::fs::write(
             &yaml,
             format!("node:\n  name: {}\n  deck: {deck}\n  token_file: {token_ref}\n", enrolled.node),
         )?;
-        println!("Enrolled as {}. Token saved to {}, config to {}.", enrolled.node, token_path.display(), yaml.display());
+        println!(
+            "Enrolled as {}. Token saved to {}, config to {}.",
+            enrolled.node,
+            token_path.display(),
+            yaml.display()
+        );
     }
     println!("Start the node: quietdeck-node (or install its service; see the getting-started guide).");
     Ok(())

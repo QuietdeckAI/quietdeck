@@ -89,7 +89,9 @@ pub fn uninstall(home: &Path) -> anyhow::Result<()> {
     }
     match std::fs::remove_file(&file) {
         Ok(()) => println!("Stopped and removed {}.", file.display()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => println!("Not installed ({} doesn't exist).", file.display()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            println!("Not installed ({} doesn't exist).", file.display())
+        }
         Err(e) => return Err(e.into()),
     }
     Ok(())

@@ -45,9 +45,7 @@ use std::time::{Duration, SystemTime};
 
 use jiff::tz::TimeZone;
 use quietdeck_types::AgentStatus;
-use quietdeck_types::summary::{
-    Catchup, SessionFacts, SessionSignal, SummariesConfig, SummaryEvent,
-};
+use quietdeck_types::summary::{Catchup, SessionFacts, SessionSignal, SummariesConfig, SummaryEvent};
 use tokio::sync::{Semaphore, mpsc, oneshot};
 use tokio::time::Instant;
 
@@ -106,9 +104,7 @@ impl SummariesHandle {
     /// waits for it only when nothing is cached.
     pub async fn catchup(&self, req: CatchupRequest) -> Result<Catchup, SummariesError> {
         let (reply, rx) = oneshot::channel();
-        self.tx
-            .send(Command::Catchup { req, reply })
-            .map_err(|_| SummariesError::Stopped)?;
+        self.tx.send(Command::Catchup { req, reply }).map_err(|_| SummariesError::Stopped)?;
         rx.await.map_err(|_| SummariesError::Stopped)?
     }
 
@@ -117,12 +113,7 @@ impl SummariesHandle {
     /// again. Sends every record as [`SummaryEvent::Summary`] with `origin: claude_summarizer`, and returns how many
     /// it sent.
     pub async fn import_claude_summarizer(&self, dir: PathBuf) -> Result<usize, SummariesError> {
-        let old_state = self
-            .engine
-            .config
-            .roots
-            .home_path()
-            .join(".local/state/claude-summarizer/state.json");
+        let old_state = self.engine.config.roots.home_path().join(".local/state/claude-summarizer/state.json");
         let imported = {
             let mut state = self.engine.state.lock().expect("state lock");
             import::import(&dir, Some(&old_state), &mut state)
@@ -140,11 +131,7 @@ impl SummariesHandle {
         );
         let n = imported.records.len();
         for record in imported.records {
-            self.engine
-                .sink
-                .send(SummaryEvent::Summary(record))
-                .await
-                .map_err(|_| SummariesError::Stopped)?;
+            self.engine.sink.send(SummaryEvent::Summary(record)).await.map_err(|_| SummariesError::Stopped)?;
         }
         // Sweep now for whatever the imported offsets leave unread.
         let _ = self.tx.send(Command::Sweep);
@@ -160,11 +147,7 @@ pub fn spawn(
     events: mpsc::Sender<SummaryEvent>,
 ) -> SummariesHandle {
     let tz = TimeZone::get(&env.time_zone).unwrap_or_else(|_| TimeZone::system());
-    let user = if config.user_name.trim().is_empty() {
-        "the user".to_owned()
-    } else {
-        config.user_name.clone()
-    };
+    let user = if config.user_name.trim().is_empty() { "the user".to_owned() } else { config.user_name.clone() };
     let mut c = Config::new(&env.home, &env.state_dir, &user);
     c.tz = tz;
     c.idle_delay = Duration::from_secs(config.idle_seconds);
@@ -180,11 +163,8 @@ pub fn spawn(
         timeout: Duration::from_secs(420),
     });
     // No socket configured: Claude Code's own login (a path that doesn't exist means the same to `accounts::pick`).
-    let accounts = Accounts::Coordinator(
-        env.coordinator_socket
-            .clone()
-            .unwrap_or_else(|| env.state_dir.join("no-coordinator")),
-    );
+    let accounts =
+        Accounts::Coordinator(env.coordinator_socket.clone().unwrap_or_else(|| env.state_dir.join("no-coordinator")));
     start(c, model, accounts, signals, events, config.enabled)
 }
 
@@ -197,31 +177,17 @@ pub fn start(
     events: mpsc::Sender<SummaryEvent>,
     enabled: bool,
 ) -> SummariesHandle {
-    let engine = match Engine::new(
-        config.clone(),
-        model.clone(),
-        accounts.clone(),
-        events.clone(),
-    ) {
+    let engine = match Engine::new(config.clone(), model.clone(), accounts.clone(), events.clone()) {
         Ok(e) => Arc::new(e),
         Err(e) => {
-            tracing::error!(
-                "summaries: can't read {}: {e}; starting from empty state",
-                config.state_file.display()
-            );
-            let _ = std::fs::rename(
-                &config.state_file,
-                config.state_file.with_extension("unreadable"),
-            );
+            tracing::error!("summaries: can't read {}: {e}; starting from empty state", config.state_file.display());
+            let _ = std::fs::rename(&config.state_file, config.state_file.with_extension("unreadable"));
             Arc::new(Engine::new(config, model, accounts, events).expect("empty state loads"))
         }
     };
     {
         let home = engine.config.roots.home_path();
-        let seeded = import::seed_from_claude_summarizer(
-            &home,
-            &mut engine.state.lock().expect("state lock"),
-        );
+        let seeded = import::seed_from_claude_summarizer(&home, &mut engine.state.lock().expect("state lock"));
         if let Some(n) = seeded {
             engine.save();
             tracing::info!(
@@ -285,11 +251,8 @@ fn status_of(s: AgentStatus) -> Status {
 impl Driver {
     fn new(engine: Arc<Engine>, tx: mpsc::UnboundedSender<Command>, enabled: bool) -> Self {
         let c = &engine.config;
-        let sched = Scheduler::new(Limits {
-            idle_delay: c.idle_delay,
-            min_gap: c.min_gap,
-            max_concurrent: c.max_concurrent,
-        });
+        let sched =
+            Scheduler::new(Limits { idle_delay: c.idle_delay, min_gap: c.min_gap, max_concurrent: c.max_concurrent });
         Driver {
             engine,
             tx,
@@ -304,15 +267,10 @@ impl Driver {
         }
     }
 
-    async fn run(
-        mut self,
-        mut rx: mpsc::UnboundedReceiver<Command>,
-        mut signals: mpsc::Receiver<SessionSignal>,
-    ) {
+    async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Command>, mut signals: mpsc::Receiver<SessionSignal>) {
         let c = self.engine.config.clone();
         // The start-up sweep waits for herdr's snapshot to arrive, so it knows which sessions are running.
-        let mut next_sweep =
-            (self.enabled && c.sweep).then(|| Instant::now() + c.start_sweep_after);
+        let mut next_sweep = (self.enabled && c.sweep).then(|| Instant::now() + c.start_sweep_after);
         loop {
             let far = Instant::now() + Duration::from_secs(3600);
             let due = self.sched.next_due().map(Instant::from_std).unwrap_or(far);
@@ -342,9 +300,7 @@ impl Driver {
     fn signal(&mut self, sig: SessionSignal) {
         let now = Instant::now().into_std();
         match sig {
-            SessionSignal::Status {
-                session, status, ..
-            } => {
+            SessionSignal::Status { session, status, .. } => {
                 let status = status_of(status);
                 if matches!(status, Status::Idle | Status::Done) {
                     self.paused = false;
@@ -378,11 +334,11 @@ impl Driver {
             Command::Catchup { req, reply } => {
                 let facts = self.facts.get(&req.session_id).cloned();
                 let agent = facts.as_ref().map_or(Agent::Claude, |f| f.agent);
-                if let Some(t) = req.transcript.clone().or_else(|| {
-                    facts
-                        .as_ref()
-                        .and_then(|f| f.transcript.clone().map(PathBuf::from))
-                }) {
+                if let Some(t) = req
+                    .transcript
+                    .clone()
+                    .or_else(|| facts.as_ref().and_then(|f| f.transcript.clone().map(PathBuf::from)))
+                {
                     self.engine.remember_transcript(&req.session_id, t);
                 }
                 let (cached, regenerate) = self.engine.cached_catchup(&req.session_id, agent);
@@ -391,15 +347,10 @@ impl Driver {
                         let _ = reply.send(Ok(c));
                     }
                     None if !regenerate => {
-                        let _ =
-                            reply.send(Err(SummariesError::NoTranscript(req.session_id.clone())));
+                        let _ = reply.send(Err(SummariesError::NoTranscript(req.session_id.clone())));
                         return;
                     }
-                    None => self
-                        .catchup_waiters
-                        .entry(req.session_id.clone())
-                        .or_default()
-                        .push(reply),
+                    None => self.catchup_waiters.entry(req.session_id.clone()).or_default().push(reply),
                 }
                 if !regenerate || !self.catchups_writing.insert(req.session_id.clone()) {
                     return;
@@ -410,11 +361,7 @@ impl Driver {
                     tab: facts.as_ref().and_then(|f| f.tab.clone()),
                     dir: facts.as_ref().and_then(|f| f.cwd.clone()),
                 };
-                let (engine, slots, tx) = (
-                    self.engine.clone(),
-                    self.catchup_slots.clone(),
-                    self.tx.clone(),
-                );
+                let (engine, slots, tx) = (self.engine.clone(), self.catchup_slots.clone(), self.tx.clone());
                 tokio::spawn(async move {
                     let session_id = req.session_id;
                     let result = {
@@ -441,8 +388,7 @@ impl Driver {
     /// Transcripts with unread content whose session isn't running.
     fn queue_sweep(&mut self) {
         self.paused = false;
-        let cutoff =
-            SystemTime::now() - Duration::from_secs(self.engine.config.max_age_days as u64 * 86400);
+        let cutoff = SystemTime::now() - Duration::from_secs(self.engine.config.max_age_days as u64 * 86400);
         let running: HashSet<String> = self.sched.running_sessions().into_iter().collect();
         let mut sources = transcript::discover(&self.engine.config.roots, cutoff);
         // Newest first, as claude-summarizer's runs went.
@@ -459,10 +405,7 @@ impl Driver {
             self.sweep_queue.push_back(s);
         }
         self.engine.state.lock().expect("state lock").last_sweep = Some(jiff::Timestamp::now());
-        tracing::info!(
-            "summaries: sweep queued {} transcripts",
-            self.sweep_queue.len() - before
-        );
+        tracing::info!("summaries: sweep queued {} transcripts", self.sweep_queue.len() - before);
     }
 
     fn dispatch(&mut self) {
@@ -481,8 +424,7 @@ impl Driver {
             self.spawn_job(sid, Job::Session(facts));
         }
         while let Some(source) = self.sweep_queue.front().cloned() {
-            let key =
-                session_key(&source).unwrap_or_else(|| source.path.to_string_lossy().into_owned());
+            let key = session_key(&source).unwrap_or_else(|| source.path.to_string_lossy().into_owned());
             if !self.sched.try_start(&key, now) {
                 break;
             }
@@ -500,9 +442,7 @@ impl Driver {
                     if let Some(t) = &f.transcript {
                         engine.remember_transcript(&f.session_id, PathBuf::from(t));
                     }
-                    engine
-                        .summarise_session(&f.session_id, f.agent, f.tab, f.cwd)
-                        .await
+                    engine.summarise_session(&f.session_id, f.agent, f.tab, f.cwd).await
                 }
                 Job::Transcript(source) => {
                     let info = SessionInfo {

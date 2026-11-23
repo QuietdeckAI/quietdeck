@@ -53,10 +53,11 @@ pub async fn add(db: &Db, source: EntrySource, e: &TimelineAdd) -> anyhow::Resul
 }
 
 pub async fn get(db: &Db, id: i64) -> anyhow::Result<Option<TimelineEntry>> {
-    let row: Option<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {COLUMNS} FROM timeline_entries WHERE id = ?")))
-        .bind(id)
-        .fetch_optional(db)
-        .await?;
+    let row: Option<Row> =
+        sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {COLUMNS} FROM timeline_entries WHERE id = ?")))
+            .bind(id)
+            .fetch_optional(db)
+            .await?;
     row.map(Row::into_entry).transpose()
 }
 

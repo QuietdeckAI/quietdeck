@@ -41,10 +41,7 @@ impl Account {
     /// and may move it to another account); `--setting-sources ""` keeps plugins, hooks and CLAUDE.md out as well.
     pub fn env(&self) -> BTreeMap<String, String> {
         let mut env = BTreeMap::from([
-            (
-                "CLAUDE_SECURESTORAGE_CONFIG_DIR".to_owned(),
-                self.slot.clone(),
-            ),
+            ("CLAUDE_SECURESTORAGE_CONFIG_DIR".to_owned(), self.slot.clone()),
             ("CLAUDE_ACCOUNT_ROTATOR_REFRESH".to_owned(), "1".to_owned()),
         ]);
         if !self.slot.is_empty() {
@@ -57,10 +54,7 @@ impl Account {
         if self.id == "default" {
             self.email.clone()
         } else {
-            format!(
-                "account {} ({}, week {:.0}%)",
-                self.id, self.email, self.week_pct
-            )
+            format!("account {} ({}, week {:.0}%)", self.id, self.email, self.week_pct)
         }
     }
 }
@@ -79,9 +73,7 @@ pub enum StateError {
 pub async fn coordinator_state(socket: &Path) -> Result<Value, StateError> {
     let fut = async {
         let mut stream = tokio::net::UnixStream::connect(socket).await?;
-        stream
-            .write_all(b"GET /state HTTP/1.1\r\nHost: coordinator\r\nConnection: close\r\n\r\n")
-            .await?;
+        stream.write_all(b"GET /state HTTP/1.1\r\nHost: coordinator\r\nConnection: close\r\n\r\n").await?;
         let mut buf = Vec::new();
         stream.read_to_end(&mut buf).await?;
         Ok::<_, StateError>(buf)
@@ -89,20 +81,18 @@ pub async fn coordinator_state(socket: &Path) -> Result<Value, StateError> {
     let buf = tokio::time::timeout(std::time::Duration::from_secs(10), fut)
         .await
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "no answer in 10 s"))??;
-    let split = buf
-        .windows(4)
-        .position(|w| w == b"\r\n\r\n")
-        .ok_or_else(|| StateError::Status("no HTTP headers".into()))?;
+    let split =
+        buf.windows(4).position(|w| w == b"\r\n\r\n").ok_or_else(|| StateError::Status("no HTTP headers".into()))?;
     let head = String::from_utf8_lossy(&buf[..split]).to_string();
     let mut body = buf[split + 4..].to_vec();
     let status = head.lines().next().unwrap_or("");
     if status.split_whitespace().nth(1) != Some("200") {
         return Err(StateError::Status(status.to_owned()));
     }
-    if head.lines().any(|l| {
-        l.to_ascii_lowercase().starts_with("transfer-encoding:")
-            && l.to_ascii_lowercase().contains("chunked")
-    }) {
+    if head
+        .lines()
+        .any(|l| l.to_ascii_lowercase().starts_with("transfer-encoding:") && l.to_ascii_lowercase().contains("chunked"))
+    {
         body = dechunk(&body).ok_or_else(|| StateError::Status("bad chunked body".into()))?;
     }
     Ok(serde_json::from_slice(&body)?)
@@ -126,32 +116,16 @@ fn dechunk(mut body: &[u8]) -> Option<Vec<u8>> {
 /// None when every account is spent.
 pub fn choose(state: &Value, now: Timestamp) -> Option<Account> {
     let mut usable = Vec::new();
-    for a in state
-        .get("accounts")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        let healthy = a
-            .get("health")
-            .and_then(|h| h.get("kind"))
-            .and_then(Value::as_str)
-            == Some("ok");
+    for a in state.get("accounts").and_then(Value::as_array).into_iter().flatten() {
+        let healthy = a.get("health").and_then(|h| h.get("kind")).and_then(Value::as_str) == Some("ok");
         let flag = |k: &str| a.get(k).and_then(Value::as_bool).unwrap_or(false);
         if !healthy || flag("isSpent") || flag("isRetiring") {
             continue;
         }
-        let Some(week) = a
-            .get("reading")
-            .and_then(|r| r.get("sevenDay"))
-            .filter(|w| !w.is_null())
-        else {
+        let Some(week) = a.get("reading").and_then(|r| r.get("sevenDay")).filter(|w| !w.is_null()) else {
             continue;
         };
-        let mut resets = week
-            .get("resetsAt")
-            .and_then(Value::as_str)
-            .and_then(|s| s.parse::<Timestamp>().ok());
+        let mut resets = week.get("resetsAt").and_then(Value::as_str).and_then(|s| s.parse::<Timestamp>().ok());
         let mut pct = week.get("pct").and_then(Value::as_f64).unwrap_or(0.0);
         if resets.is_some_and(|r| r <= now) {
             pct = 0.0;
@@ -163,16 +137,8 @@ pub fn choose(state: &Value, now: Timestamp) -> Option<Account> {
                 Some(other) => other.to_string(),
                 None => continue,
             },
-            slot: a
-                .get("slot")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_owned(),
-            email: a
-                .get("email")
-                .and_then(Value::as_str)
-                .unwrap_or("?")
-                .to_owned(),
+            slot: a.get("slot").and_then(Value::as_str).unwrap_or("").to_owned(),
+            email: a.get("email").and_then(Value::as_str).unwrap_or("?").to_owned(),
             week_pct: pct,
             resets_at: resets,
         });
@@ -219,20 +185,23 @@ mod tests {
         assert_eq!((a.id.as_str(), a.slot.as_str()), ("3", "/slots/3"));
         assert_eq!(a.label(), "account 3 (3@x, week 80%)");
         // Ties on reset time go to the emptier week.
-        let state = json!({"accounts": [acct("4", 10.0, "2026-11-26T00:00:00Z"), acct("5", 5.0, "2026-11-26T00:00:00Z")]});
+        let state =
+            json!({"accounts": [acct("4", 10.0, "2026-11-26T00:00:00Z"), acct("5", 5.0, "2026-11-26T00:00:00Z")]});
         assert_eq!(choose(&state, now).unwrap().id, "5");
     }
 
     #[test]
     fn a_week_that_already_reset_counts_as_empty_and_a_week_out() {
         let now: Timestamp = "2026-11-23T00:00:00Z".parse().unwrap();
-        let state = json!({"accounts": [acct("1", 97.0, "2026-11-22T00:00:00Z"), acct("2", 50.0, "2026-11-29T00:00:00Z")]});
+        let state =
+            json!({"accounts": [acct("1", 97.0, "2026-11-22T00:00:00Z"), acct("2", 50.0, "2026-11-29T00:00:00Z")]});
         let a = choose(&state, now).unwrap();
         assert_eq!(
             (a.id.as_str(), a.week_pct, a.resets_at),
             ("2", 50.0, Some("2026-11-29T00:00:00Z".parse().unwrap()))
         );
-        let state = json!({"accounts": [acct("1", 97.0, "2026-11-22T00:00:00Z"), acct("2", 50.0, "2026-12-01T00:00:00Z")]});
+        let state =
+            json!({"accounts": [acct("1", 97.0, "2026-11-22T00:00:00Z"), acct("2", 50.0, "2026-12-01T00:00:00Z")]});
         let a = choose(&state, now).unwrap();
         assert_eq!((a.id.as_str(), a.week_pct, a.resets_at), ("1", 0.0, None));
     }
@@ -245,27 +214,11 @@ mod tests {
         assert_eq!(choose(&json!({"accounts": [spent]}), now), None);
         assert_eq!(choose(&json!({}), now), None);
         let env = Account::default_login().env();
-        assert_eq!(
-            env.get("CLAUDE_SECURESTORAGE_CONFIG_DIR")
-                .map(String::as_str),
-            Some("")
-        );
+        assert_eq!(env.get("CLAUDE_SECURESTORAGE_CONFIG_DIR").map(String::as_str), Some(""));
         assert!(!env.contains_key("CLAUDE_CONFIG_DIR"));
-        let a = choose(
-            &json!({"accounts": [acct("3", 1.0, "2030-01-01T00:00:00Z")]}),
-            now,
-        )
-        .unwrap();
-        assert_eq!(
-            a.env().get("CLAUDE_CONFIG_DIR").map(String::as_str),
-            Some("/slots/3")
-        );
-        assert_eq!(
-            a.env()
-                .get("CLAUDE_ACCOUNT_ROTATOR_REFRESH")
-                .map(String::as_str),
-            Some("1")
-        );
+        let a = choose(&json!({"accounts": [acct("3", 1.0, "2030-01-01T00:00:00Z")]}), now).unwrap();
+        assert_eq!(a.env().get("CLAUDE_CONFIG_DIR").map(String::as_str), Some("/slots/3"));
+        assert_eq!(a.env().get("CLAUDE_ACCOUNT_ROTATOR_REFRESH").map(String::as_str), Some("1"));
     }
 
     #[tokio::test]
@@ -290,9 +243,7 @@ mod tests {
         let state = coordinator_state(&path).await.unwrap();
         assert_eq!(state, json!({"accounts": []}));
         assert_eq!(
-            pick(&dir.path().join("missing.sock"), Timestamp::now())
-                .await
-                .unwrap(),
+            pick(&dir.path().join("missing.sock"), Timestamp::now()).await.unwrap(),
             Some(Account::default_login())
         );
     }

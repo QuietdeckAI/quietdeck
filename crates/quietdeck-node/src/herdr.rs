@@ -50,8 +50,8 @@ async fn run_json<T: serde::de::DeserializeOwned>(herdr: &str, args: &[&str]) ->
     if !out.status.success() {
         anyhow::bail!("herdr {}: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
     }
-    let env: Envelope<T> = serde_json::from_slice(&out.stdout)
-        .map_err(|e| anyhow::anyhow!("reading herdr {}: {e}", args.join(" ")))?;
+    let env: Envelope<T> =
+        serde_json::from_slice(&out.stdout).map_err(|e| anyhow::anyhow!("reading herdr {}: {e}", args.join(" ")))?;
     Ok(env.result)
 }
 

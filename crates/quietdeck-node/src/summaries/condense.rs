@@ -18,25 +18,15 @@ fn chars(s: &str) -> usize {
 
 /// Worth a model call: a message from the user or another session, 300+ characters of agent text, or a file edit.
 pub fn is_real(events: &[Event]) -> bool {
-    if events
-        .iter()
-        .any(|e| matches!(e.kind, Kind::Human | Kind::Peer))
-    {
+    if events.iter().any(|e| matches!(e.kind, Kind::Human | Kind::Peer)) {
         return true;
     }
-    let assistant: usize = events
-        .iter()
-        .filter(|e| e.kind == Kind::Assistant)
-        .map(|e| chars(&e.text))
-        .sum();
+    let assistant: usize = events.iter().filter(|e| e.kind == Kind::Assistant).map(|e| chars(&e.text)).sum();
     if assistant >= MIN_ASSISTANT_CHARS {
         return true;
     }
     events.iter().any(|e| {
-        e.kind == Kind::Tool
-            && ["Edit ", "Write ", "MultiEdit ", "NotebookEdit "]
-                .iter()
-                .any(|p| e.text.starts_with(p))
+        e.kind == Kind::Tool && ["Edit ", "Write ", "MultiEdit ", "NotebookEdit "].iter().any(|p| e.text.starts_with(p))
     })
 }
 
@@ -44,10 +34,7 @@ pub fn is_real(events: &[Event]) -> bool {
 pub fn last_real_ts(events: &[Event]) -> Option<Timestamp> {
     events
         .iter()
-        .filter(|e| {
-            matches!(e.kind, Kind::Human | Kind::Peer)
-                || (e.kind == Kind::Assistant && chars(&e.text) >= 80)
-        })
+        .filter(|e| matches!(e.kind, Kind::Human | Kind::Peer) || (e.kind == Kind::Assistant && chars(&e.text) >= 80))
         .map(|e| e.ts)
         .max()
 }
@@ -81,27 +68,19 @@ pub fn clip(text: &str, n: usize) -> String {
     if len <= n {
         text.to_owned()
     } else {
-        format!(
-            "{} […{} chars cut]",
-            text.chars().take(n).collect::<String>(),
-            len - n
-        )
+        format!("{} […{} chars cut]", text.chars().take(n).collect::<String>(), len - n)
     }
 }
 
 /// `Sat 24 Oct 00:00` in the machine's time zone.
 pub fn stamp(ts: Timestamp, tz: &TimeZone) -> String {
-    ts.to_zoned_datetime(tz.clone())
-        .strftime("%a %d %b %H:%M")
-        .to_string()
+    ts.to_zoned_datetime(tz.clone()).strftime("%a %d %b %H:%M").to_string()
 }
 
 /// The user's messages, the agent's text and one line per tool call, newest kept first when over budget: tool lines
 /// go first, then older agent text, then older messages from the user.
 pub fn condense(events: &[Event], budget: usize, tz: &TimeZone) -> String {
-    let full = |e: &Event, n: usize, stamp: &str| {
-        format!("[{stamp}] {}: {}", label(e.kind), clip(&e.text, n))
-    };
+    let full = |e: &Event, n: usize, stamp: &str| format!("[{stamp}] {}: {}", label(e.kind), clip(&e.text, n));
     let mut items: Vec<Option<String>> = Vec::with_capacity(events.len());
     let stamps: Vec<String> = events.iter().map(|e| stamp(e.ts, tz)).collect();
     for (e, s) in events.iter().zip(&stamps) {
@@ -171,12 +150,7 @@ enum Period {
 
 /// One chunk per local day for the last `daily_days` days, one per ISO week before that: each chunk is one summary
 /// call and one point on the session's timeline.
-pub fn chunk_by_period(
-    events: &[Event],
-    daily_days: i64,
-    now: Timestamp,
-    tz: &TimeZone,
-) -> Vec<Vec<Event>> {
+pub fn chunk_by_period(events: &[Event], daily_days: i64, now: Timestamp, tz: &TimeZone) -> Vec<Vec<Event>> {
     let cutoff = now - SignedDuration::from_hours(24 * daily_days);
     let mut chunks: Vec<Vec<Event>> = Vec::new();
     let mut key = None;
@@ -202,15 +176,9 @@ pub fn span(chunk: &[Event], tz: &TimeZone) -> String {
     let (Some(a), Some(b)) = (chunk.first(), chunk.last()) else {
         return String::new();
     };
-    let (a, b) = (
-        a.ts.to_zoned_datetime(tz.clone()),
-        b.ts.to_zoned_datetime(tz.clone()),
-    );
-    let end = if a.date() == b.date() {
-        b.strftime("%H:%M").to_string()
-    } else {
-        b.strftime("%a %d %b %H:%M").to_string()
-    };
+    let (a, b) = (a.ts.to_zoned_datetime(tz.clone()), b.ts.to_zoned_datetime(tz.clone()));
+    let end =
+        if a.date() == b.date() { b.strftime("%H:%M").to_string() } else { b.strftime("%a %d %b %H:%M").to_string() };
     format!("{} to {end}", a.strftime("%a %d %b %Y %H:%M"))
 }
 
@@ -223,13 +191,7 @@ mod tests {
     }
 
     fn ev(kind: Kind, text: &str, ts: &str) -> Event {
-        Event {
-            kind,
-            text: text.into(),
-            ts: ts.parse().unwrap(),
-            end: 0,
-            uuid: None,
-        }
+        Event { kind, text: text.into(), ts: ts.parse().unwrap(), end: 0, uuid: None }
     }
 
     #[test]
@@ -238,14 +200,8 @@ mod tests {
         assert!(!is_real(&[]));
         assert!(is_real(&[ev(Kind::Human, "hi", t)]));
         assert!(is_real(&[ev(Kind::Peer, "hi", t)]));
-        assert!(!is_real(&[
-            ev(Kind::Assistant, &"x".repeat(299), t),
-            ev(Kind::Tool, "Bash: ls", t)
-        ]));
-        assert!(is_real(&[
-            ev(Kind::Assistant, &"x".repeat(150), t),
-            ev(Kind::Assistant, &"y".repeat(150), t)
-        ]));
+        assert!(!is_real(&[ev(Kind::Assistant, &"x".repeat(299), t), ev(Kind::Tool, "Bash: ls", t)]));
+        assert!(is_real(&[ev(Kind::Assistant, &"x".repeat(150), t), ev(Kind::Assistant, &"y".repeat(150), t)]));
         assert!(is_real(&[ev(Kind::Tool, "Write ~/a.md", t)]));
         assert!(!is_real(&[ev(Kind::Tool, "WebFetch: Edit me", t)]));
     }
@@ -258,27 +214,16 @@ mod tests {
             ev(Kind::Assistant, "ok", "2026-11-23T03:00:00Z"),
             ev(Kind::Tool, "Bash: ls", "2026-11-23T04:00:00Z"),
         ];
-        assert_eq!(
-            last_real_ts(&events),
-            Some("2026-11-23T02:00:00Z".parse().unwrap())
-        );
+        assert_eq!(last_real_ts(&events), Some("2026-11-23T02:00:00Z".parse().unwrap()));
     }
 
     #[test]
     fn condense_formats_lines_in_local_time() {
-        let events = [
-            ev(Kind::Human, "fix it", "2026-11-23T01:05:00Z"),
-            ev(Kind::Tool, "Bash: ls", "2026-11-23T01:06:00Z"),
-        ];
-        assert_eq!(
-            condense(&events, BUDGET_CHARS, &tz()),
-            "[Mon 23 Nov 14:05] USER: fix it\n  · Bash: ls"
-        );
+        let events =
+            [ev(Kind::Human, "fix it", "2026-11-23T01:05:00Z"), ev(Kind::Tool, "Bash: ls", "2026-11-23T01:06:00Z")];
+        assert_eq!(condense(&events, BUDGET_CHARS, &tz()), "[Mon 23 Nov 14:05] USER: fix it\n  · Bash: ls");
         let long = ev(Kind::Human, &"a".repeat(2600), "2026-11-23T01:05:00Z");
-        assert!(
-            condense(&[long], BUDGET_CHARS, &tz())
-                .ends_with(&format!("{} […100 chars cut]", "a".repeat(10)))
-        );
+        assert!(condense(&[long], BUDGET_CHARS, &tz()).ends_with(&format!("{} […100 chars cut]", "a".repeat(10))));
     }
 
     #[test]
@@ -307,22 +252,11 @@ mod tests {
     #[test]
     fn condense_never_exceeds_the_budget_with_markers() {
         let t = "2026-11-23T01:00:00Z";
-        let events: Vec<Event> = (0..5000)
-            .map(|i| {
-                ev(
-                    if i % 2 == 0 { Kind::Human } else { Kind::Tool },
-                    &"h".repeat(30),
-                    t,
-                )
-            })
-            .collect();
+        let events: Vec<Event> =
+            (0..5000).map(|i| ev(if i % 2 == 0 { Kind::Human } else { Kind::Tool }, &"h".repeat(30), t)).collect();
         for budget in [100, 1000, 48_000] {
             let out = condense(&events, budget, &tz());
-            assert!(
-                out.chars().count() <= budget,
-                "{budget}: {}",
-                out.chars().count()
-            );
+            assert!(out.chars().count() <= budget, "{budget}: {}", out.chars().count());
         }
     }
 
@@ -338,28 +272,16 @@ mod tests {
             ev(Kind::Human, "f", "2026-11-22T11:01:00Z"), // 00:01 NZDT on the 23rd
         ];
         let chunks = chunk_by_period(&events, 30, now, &tz());
-        let texts: Vec<Vec<&str>> = chunks
-            .iter()
-            .map(|c| c.iter().map(|e| e.text.as_str()).collect())
-            .collect();
-        assert_eq!(
-            texts,
-            vec![vec!["a", "b"], vec!["c"], vec!["d", "e"], vec!["f"]]
-        );
+        let texts: Vec<Vec<&str>> = chunks.iter().map(|c| c.iter().map(|e| e.text.as_str()).collect()).collect();
+        assert_eq!(texts, vec![vec!["a", "b"], vec!["c"], vec!["d", "e"], vec!["f"]]);
     }
 
     #[test]
     fn span_text() {
         let a = ev(Kind::Human, "a", "2026-10-23T11:00:00Z");
         let b = ev(Kind::Human, "b", "2026-10-24T06:53:00Z");
-        assert_eq!(
-            span(&[a.clone(), b.clone()], &tz()),
-            "Sat 24 Oct 2026 00:00 to 19:53"
-        );
+        assert_eq!(span(&[a.clone(), b.clone()], &tz()), "Sat 24 Oct 2026 00:00 to 19:53");
         let c = ev(Kind::Human, "c", "2026-10-24T11:30:00Z");
-        assert_eq!(
-            span(&[a, c], &tz()),
-            "Sat 24 Oct 2026 00:00 to Sun 25 Oct 00:30"
-        );
+        assert_eq!(span(&[a, c], &tz()), "Sat 24 Oct 2026 00:00 to Sun 25 Oct 00:30");
     }
 }

@@ -116,8 +116,8 @@ impl DeckConfig {
     pub fn load(path: &std::path::Path) -> anyhow::Result<DeckConfig> {
         match std::fs::read_to_string(path) {
             Ok(text) => {
-                let config: DeckConfig = yaml_serde::from_str(&text)
-                    .map_err(|e| anyhow::anyhow!("reading {}: {e}", path.display()))?;
+                let config: DeckConfig =
+                    yaml_serde::from_str(&text).map_err(|e| anyhow::anyhow!("reading {}: {e}", path.display()))?;
                 config.check()?;
                 Ok(config)
             }
@@ -190,10 +190,9 @@ mod tests {
 
     #[test]
     fn projects_match_the_longest_directory() {
-        let c: DeckConfig = yaml_serde::from_str(
-            "projects:\n  app: { dirs: [~/code/app] }\n  infra: { dirs: [~/code/app/infra] }\n",
-        )
-        .unwrap();
+        let c: DeckConfig =
+            yaml_serde::from_str("projects:\n  app: { dirs: [~/code/app] }\n  infra: { dirs: [~/code/app/infra] }\n")
+                .unwrap();
         assert_eq!(c.project_for_dir("/home/sam/code/app/src", Some("/home/sam")).as_deref(), Some("app"));
         assert_eq!(c.project_for_dir("/home/sam/code/app/infra/x", Some("/home/sam")).as_deref(), Some("infra"));
         assert_eq!(c.project_for_dir("/home/sam/code/apples", Some("/home/sam")), None);

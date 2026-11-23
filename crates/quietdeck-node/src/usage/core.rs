@@ -48,10 +48,7 @@ pub enum Stored {
 pub enum UsageAnswer {
     Ok(Value),
     Rejected,
-    Failed {
-        status: u16,
-        retry_after_ms: Option<Ms>,
-    },
+    Failed { status: u16, retry_after_ms: Option<Ms> },
 }
 
 /// A browser sign-in under way: what it ended with (exit code, stderr), and how to stop it.
@@ -218,10 +215,7 @@ pub struct HttpError {
 }
 
 fn err(status: u16, message: impl Into<String>) -> HttpError {
-    HttpError {
-        status,
-        message: message.into(),
-    }
+    HttpError { status, message: message.into() }
 }
 
 struct Signing {
@@ -265,19 +259,13 @@ impl St {
         self.accounts.iter().find(|a| a.id == id)
     }
     fn session_count(&self, account_id: &str) -> usize {
-        self.sessions
-            .iter()
-            .filter(|s| s.account_id == account_id)
-            .count()
+        self.sessions.iter().filter(|s| s.account_id == account_id).count()
     }
     fn health_kind(&self, id: &str) -> Option<&'static str> {
         self.health.get(id).map(Health::kind)
     }
     fn settings(&self) -> Settings {
-        self.settings.clone().unwrap_or(Settings {
-            rotate_to: DEFAULT_ROTATE_TO.into(),
-            footer: DEFAULT_FOOTER,
-        })
+        self.settings.clone().unwrap_or(Settings { rotate_to: DEFAULT_ROTATE_TO.into(), footer: DEFAULT_FOOTER })
     }
 }
 
@@ -298,27 +286,18 @@ pub struct Coordinator<D: Deps> {
 
 impl<D: Deps> Clone for Coordinator<D> {
     fn clone(&self) -> Self {
-        Coordinator {
-            inner: self.inner.clone(),
-        }
+        Coordinator { inner: self.inner.clone() }
     }
 }
 
 fn obj(v: &Option<Value>) -> serde_json::Map<String, Value> {
-    v.as_ref()
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default()
+    v.as_ref().and_then(Value::as_object).cloned().unwrap_or_default()
 }
 
 /// JavaScript's `Number(s)` for the strings a query holds: blank is 0, anything else not a number is NaN.
 fn js_number(s: &str) -> f64 {
     let t = s.trim();
-    if t.is_empty() {
-        0.0
-    } else {
-        t.parse::<f64>().unwrap_or(f64::NAN)
-    }
+    if t.is_empty() { 0.0 } else { t.parse::<f64>().unwrap_or(f64::NAN) }
 }
 
 /// `decodeURIComponent`: None for a malformed escape or bytes that aren't UTF-8.
@@ -341,24 +320,13 @@ fn decode_component(s: &str) -> Option<String> {
 
 impl<D: Deps> Coordinator<D> {
     pub fn new(deps: D, info: Info, persisted: Option<&Value>) -> Self {
-        let mut st = St {
-            version: 1,
-            next_notice_id: 1,
-            ..Default::default()
-        };
+        let mut st = St { version: 1, next_notice_id: 1, ..Default::default() };
         if let Some(p) = persisted {
             load(&mut st, p);
         }
         if !st.accounts.iter().any(|a| a.slot.is_empty()) {
             st.accounts.retain(|a| a.id != "1");
-            st.accounts.insert(
-                0,
-                Account {
-                    id: "1".into(),
-                    slot: String::new(),
-                    ..Default::default()
-                },
-            );
+            st.accounts.insert(0, Account { id: "1".into(), slot: String::new(), ..Default::default() });
         }
         for h in st.health.values_mut() {
             // A sign-in a monitor before this one ran never finished.
@@ -416,13 +384,7 @@ impl<D: Deps> Coordinator<D> {
             st.is_stopped = true;
             st.signing.as_ref().map(|s| s.cancel.clone())
         };
-        for t in self
-            .inner
-            .tasks
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .drain(..)
-        {
+        for t in self.inner.tasks.lock().unwrap_or_else(|e| e.into_inner()).drain(..) {
             t.abort();
         }
         if let Some(cancel) = cancel {
@@ -434,13 +396,8 @@ impl<D: Deps> Coordinator<D> {
     async fn boot(&self) {
         self.check_all(Usage::Poll).await;
         // Logins whose token has run out are named from what `claude auth login` left in their folder.
-        let unnamed: Vec<Account> = self
-            .st()
-            .accounts
-            .iter()
-            .filter(|a| a.email.is_none() || a.org_id.is_none())
-            .cloned()
-            .collect();
+        let unnamed: Vec<Account> =
+            self.st().accounts.iter().filter(|a| a.email.is_none() || a.org_id.is_none()).cloned().collect();
         for account in unnamed {
             if let Some(who) = self.deps().auth_status(&account.slot).await {
                 let mut st = self.st();
@@ -482,11 +439,7 @@ impl<D: Deps> Coordinator<D> {
             .iter()
             .map(|a| AccountState {
                 account: a.clone(),
-                health: st
-                    .health
-                    .get(&a.id)
-                    .cloned()
-                    .unwrap_or_else(|| Health::login_needed("not read yet")),
+                health: st.health.get(&a.id).cloned().unwrap_or_else(|| Health::login_needed("not read yet")),
                 reading: st.readings.get(&a.id).cloned(),
                 holder: st.holders.get(&a.id).cloned(),
                 expires_at: st.expires_at.get(&a.id).copied(),
@@ -505,10 +458,7 @@ impl<D: Deps> Coordinator<D> {
             chrome: st.chrome.clone(),
             sessions: st.sessions.clone(),
             notices: st.notices.clone(),
-            sign_in: st.signing.as_ref().map(|s| SignInState {
-                account_id: s.account_id.clone(),
-                since: s.since,
-            }),
+            sign_in: st.signing.as_ref().map(|s| SignInState { account_id: s.account_id.clone(), since: s.since }),
         }
     }
 
@@ -531,11 +481,7 @@ impl<D: Deps> Coordinator<D> {
                 return;
             }
         }
-        let wait = if ms.is_finite() {
-            (ms.max(0.0) as Ms).min(MAX_WAIT_MS)
-        } else {
-            0
-        };
+        let wait = if ms.is_finite() { (ms.max(0.0) as Ms).min(MAX_WAIT_MS) } else { 0 };
         tokio::select! {
             _ = rx.changed() => {}
             _ = self.deps().sleep(wait) => {}
@@ -543,9 +489,7 @@ impl<D: Deps> Coordinator<D> {
     }
 
     fn need(st: &St, id: &str) -> Result<Account, HttpError> {
-        st.find(id)
-            .cloned()
-            .ok_or_else(|| err(404, format!("No Claude account {id}.")))
+        st.find(id).cloned().ok_or_else(|| err(404, format!("No Claude account {id}.")))
     }
 
     fn update_account(&self, st: &mut St, id: &str, change: &Identity) {
@@ -573,9 +517,7 @@ impl<D: Deps> Coordinator<D> {
             let name = label(st.find(id));
             self.add_notice(
                 st,
-                format!(
-                    "Claude account {name} needs a sign-in ({why}). Click ⚠{id} under the prompt."
-                ),
+                format!("Claude account {name} needs a sign-in ({why}). Click ⚠{id} under the prompt."),
                 true,
                 Some(id),
             );
@@ -649,18 +591,10 @@ impl<D: Deps> Coordinator<D> {
 
     /// Re-reads one login, one check at a time per login: a fresh check waiting on a running one goes again after it.
     pub async fn check(&self, id: &str, usage: Usage) {
-        let running = self
-            .inner
-            .inflight
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(id)
-            .cloned();
+        let running = self.inner.inflight.lock().unwrap_or_else(|e| e.into_inner()).get(id).cloned();
         if let Some(running) = running {
             running.await;
-            if usage == Usage::Poll
-                || !self.wants_usage(&self.st(), id, Usage::Fresh, self.deps().now())
-            {
+            if usage == Usage::Poll || !self.wants_usage(&self.st(), id, Usage::Fresh, self.deps().now()) {
                 return;
             }
         }
@@ -669,50 +603,28 @@ impl<D: Deps> Coordinator<D> {
         // Run as its own task, so a client that hangs up doesn't leave the check half done.
         let handle = tokio::spawn(async move {
             me.run_check(&key, usage).await;
-            me.inner
-                .inflight
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .remove(&key);
+            me.inner.inflight.lock().unwrap_or_else(|e| e.into_inner()).remove(&key);
         });
         let run = async move {
             let _ = handle.await;
         }
         .boxed()
         .shared();
-        self.inner
-            .inflight
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(id.to_string(), run.clone());
+        self.inner.inflight.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_string(), run.clone());
         run.await;
     }
 
     /// Whether to have Claude Code refresh a login's expired token: only while no session is on it, and a failed
     /// try waits REFRESH_RETRY_MS.
-    fn wants_refresh(
-        &self,
-        st: &St,
-        id: &str,
-        credential: &Credential,
-        usage: Usage,
-        now: Ms,
-    ) -> bool {
+    fn wants_refresh(&self, st: &St, id: &str, credential: &Credential, usage: Usage, now: Ms) -> bool {
         credential.expires_at <= now + 60_000
             && st.session_count(id) == 0
             && self.wants_usage(st, id, usage, now)
-            && st
-                .refresh_tried_at
-                .get(id)
-                .is_none_or(|&at| now - at >= REFRESH_RETRY_MS)
+            && st.refresh_tried_at.get(id).is_none_or(|&at| now - at >= REFRESH_RETRY_MS)
     }
 
     fn wants_usage(&self, st: &St, id: &str, usage: Usage, now: Ms) -> bool {
-        let most = if usage == Usage::Fresh {
-            FRESH_MS
-        } else {
-            POLL_MS
-        };
+        let most = if usage == Usage::Fresh { FRESH_MS } else { POLL_MS };
         let read_at = st.readings.get(id).map_or(0, |r| r.at);
         let asked_at = st.usage_at.get(id).copied().unwrap_or(0);
         if now < st.backoff.get(id).map_or(0, |b| b.0) {
@@ -753,8 +665,7 @@ impl<D: Deps> Coordinator<D> {
         let refresh = {
             let mut st = self.st();
             let wants = credential.as_ref().is_some_and(|c| {
-                matches!(health_of(Some(c), now), Health::Ok { .. })
-                    && self.wants_refresh(&st, id, c, usage, now)
+                matches!(health_of(Some(c), now), Health::Ok { .. }) && self.wants_refresh(&st, id, c, usage, now)
             });
             if wants {
                 st.refresh_tried_at.insert(id.to_string(), now);
@@ -763,9 +674,7 @@ impl<D: Deps> Coordinator<D> {
         };
         if refresh {
             if !self.deps().refresh_token(&account.slot).await {
-                self.deps().log(&format!(
-                    "account {id}: Claude Code could not refresh its expired sign-in"
-                ));
+                self.deps().log(&format!("account {id}: Claude Code could not refresh its expired sign-in"));
             }
             let again = self.deps().read_stored(&account.slot).await;
             if self.st().find(id).is_none() {
@@ -804,12 +713,8 @@ impl<D: Deps> Coordinator<D> {
                         health = Health::login_needed("sign-in rejected");
                         st.backoff.remove(id);
                     }
-                    UsageAnswer::Failed {
-                        status,
-                        retry_after_ms,
-                    } => {
-                        let doubled = (st.backoff.get(id).map_or(BACKOFF_MS / 2, |b| b.1) * 2)
-                            .min(MAX_BACKOFF_MS);
+                    UsageAnswer::Failed { status, retry_after_ms } => {
+                        let doubled = (st.backoff.get(id).map_or(BACKOFF_MS / 2, |b| b.1) * 2).min(MAX_BACKOFF_MS);
                         let delay = retry_after_ms.unwrap_or(0).max(doubled);
                         st.backoff.insert(id.to_string(), (now + delay, delay));
                         self.deps().log(&format!(
@@ -847,18 +752,8 @@ impl<D: Deps> Coordinator<D> {
     }
 
     /// Who a login's sign-in belongs to: as answered for its token before, else asked while the token is live.
-    async fn holder_of(
-        &self,
-        account: &Account,
-        credential: &Credential,
-        is_live: bool,
-    ) -> Option<Holder> {
-        let token = fingerprint(
-            credential
-                .refresh_token
-                .as_deref()
-                .unwrap_or(&credential.access_token),
-        );
+    async fn holder_of(&self, account: &Account, credential: &Credential, is_live: bool) -> Option<Holder> {
+        let token = fingerprint(credential.refresh_token.as_deref().unwrap_or(&credential.access_token));
         // One answered before the profile's account UUID was kept is asked again while the token is live.
         if let Some(known) = self
             .st()
@@ -877,13 +772,7 @@ impl<D: Deps> Coordinator<D> {
         if who.email.is_none() || st.find(&account.id).is_none() {
             return None;
         }
-        let holder = Holder {
-            token,
-            who: Identity {
-                plan: credential.plan.clone().or(who.plan.clone()),
-                ..who
-            },
-        };
+        let holder = Holder { token, who: Identity { plan: credential.plan.clone().or(who.plan.clone()), ..who } };
         st.holders.insert(account.id.clone(), holder.clone());
         self.changed(&mut st);
         Some(holder)
@@ -894,12 +783,7 @@ impl<D: Deps> Coordinator<D> {
     fn follow_sign_in(&self, st: &mut St, id: &str, who: &Identity) -> Option<Account> {
         let own = st.find(id)?.clone();
         let is_same = own.email.is_none() || is_login_of(&own.identity(), who);
-        if !is_same
-            && let Some(twin) = st
-                .accounts
-                .iter()
-                .find(|a| a.id != own.id && is_login_of(&a.identity(), who))
-        {
+        if !is_same && let Some(twin) = st.accounts.iter().find(|a| a.id != own.id && is_login_of(&a.identity(), who)) {
             return Some(twin.clone());
         }
         let followed = own.with(who);
@@ -912,10 +796,7 @@ impl<D: Deps> Coordinator<D> {
                 _ => followed.email.clone().unwrap_or_default(),
             };
             let text = if own.slot.is_empty() {
-                format!(
-                    "Claude Code's login, account {}, is {name} now: new sessions start on it.",
-                    own.id
-                )
+                format!("Claude Code's login, account {}, is {name} now: new sessions start on it.", own.id)
             } else {
                 format!(
                     "Claude account {} is {name} now: a /login in a session on account {} signs in there, not Claude Code's login.",
@@ -935,17 +816,10 @@ impl<D: Deps> Coordinator<D> {
         let now = self.deps().now();
         let mut st = self.st();
         let r = st.readings.get(id).cloned();
-        if matches!(st.health.get(id), Some(Health::LoginNeeded { .. }))
-            || is_spent(r.as_ref(), now, scope)
-        {
+        if matches!(st.health.get(id), Some(Health::LoginNeeded { .. })) || is_spent(r.as_ref(), now, scope) {
             return Ok(());
         }
-        self.put_reading(
-            &mut st,
-            id,
-            spent_reading(r.as_ref(), now, scope),
-            ReadingSource::Session,
-        );
+        self.put_reading(&mut st, id, spent_reading(r.as_ref(), now, scope), ReadingSource::Session);
         Ok(())
     }
 
@@ -970,25 +844,14 @@ impl<D: Deps> Coordinator<D> {
 
     // ------------------------------------------------------------ sessions
 
-    pub fn register(
-        &self,
-        id: &str,
-        pid: Option<i64>,
-        slot: &str,
-        cwd: Option<&str>,
-        is_interactive: bool,
-    ) -> String {
+    pub fn register(&self, id: &str, pid: Option<i64>, slot: &str, cwd: Option<&str>, is_interactive: bool) -> String {
         let now = self.deps().now();
         let mut st = self.st();
         let account_id = match st.accounts.iter().find(|a| a.slot == slot) {
             Some(a) => a.id.clone(),
             None => {
                 // Started on a slot nobody registered (set by hand, or by another tool): adopt it.
-                let account = Account {
-                    id: free_id(&st.accounts),
-                    slot: slot.to_string(),
-                    ..Default::default()
-                };
+                let account = Account { id: free_id(&st.accounts), slot: slot.to_string(), ..Default::default() };
                 let new_id = account.id.clone();
                 st.accounts.push(account);
                 let me = self.clone();
@@ -1044,13 +907,7 @@ impl<D: Deps> Coordinator<D> {
             next.is_pending = p;
         }
         next.last_seen = now;
-        let differs = SessionInfo {
-            last_seen: 0,
-            ..before
-        } != SessionInfo {
-            last_seen: 0,
-            ..next.clone()
-        };
+        let differs = SessionInfo { last_seen: 0, ..before } != SessionInfo { last_seen: 0, ..next.clone() };
         st.sessions[i] = next;
         if differs {
             self.changed(&mut st);
@@ -1090,12 +947,7 @@ impl<D: Deps> Coordinator<D> {
     pub fn poll_closed(&self, id: &str) {
         {
             let mut st = self.st();
-            let open = st
-                .open_polls
-                .get(id)
-                .copied()
-                .unwrap_or(1)
-                .saturating_sub(1);
+            let open = st.open_polls.get(id).copied().unwrap_or(1).saturating_sub(1);
             if open == 0 {
                 st.open_polls.remove(id);
             } else {
@@ -1114,8 +966,8 @@ impl<D: Deps> Coordinator<D> {
             .sessions
             .iter()
             .filter(|s| {
-                let is_quiet = st.open_polls.get(&s.id).copied().unwrap_or(0) == 0
-                    && now - s.last_seen > STALE_SESSION_MS;
+                let is_quiet =
+                    st.open_polls.get(&s.id).copied().unwrap_or(0) == 0 && now - s.last_seen > STALE_SESSION_MS;
                 match s.pid {
                     None => is_quiet,
                     Some(pid) => !self.deps().is_alive(pid),
@@ -1140,13 +992,8 @@ impl<D: Deps> Coordinator<D> {
         let slot = self.deps().make_slot(&id).await.map_err(|e| err(500, e))?;
         {
             let mut st = self.st();
-            st.accounts.push(Account {
-                id: id.clone(),
-                slot,
-                ..Default::default()
-            });
-            st.health
-                .insert(id.clone(), Health::login_needed("not signed in yet"));
+            st.accounts.push(Account { id: id.clone(), slot, ..Default::default() });
+            st.health.insert(id.clone(), Health::login_needed("not signed in yet"));
             self.changed(&mut st);
         }
         self.queue_sign_in(vec![id.clone()]);
@@ -1186,11 +1033,7 @@ impl<D: Deps> Coordinator<D> {
                 let Some(account) = st.find(&id).cloned() else {
                     continue;
                 };
-                let cancel = st
-                    .signing
-                    .as_ref()
-                    .filter(|s| s.account_id == id)
-                    .map(|s| s.cancel.clone());
+                let cancel = st.signing.as_ref().filter(|s| s.account_id == id).map(|s| s.cancel.clone());
                 st.sign_queue.retain(|x| x != &id);
                 (account, cancel)
             };
@@ -1212,12 +1055,7 @@ impl<D: Deps> Coordinator<D> {
             if st.chrome.miss.as_deref() == Some(&id) {
                 st.chrome.miss = None;
             }
-            self.add_notice(
-                &mut st,
-                format!("Removed Claude account {}.", label(Some(&account))),
-                false,
-                None,
-            );
+            self.add_notice(&mut st, format!("Removed Claude account {}.", label(Some(&account))), false, None);
         }
     }
 
@@ -1283,13 +1121,8 @@ impl<D: Deps> Coordinator<D> {
             let since = self.deps().now();
             // The child opens the browser itself; its paste-a-code link goes unread.
             let run = self.deps().sign_in(&account.slot, account.email.as_deref());
-            st.signing = Some(Signing {
-                account_id: account.id.clone(),
-                since,
-                cancel: run.cancel.clone(),
-            });
-            st.health
-                .insert(account.id.clone(), Health::LoggingIn { since });
+            st.signing = Some(Signing { account_id: account.id.clone(), since, cancel: run.cancel.clone() });
+            st.health.insert(account.id.clone(), Health::LoggingIn { since });
             self.changed(&mut st);
             (account.id, run.done)
         };
@@ -1301,8 +1134,7 @@ impl<D: Deps> Coordinator<D> {
                 st.signing = None;
                 let is_listed = st.find(&id).is_some();
                 if is_listed {
-                    st.health
-                        .insert(id.clone(), Health::login_needed("sign-in not finished"));
+                    st.health.insert(id.clone(), Health::login_needed("sign-in not finished"));
                     me.changed(&mut st);
                     if code != Some(0) {
                         let errors = errors.trim();
@@ -1337,18 +1169,9 @@ impl<D: Deps> Coordinator<D> {
         {
             let mut st = self.st();
             if let Some(who) = &who {
-                if let Some(twin) = st
-                    .accounts
-                    .iter()
-                    .find(|a| a.id != id && same_login(&a.identity(), who))
-                    .cloned()
-                {
+                if let Some(twin) = st.accounts.iter().find(|a| a.id != id && same_login(&a.identity(), who)).cloned() {
                     let name = label(Some(&twin));
-                    self.set_health(
-                        &mut st,
-                        id,
-                        Health::login_needed(format!("that was account {name} again")),
-                    );
+                    self.set_health(&mut st, id, Health::login_needed(format!("that was account {name} again")));
                     self.add_notice(
                         &mut st,
                         format!("Claude account {id} signed in as account {name}. Sign out of claude.ai in your browser (or pick another organization), then sign in again."),
@@ -1359,13 +1182,7 @@ impl<D: Deps> Coordinator<D> {
                 }
                 self.update_account(&mut st, id, who);
             }
-            self.set_health(
-                &mut st,
-                id,
-                Health::Ok {
-                    refresh_expires_at: None,
-                },
-            );
+            self.set_health(&mut st, id, Health::Ok { refresh_expires_at: None });
         }
         self.check(id, Usage::Fresh).await;
     }
@@ -1379,10 +1196,7 @@ impl<D: Deps> Coordinator<D> {
             match v.as_str() {
                 Some(s) if ROTATE_TOS.contains(&s) => settings.rotate_to = s.to_string(),
                 _ => {
-                    return Err(err(
-                        400,
-                        format!("rotateTo is one of {}.", ROTATE_TOS.join(", ")),
-                    ));
+                    return Err(err(400, format!("rotateTo is one of {}.", ROTATE_TOS.join(", "))));
                 }
             }
         }
@@ -1412,10 +1226,8 @@ impl<D: Deps> Coordinator<D> {
             _ => {}
         }
         if let Some(seen) = patch.get("seen").and_then(Value::as_object)
-            && let (Some(id), Some(is_seen)) = (
-                seen.get("accountId").and_then(Value::as_str),
-                seen.get("isSeen").and_then(Value::as_bool),
-            )
+            && let (Some(id), Some(is_seen)) =
+                (seen.get("accountId").and_then(Value::as_str), seen.get("isSeen").and_then(Value::as_bool))
         {
             if is_seen {
                 let id = Self::need(&st, id)?.id;
@@ -1441,11 +1253,7 @@ impl<D: Deps> Coordinator<D> {
 
     pub fn claim(&self, notice_id: u64, session_id: &str) -> bool {
         let mut st = self.st();
-        let notify = st
-            .notices
-            .iter()
-            .find(|n| n.id == notice_id)
-            .is_some_and(|n| n.notify);
+        let notify = st.notices.iter().find(|n| n.id == notice_id).is_some_and(|n| n.notify);
         if !notify || st.claims.contains_key(&notice_id) {
             return false;
         }
@@ -1459,25 +1267,14 @@ impl<D: Deps> Coordinator<D> {
     pub async fn handle(&self, req: Request) -> Response {
         match self.route(req).await {
             Ok(r) => r,
-            Err(e) => Response {
-                status: e.status,
-                body: json!({ "error": e.message }),
-                shutdown: false,
-            },
+            Err(e) => Response { status: e.status, body: json!({ "error": e.message }), shutdown: false },
         }
     }
 
     fn ok(&self, extra: Value) -> Result<Response, HttpError> {
         let mut body = extra.as_object().cloned().unwrap_or_default();
-        body.insert(
-            "state".into(),
-            serde_json::to_value(self.state()).unwrap_or(Value::Null),
-        );
-        Ok(Response {
-            status: 200,
-            body: Value::Object(body),
-            shutdown: false,
-        })
+        body.insert("state".into(), serde_json::to_value(self.state()).unwrap_or(Value::Null));
+        Ok(Response { status: 200, body: Value::Object(body), shutdown: false })
     }
 
     async fn route(&self, req: Request) -> Result<Response, HttpError> {
@@ -1497,15 +1294,9 @@ impl<D: Deps> Coordinator<D> {
         if let Some(s) = &session_id {
             self.seen(s);
         }
-        let has_id = matches!(
-            parts.first().map(String::as_str),
-            Some("accounts" | "sessions" | "notices")
-        );
-        let shape: Vec<&str> = parts
-            .iter()
-            .enumerate()
-            .map(|(i, p)| if i == 1 && has_id { ":id" } else { p.as_str() })
-            .collect();
+        let has_id = matches!(parts.first().map(String::as_str), Some("accounts" | "sessions" | "notices"));
+        let shape: Vec<&str> =
+            parts.iter().enumerate().map(|(i, p)| if i == 1 && has_id { ":id" } else { p.as_str() }).collect();
         let route = format!("{} /{}", req.method, shape.join("/"));
         let id = parts.get(1).cloned().unwrap_or_default();
         let s = |k: &str| b.get(k).and_then(Value::as_str);
@@ -1515,19 +1306,14 @@ impl<D: Deps> Coordinator<D> {
                 if let Some(o) = body.as_object_mut() {
                     o.insert("name".into(), json!(super::NAME));
                 }
-                Ok(Response {
-                    status: 200,
-                    body,
-                    shutdown: false,
-                })
+                Ok(Response { status: 200, body, shutdown: false })
             }
             "GET /state" => {
                 if let Some(since) = req.query.get("since") {
                     let since = js_number(since);
                     if since.is_finite() {
                         let wait = js_number(req.query.get("wait").map_or("0", String::as_str));
-                        self.wait_for_change(since, if wait.is_nan() { 0.0 } else { wait })
-                            .await;
+                        self.wait_for_change(since, if wait.is_nan() { 0.0 } else { wait }).await;
                     }
                 }
                 Ok(Response {
@@ -1541,13 +1327,8 @@ impl<D: Deps> Coordinator<D> {
                     return Err(err(400, "A session needs an id and a slot."));
                 };
                 let pid = b.get("pid").and_then(Value::as_f64).map(|p| p as i64);
-                let account_id = self.register(
-                    sid,
-                    pid,
-                    slot,
-                    s("cwd"),
-                    b.get("isInteractive") == Some(&Value::Bool(true)),
-                );
+                let account_id =
+                    self.register(sid, pid, slot, s("cwd"), b.get("isInteractive") == Some(&Value::Bool(true)));
                 self.ok(json!({ "accountId": account_id }))
             }
             "PATCH /sessions/:id" => {
@@ -1561,11 +1342,7 @@ impl<D: Deps> Coordinator<D> {
             }
             "DELETE /sessions/:id" => {
                 self.drop_session(&id);
-                Ok(Response {
-                    status: 200,
-                    body: json!({ "ok": true }),
-                    shutdown: false,
-                })
+                Ok(Response { status: 200, body: json!({ "ok": true }), shutdown: false })
             }
             "POST /readings" => {
                 let reading = b.get("reading").and_then(reading_from_client);
@@ -1576,8 +1353,7 @@ impl<D: Deps> Coordinator<D> {
                 self.ok(json!({}))
             }
             "POST /accounts/:id/spent" => {
-                self.spent(&id, s("model").filter(|m| !m.is_empty()))
-                    .await?;
+                self.spent(&id, s("model").filter(|m| !m.is_empty())).await?;
                 self.ok(json!({}))
             }
             "POST /accounts/:id/rejected" => {
@@ -1586,11 +1362,7 @@ impl<D: Deps> Coordinator<D> {
             }
             "POST /accounts/:id/check" => {
                 Self::need(&self.st(), &id)?;
-                let usage = if b.get("fresh") == Some(&Value::Bool(true)) {
-                    Usage::Fresh
-                } else {
-                    Usage::Poll
-                };
+                let usage = if b.get("fresh") == Some(&Value::Bool(true)) { Usage::Fresh } else { Usage::Poll };
                 self.check(&id, usage).await;
                 self.ok(json!({}))
             }
@@ -1627,19 +1399,10 @@ impl<D: Deps> Coordinator<D> {
                     return Err(err(400, "A claim needs a sessionId."));
                 };
                 let n = js_number(&id);
-                let claimed =
-                    n.is_finite() && n >= 0.0 && n.fract() == 0.0 && self.claim(n as u64, session);
-                Ok(Response {
-                    status: 200,
-                    body: json!({ "claimed": claimed }),
-                    shutdown: false,
-                })
+                let claimed = n.is_finite() && n >= 0.0 && n.fract() == 0.0 && self.claim(n as u64, session);
+                Ok(Response { status: 200, body: json!({ "claimed": claimed }), shutdown: false })
             }
-            "POST /shutdown" => Ok(Response {
-                status: 200,
-                body: json!({ "ok": true }),
-                shutdown: true,
-            }),
+            "POST /shutdown" => Ok(Response { status: 200, body: json!({ "ok": true }), shutdown: true }),
             _ => Err(err(404, format!("No {} {}.", req.method, req.path))),
         }
     }
@@ -1652,28 +1415,18 @@ fn load(st: &mut St, p: &Value) {
         .and_then(Value::as_array)
         .map(|a| {
             a.iter()
-                .filter(|a| {
-                    a.get("id").is_some_and(Value::is_string)
-                        && a.get("slot").is_some_and(Value::is_string)
-                })
+                .filter(|a| a.get("id").is_some_and(Value::is_string) && a.get("slot").is_some_and(Value::is_string))
                 .filter_map(|a| serde_json::from_value(a.clone()).ok())
                 .collect()
         })
         .unwrap_or_default();
     let ids: BTreeSet<String> = accounts.iter().map(|a| a.id.clone()).collect();
-    fn keep<T: for<'de> Deserialize<'de>>(
-        v: Option<&Value>,
-        ids: &BTreeSet<String>,
-    ) -> BTreeMap<String, T> {
+    fn keep<T: for<'de> Deserialize<'de>>(v: Option<&Value>, ids: &BTreeSet<String>) -> BTreeMap<String, T> {
         v.and_then(Value::as_object)
             .map(|o| {
                 o.iter()
                     .filter(|(k, _)| ids.contains(*k))
-                    .filter_map(|(k, v)| {
-                        serde_json::from_value(v.clone())
-                            .ok()
-                            .map(|v| (k.clone(), v))
-                    })
+                    .filter_map(|(k, v)| serde_json::from_value(v.clone()).ok().map(|v| (k.clone(), v)))
                     .collect()
             })
             .unwrap_or_default()
@@ -1696,18 +1449,9 @@ fn load(st: &mut St, p: &Value) {
         account_ids: chrome
             .and_then(|c| c.get("accountIds"))
             .and_then(Value::as_array)
-            .map(|a| {
-                a.iter()
-                    .filter_map(Value::as_str)
-                    .filter(|id| ids.contains(*id))
-                    .map(str::to_string)
-                    .collect()
-            })
+            .map(|a| a.iter().filter_map(Value::as_str).filter(|id| ids.contains(*id)).map(str::to_string).collect())
             .unwrap_or_default(),
-        miss: chrome
-            .and_then(|c| c.get("miss"))
-            .and_then(Value::as_str)
-            .map(str::to_string),
+        miss: chrome.and_then(|c| c.get("miss")).and_then(Value::as_str).map(str::to_string),
     };
     st.accounts = accounts;
 }

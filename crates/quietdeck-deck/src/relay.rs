@@ -46,7 +46,13 @@ pub fn target_of(row: &SessionRow) -> DeliveryTarget {
 }
 
 /// Deliver to a session found by address.
-pub async fn send(db: &Db, hub: &Hub, address: &str, kind: DeliveryKind, body: String) -> Result<Delivered, DeliveryError> {
+pub async fn send(
+    db: &Db,
+    hub: &Hub,
+    address: &str,
+    kind: DeliveryKind,
+    body: String,
+) -> Result<Delivered, DeliveryError> {
     let row = find_target(db, hub, address).await?;
     deliver_to(db, hub, &row, kind, body).await
 }

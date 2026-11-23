@@ -9,9 +9,7 @@ use std::time::Duration;
 
 use jiff::{SignedDuration, Timestamp};
 use quietdeck_types::AgentStatus;
-use quietdeck_types::summary::{
-    RecordOrigin, SessionFacts, SessionSignal, SummaryEvent, SummaryPeriod,
-};
+use quietdeck_types::summary::{RecordOrigin, SessionFacts, SessionSignal, SummaryEvent, SummaryPeriod};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
@@ -36,8 +34,7 @@ fn auckland() -> jiff::tz::TimeZone {
 #[test]
 fn reads_the_fixtures_as_claude_summarizer_does() {
     let dir = fixtures();
-    let expected: Value =
-        serde_json::from_slice(&std::fs::read(dir.join("expected.json")).unwrap()).unwrap();
+    let expected: Value = serde_json::from_slice(&std::fs::read(dir.join("expected.json")).unwrap()).unwrap();
     let home = dir.join("home");
     let roots = Roots {
         claude_projects: home.join(".claude/projects"),
@@ -46,16 +43,8 @@ fn reads_the_fixtures_as_claude_summarizer_does() {
     };
     let mut sources = transcript::discover(&roots, std::time::UNIX_EPOCH);
     sources.sort_by(|a, b| a.path.cmp(&b.path));
-    let rels: Vec<String> = sources
-        .iter()
-        .map(|s| {
-            s.path
-                .strip_prefix(&dir)
-                .unwrap()
-                .to_string_lossy()
-                .into_owned()
-        })
-        .collect();
+    let rels: Vec<String> =
+        sources.iter().map(|s| s.path.strip_prefix(&dir).unwrap().to_string_lossy().into_owned()).collect();
     let mut want: Vec<String> = expected.as_object().unwrap().keys().cloned().collect();
     want.sort();
     assert_eq!(rels, want, "the same transcripts, and no subagent files");
@@ -64,26 +53,17 @@ fn reads_the_fixtures_as_claude_summarizer_does() {
         let exp = &expected[rel];
         let res = transcript::read(source, 0, "/Users/sam").unwrap();
         assert_eq!(res.skip.as_deref(), exp["skip"].as_str(), "{rel}");
-        assert_eq!(
-            res.session_id.as_deref(),
-            exp["session_id"].as_str(),
-            "{rel}"
-        );
+        assert_eq!(res.session_id.as_deref(), exp["session_id"].as_str(), "{rel}");
         assert_eq!(res.cwd.as_deref(), exp["cwd"].as_str(), "{rel}");
         assert_eq!(res.end, exp["end"].as_u64().unwrap(), "{rel}");
         // The one deliberate difference: messages from other sessions are kept here, dropped there.
-        let (peers, events): (Vec<_>, Vec<_>) =
-            res.events.into_iter().partition(|e| e.kind == Kind::Peer);
+        let (peers, events): (Vec<_>, Vec<_>) = res.events.into_iter().partition(|e| e.kind == Kind::Peer);
         let got: Vec<Value> = events
             .iter()
             .map(|e| json!({"kind": serde_json::to_value(e.kind).unwrap(), "text": e.text, "end": e.end}))
             .collect();
         assert_eq!(Value::Array(got), exp["events"], "{rel}");
-        assert_eq!(
-            condense::is_real(&events),
-            exp["is_real"].as_bool().unwrap(),
-            "{rel}"
-        );
+        assert_eq!(condense::is_real(&events), exp["is_real"].as_bool().unwrap(), "{rel}");
         if !events.is_empty() {
             assert_eq!(
                 condense::condense(&events, condense::BUDGET_CHARS, &auckland()),
@@ -98,10 +78,7 @@ fn reads_the_fixtures_as_claude_summarizer_does() {
         }
         if rel.contains("11111111") {
             assert_eq!(peers.len(), 1);
-            assert_eq!(
-                peers[0].text,
-                "Heads-up from billing: the export now includes credit notes."
-            );
+            assert_eq!(peers[0].text, "Heads-up from billing: the export now includes credit notes.");
         } else {
             assert!(peers.is_empty());
         }
@@ -121,16 +98,10 @@ struct Fake {
 
 impl Fake {
     fn new(answers: Vec<Result<Value, CallError>>) -> Arc<Fake> {
-        Arc::new(Fake {
-            answers: Mutex::new(answers.into()),
-            ..Default::default()
-        })
+        Arc::new(Fake { answers: Mutex::new(answers.into()), ..Default::default() })
     }
     fn slow(delay: Duration) -> Arc<Fake> {
-        Arc::new(Fake {
-            delay,
-            ..Default::default()
-        })
+        Arc::new(Fake { delay, ..Default::default() })
     }
     fn prompts(&self) -> Vec<String> {
         self.prompts.lock().unwrap().clone()
@@ -158,11 +129,7 @@ impl Model for Fake {
             }
             running.fetch_sub(1, Ordering::SeqCst);
             let value = answer.unwrap_or_else(|| {
-                if is_catchup {
-                    Ok(json!({"catchup": "Caught up."}))
-                } else {
-                    update("Default.")
-                }
+                if is_catchup { Ok(json!({"catchup": "Caught up."})) } else { update("Default.") }
             })?;
             Ok((
                 value,
@@ -193,11 +160,7 @@ fn home() -> Home {
     let home = dir.path().join("home");
     std::fs::create_dir_all(home.join(".claude/projects/-code-app")).unwrap();
     let state = dir.path().join("state");
-    Home {
-        home,
-        state,
-        _dir: dir,
-    }
+    Home { home, state, _dir: dir }
 }
 
 fn ts(ago_minutes: i64) -> String {
@@ -220,18 +183,13 @@ fn tool(sid: &str, name: &str, ago: i64) -> Value {
 }
 
 fn transcript_path(h: &Home, sid: &str) -> PathBuf {
-    h.home
-        .join(format!(".claude/projects/-code-app/{sid}.jsonl"))
+    h.home.join(format!(".claude/projects/-code-app/{sid}.jsonl"))
 }
 
 fn append(h: &Home, sid: &str, records: &[Value]) -> PathBuf {
     use std::io::Write;
     let path = transcript_path(h, sid);
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .unwrap();
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&path).unwrap();
     for r in records {
         writeln!(f, "{r}").unwrap();
     }
@@ -245,20 +203,10 @@ fn config(h: &Home) -> Config {
 }
 
 fn account() -> Account {
-    Account {
-        id: "3".into(),
-        slot: "/slots/3".into(),
-        email: "a@x".into(),
-        week_pct: 10.0,
-        resets_at: None,
-    }
+    Account { id: "3".into(), slot: "/slots/3".into(), email: "a@x".into(), week_pct: 10.0, resets_at: None }
 }
 
-fn engine(
-    h: &Home,
-    model: Arc<Fake>,
-    accounts: Accounts,
-) -> (Engine, mpsc::Receiver<SummaryEvent>) {
+fn engine(h: &Home, model: Arc<Fake>, accounts: Accounts) -> (Engine, mpsc::Receiver<SummaryEvent>) {
     let (tx, rx) = mpsc::channel(100);
     (Engine::new(config(h), model, accounts, tx).unwrap(), rx)
 }
@@ -272,27 +220,15 @@ fn drain(rx: &mut mpsc::Receiver<SummaryEvent>) -> Vec<SummaryEvent> {
 }
 
 fn offset(e: &Engine, path: &Path) -> u64 {
-    e.state
-        .lock()
-        .unwrap()
-        .files
-        .get(path)
-        .map(|f| f.offset)
-        .unwrap_or(0)
+    e.state.lock().unwrap().files.get(path).map(|f| f.offset).unwrap_or(0)
 }
 
 fn source(path: &Path) -> Source {
-    Source {
-        path: path.to_path_buf(),
-        agent: Agent::Claude,
-    }
+    Source { path: path.to_path_buf(), agent: Agent::Claude }
 }
 
 fn info() -> SessionInfo {
-    SessionInfo {
-        tab: Some("billing".into()),
-        ..Default::default()
-    }
+    SessionInfo { tab: Some("billing".into()), ..Default::default() }
 }
 
 // ---------------------------------------------------------------- the engine
@@ -300,45 +236,23 @@ fn info() -> SessionInfo {
 #[tokio::test]
 async fn a_pass_summarises_moves_the_offset_and_rewrites_the_page_next_time() {
     let h = home();
-    let path = append(
-        &h,
-        "s1",
-        &[
-            human("s1", "Fix the export", 30),
-            agent_text("s1", "Fixed it.", 29),
-        ],
-    );
+    let path = append(&h, "s1", &[human("s1", "Fix the export", 30), agent_text("s1", "Fixed it.", 29)]);
     let fake = Fake::new(vec![update("First."), Ok(json!({"status": "no_change"}))]);
     let (e, mut rx) = engine(&h, fake.clone(), Accounts::Fixed(Some(account())));
     let pass = e.process(&source(&path), info()).await.unwrap();
     assert_eq!((pass.calls, pass.updates), (1, 1));
     assert_eq!(offset(&e, &path), std::fs::metadata(&path).unwrap().len());
     let events = drain(&mut rx);
-    let SummaryEvent::Summary(r) = &events[0] else {
-        panic!("{events:?}")
-    };
-    assert_eq!(
-        (r.sentence.as_str(), r.session_id.as_str(), r.origin),
-        ("First.", "s1", RecordOrigin::Node)
-    );
-    assert!(
-        matches!(&r.period, SummaryPeriod::Hour(k) if k.len() == 13),
-        "{:?}",
-        r.period
-    );
+    let SummaryEvent::Summary(r) = &events[0] else { panic!("{events:?}") };
+    assert_eq!((r.sentence.as_str(), r.session_id.as_str(), r.origin), ("First.", "s1", RecordOrigin::Node));
+    assert!(matches!(&r.period, SummaryPeriod::Hour(k) if k.len() == 13), "{:?}", r.period);
     assert_eq!(r.tab.as_deref(), Some("billing"));
     assert!(matches!(events[1], SummaryEvent::Activity { .. }));
     let p = &fake.prompts()[0];
-    assert!(
-        p.contains("Current page: none yet") && p.contains("USER: Fix the export"),
-        "{p}"
-    );
+    assert!(p.contains("Current page: none yet") && p.contains("USER: Fix the export"), "{p}");
 
     // Nothing new: no call.
-    assert_eq!(
-        e.process(&source(&path), info()).await.unwrap(),
-        Default::default()
-    );
+    assert_eq!(e.process(&source(&path), info()).await.unwrap(), Default::default());
     // New activity: the page it wrote is the current page; no_change sends Activity only.
     append(&h, "s1", &[human("s1", "And the CSV too", 5)]);
     let pass = e.process(&source(&path), info()).await.unwrap();
@@ -356,14 +270,7 @@ async fn a_pass_summarises_moves_the_offset_and_rewrites_the_page_next_time() {
 #[tokio::test]
 async fn below_the_threshold_the_offset_moves_for_free() {
     let h = home();
-    let path = append(
-        &h,
-        "s1",
-        &[
-            tool("s1", "Bash", 10),
-            agent_text("s1", "Still waiting on CI.", 9),
-        ],
-    );
+    let path = append(&h, "s1", &[tool("s1", "Bash", 10), agent_text("s1", "Still waiting on CI.", 9)]);
     let fake = Fake::new(vec![]);
     let (e, mut rx) = engine(&h, fake.clone(), Accounts::Fixed(Some(account())));
     let pass = e.process(&source(&path), info()).await.unwrap();
@@ -384,18 +291,10 @@ async fn a_failing_chunk_is_retried_twice_then_skipped() {
         let pass = e.process(&source(&path), info()).await.unwrap();
         assert_eq!(pass.failures, 1);
         let st = e.state.lock().unwrap().files[&path].clone();
-        assert_eq!(
-            (st.offset, st.failures),
-            (0, n),
-            "the offset stays until a call succeeds"
-        );
+        assert_eq!((st.offset, st.failures), (0, n), "the offset stays until a call succeeds");
     }
     e.process(&source(&path), info()).await.unwrap();
-    assert_eq!(
-        offset(&e, &path),
-        std::fs::metadata(&path).unwrap().len(),
-        "skipped after three failures"
-    );
+    assert_eq!(offset(&e, &path), std::fs::metadata(&path).unwrap().len(), "skipped after three failures");
 }
 
 #[tokio::test]
@@ -404,25 +303,10 @@ async fn a_usage_limit_or_no_account_stops_without_moving_or_counting() {
     let path = append(&h, "s1", &[human("s1", "Go", 10)]);
     let fake = Fake::new(vec![Err(CallError::Limit("usage limit reached".into()))]);
     let (e, _rx) = engine(&h, fake.clone(), Accounts::Fixed(Some(account())));
-    assert!(matches!(
-        e.process(&source(&path), info()).await,
-        Err(Stop::Limit(_))
-    ));
-    assert_eq!(
-        e.state
-            .lock()
-            .unwrap()
-            .files
-            .get(&path)
-            .map(|f| (f.offset, f.failures))
-            .unwrap_or((0, 0)),
-        (0, 0)
-    );
+    assert!(matches!(e.process(&source(&path), info()).await, Err(Stop::Limit(_))));
+    assert_eq!(e.state.lock().unwrap().files.get(&path).map(|f| (f.offset, f.failures)).unwrap_or((0, 0)), (0, 0));
     let (e, _rx) = engine(&h, fake.clone(), Accounts::Fixed(None));
-    assert_eq!(
-        e.process(&source(&path), info()).await,
-        Err(Stop::NoAccount)
-    );
+    assert_eq!(e.process(&source(&path), info()).await, Err(Stop::NoAccount));
     assert_eq!(offset(&e, &path), 0);
 }
 
@@ -435,10 +319,7 @@ async fn headless_runs_are_skipped_for_good() {
     let fake = Fake::new(vec![]);
     let (e, _rx) = engine(&h, fake.clone(), Accounts::Fixed(Some(account())));
     e.process(&source(&path), info()).await.unwrap();
-    assert_eq!(
-        e.state.lock().unwrap().files[&path].skip.as_deref(),
-        Some("headless run (sdk-cli)")
-    );
+    assert_eq!(e.state.lock().unwrap().files[&path].skip.as_deref(), Some("headless run (sdk-cli)"));
     append(&h, "s9", &[human("s9", "more", 5)]);
     e.process(&source(&path), info()).await.unwrap();
     assert!(fake.prompts().is_empty());
@@ -463,36 +344,14 @@ async fn the_cap_holds_and_old_history_is_chunked_by_day_and_week() {
     assert_eq!(e.process(&source(&path), info()).await.unwrap().calls, 3);
     let periods: Vec<SummaryPeriod> = drain(&mut rx)
         .into_iter()
-        .filter_map(|e| {
-            if let SummaryEvent::Summary(r) = e {
-                Some(r.period)
-            } else {
-                None
-            }
-        })
+        .filter_map(|e| if let SummaryEvent::Summary(r) = e { Some(r.period) } else { None })
         .collect();
-    assert!(
-        matches!(periods[0], SummaryPeriod::Week(ref k) if k.contains("-W")),
-        "{periods:?}"
-    );
-    assert!(
-        matches!(periods[1], SummaryPeriod::Day(ref k) if k.len() == 10),
-        "{periods:?}"
-    );
+    assert!(matches!(periods[0], SummaryPeriod::Week(ref k) if k.contains("-W")), "{periods:?}");
+    assert!(matches!(periods[1], SummaryPeriod::Day(ref k) if k.len() == 10), "{periods:?}");
     assert!(matches!(periods[2], SummaryPeriod::Hour(_)), "{periods:?}");
     let last = &fake.prompts()[2];
-    let activity = last
-        .split_once("New activity (")
-        .unwrap()
-        .1
-        .split_once("):\n\n")
-        .unwrap()
-        .1;
-    assert!(
-        activity.trim_end().chars().count() <= 5_000,
-        "{}",
-        activity.chars().count()
-    );
+    let activity = last.split_once("New activity (").unwrap().1.split_once("):\n\n").unwrap().1;
+    assert!(activity.trim_end().chars().count() <= 5_000, "{}", activity.chars().count());
     assert!(activity.contains("399 "), "the newest message survives");
 }
 
@@ -509,11 +368,7 @@ fn facts(sid: &str) -> SessionFacts {
 }
 
 fn status(sid: &str, s: AgentStatus) -> SessionSignal {
-    SessionSignal::Status {
-        session: facts(sid),
-        status: s,
-        at: Timestamp::now(),
-    }
+    SessionSignal::Status { session: facts(sid), status: s, at: Timestamp::now() }
 }
 
 struct Running {
@@ -527,19 +382,8 @@ fn run(h: &Home, fake: &Arc<Fake>, sweep: bool) -> Running {
     let (etx, events) = mpsc::channel(1000);
     let mut c = config(h);
     c.sweep = sweep;
-    let handle = start(
-        c,
-        fake.clone(),
-        Accounts::Fixed(Some(account())),
-        srx,
-        etx,
-        true,
-    );
-    Running {
-        signals,
-        events,
-        handle,
-    }
+    let handle = start(c, fake.clone(), Accounts::Fixed(Some(account())), srx, etx, true);
+    Running { signals, events, handle }
 }
 
 async fn advance(secs: u64) {
@@ -560,18 +404,9 @@ async fn idle_for_a_minute_triggers_a_summary_and_blocked_never_does() {
     append(&h, "s2", &[human("s2", "Can I run this?", 5)]);
     let fake = Fake::new(vec![]);
     let r = run(&h, &fake, false);
-    r.signals
-        .send(status("s1", AgentStatus::Done))
-        .await
-        .unwrap();
-    r.signals
-        .send(status("s2", AgentStatus::Idle))
-        .await
-        .unwrap();
-    r.signals
-        .send(status("s2", AgentStatus::Blocked))
-        .await
-        .unwrap();
+    r.signals.send(status("s1", AgentStatus::Done)).await.unwrap();
+    r.signals.send(status("s2", AgentStatus::Idle)).await.unwrap();
+    r.signals.send(status("s2", AgentStatus::Blocked)).await.unwrap();
     advance(30).await;
     assert!(fake.prompts().is_empty(), "not before a minute");
     advance(40).await;
@@ -579,11 +414,7 @@ async fn idle_for_a_minute_triggers_a_summary_and_blocked_never_does() {
     assert_eq!(prompts.len(), 1);
     assert!(prompts[0].contains("session ID s1") && prompts[0].contains("tab \"tab s1\""));
     advance(3600).await;
-    assert_eq!(
-        fake.prompts().len(),
-        1,
-        "the blocked session is never summarised"
-    );
+    assert_eq!(fake.prompts().len(), 1, "the blocked session is never summarised");
     drop(r.handle);
 }
 
@@ -593,38 +424,20 @@ async fn working_inside_the_minute_cancels_and_an_idle_inside_the_gap_waits_for_
     append(&h, "s1", &[human("s1", "One", 5)]);
     let fake = Fake::new(vec![]);
     let r = run(&h, &fake, false);
-    r.signals
-        .send(status("s1", AgentStatus::Idle))
-        .await
-        .unwrap();
+    r.signals.send(status("s1", AgentStatus::Idle)).await.unwrap();
     advance(30).await;
-    r.signals
-        .send(status("s1", AgentStatus::Working))
-        .await
-        .unwrap();
+    r.signals.send(status("s1", AgentStatus::Working)).await.unwrap();
     advance(120).await;
     assert!(fake.prompts().is_empty());
-    r.signals
-        .send(status("s1", AgentStatus::Idle))
-        .await
-        .unwrap();
+    r.signals.send(status("s1", AgentStatus::Idle)).await.unwrap();
     advance(61).await;
     assert_eq!(fake.prompts().len(), 1);
     // Ten minutes on, more work and another idle: due 30 minutes after the first call, not dropped.
     advance(600).await;
     append(&h, "s1", &[human("s1", "Two", 1)]);
-    r.signals
-        .send(status("s1", AgentStatus::Working))
-        .await
-        .unwrap();
-    r.signals
-        .send(status("s1", AgentStatus::Idle))
-        .await
-        .unwrap();
-    r.signals
-        .send(status("s1", AgentStatus::Done))
-        .await
-        .unwrap();
+    r.signals.send(status("s1", AgentStatus::Working)).await.unwrap();
+    r.signals.send(status("s1", AgentStatus::Idle)).await.unwrap();
+    r.signals.send(status("s1", AgentStatus::Done)).await.unwrap();
     advance(600).await;
     assert_eq!(fake.prompts().len(), 1, "inside the gap");
     advance(660).await;
@@ -641,10 +454,7 @@ async fn at_most_two_calls_at_once() {
     let fake = Fake::slow(Duration::from_secs(15));
     let r = run(&h, &fake, false);
     for sid in ["s1", "s2", "s3", "s4"] {
-        r.signals
-            .send(status(sid, AgentStatus::Idle))
-            .await
-            .unwrap();
+        r.signals.send(status(sid, AgentStatus::Idle)).await.unwrap();
     }
     advance(62).await;
     assert_eq!(running_now(&fake), 2);
@@ -666,22 +476,13 @@ async fn the_start_up_sweep_takes_sessions_that_ended_and_leaves_running_ones() 
     append(&h, "bot", &[headless]);
     let fake = Fake::new(vec![]);
     let r = run(&h, &fake, true);
-    r.signals
-        .send(status("live", AgentStatus::Working))
-        .await
-        .unwrap();
+    r.signals.send(status("live", AgentStatus::Working)).await.unwrap();
     advance(35).await;
     let prompts = fake.prompts();
     assert_eq!(prompts.len(), 1, "{prompts:?}");
     assert!(prompts[0].contains("session ID ended"));
     // A close event: the session ended, so it's summarised after the idle minute.
-    r.signals
-        .send(SessionSignal::Closed {
-            session_id: "live".into(),
-            at: Timestamp::now(),
-        })
-        .await
-        .unwrap();
+    r.signals.send(SessionSignal::Closed { session_id: "live".into(), at: Timestamp::now() }).await.unwrap();
     advance(61).await;
     assert_eq!(fake.prompts().len(), 2);
 }
@@ -691,37 +492,18 @@ async fn the_start_up_sweep_takes_sessions_that_ended_and_leaves_running_ones() 
 #[tokio::test]
 async fn catchup_waits_when_nothing_is_cached_then_serves_stale_while_it_rewrites() {
     let h = home();
-    let mut compact = human(
-        "s1",
-        "This session is being continued from a previous conversation",
-        20,
-    );
+    let mut compact = human("s1", "This session is being continued from a previous conversation", 20);
     compact["isCompactSummary"] = json!(true);
     let mut wake = human("s1", "Continue: check CI", 15);
     wake["isMeta"] = json!(true);
     let path = append(
         &h,
         "s1",
-        &[
-            human("s1", "Ship sc-1234", 30),
-            compact,
-            wake,
-            agent_text("s1", "CI is green; PR #9 is ready.", 10),
-        ],
+        &[human("s1", "Ship sc-1234", 30), compact, wake, agent_text("s1", "CI is green; PR #9 is ready.", 10)],
     );
-    let fake = Fake::new(vec![
-        Ok(json!({"catchup": "PR #9 is ready."})),
-        Ok(json!({"catchup": "Merged."})),
-    ]);
+    let fake = Fake::new(vec![Ok(json!({"catchup": "PR #9 is ready."})), Ok(json!({"catchup": "Merged."}))]);
     let mut r = run(&h, &fake, false);
-    let c = r
-        .handle
-        .catchup(CatchupRequest {
-            session_id: "s1".into(),
-            transcript: Some(path.clone()),
-        })
-        .await
-        .unwrap();
+    let c = r.handle.catchup(CatchupRequest { session_id: "s1".into(), transcript: Some(path.clone()) }).await.unwrap();
     assert_eq!((c.text.as_str(), c.stale), ("PR #9 is ready.", false));
     assert_eq!(
         c.anchor.as_ref().unwrap().uuid.as_deref(),
@@ -731,28 +513,12 @@ async fn catchup_waits_when_nothing_is_cached_then_serves_stale_while_it_rewrite
     let p = &fake.prompts()[0];
     assert!(p.contains("Ship sc-1234") && p.contains("CI is green"));
     // Cached and fresh: no call.
-    assert!(
-        !r.handle
-            .catchup(CatchupRequest {
-                session_id: "s1".into(),
-                transcript: None
-            })
-            .await
-            .unwrap()
-            .stale
-    );
+    assert!(!r.handle.catchup(CatchupRequest { session_id: "s1".into(), transcript: None }).await.unwrap().stale);
     assert_eq!(fake.prompts().len(), 1);
     while r.events.try_recv().is_ok() {} // the first one's event
     // The transcript grew: the old text at once, stale, and the new one as an event.
     append(&h, "s1", &[agent_text("s1", "Merged PR #9.", 1)]);
-    let c = r
-        .handle
-        .catchup(CatchupRequest {
-            session_id: "s1".into(),
-            transcript: None,
-        })
-        .await
-        .unwrap();
+    let c = r.handle.catchup(CatchupRequest { session_id: "s1".into(), transcript: None }).await.unwrap();
     assert_eq!((c.text.as_str(), c.stale), ("PR #9 is ready.", true));
     let mut fresh = None;
     for _ in 0..200 {
@@ -779,15 +545,17 @@ async fn the_import_sends_every_update_and_keeps_claude_summarizers_offsets() {
     };
     std::fs::write(vault.join("ci/2026-10-23T23.md"), update("First.")).unwrap();
     std::fs::write(vault.join("ci/2026-10-24T09.md"), update("Second.")).unwrap();
-    std::fs::write(vault.join("index.json"), json!({"sessions": {"s1": {"agent": "claude", "folder": "ci", "tab": "ci", "transcripts": [path]}}}).to_string()).unwrap();
+    std::fs::write(
+        vault.join("index.json"),
+        json!({"sessions": {"s1": {"agent": "claude", "folder": "ci", "tab": "ci", "transcripts": [path]}}})
+            .to_string(),
+    )
+    .unwrap();
     let old = h.home.join(".local/state/claude-summarizer");
     std::fs::create_dir_all(&old).unwrap();
     let size = std::fs::metadata(&path).unwrap().len();
-    std::fs::write(
-        old.join("state.json"),
-        json!({"files": {path.to_string_lossy(): {"offset": size}}}).to_string(),
-    )
-    .unwrap();
+    std::fs::write(old.join("state.json"), json!({"files": {path.to_string_lossy(): {"offset": size}}}).to_string())
+        .unwrap();
 
     let fake = Fake::new(vec![]);
     let mut r = run(&h, &fake, false);
@@ -799,19 +567,10 @@ async fn the_import_sends_every_update_and_keeps_claude_summarizers_offsets() {
     }
     assert_eq!(sentences, ["First.", "Second."]);
     // Nothing claude-summarizer already read is summarised again.
-    let pass = r
-        .handle
-        .engine
-        .process(&source(&path), info())
-        .await
-        .unwrap();
+    let pass = r.handle.engine.process(&source(&path), info()).await.unwrap();
     assert_eq!(pass.calls, 0);
     append(&h, "s1", &[human("s1", "New work", 1)]);
-    r.handle
-        .engine
-        .process(&source(&path), info())
-        .await
-        .unwrap();
+    r.handle.engine.process(&source(&path), info()).await.unwrap();
     let p = &fake.prompts()[0];
     assert!(
         p.contains("Current page (written 2026-10-24T09)")
@@ -863,8 +622,7 @@ fn claude_summarizer_was_here(h: &Home, sid: &str, read_to: u64) {
     std::fs::create_dir_all(&old).unwrap();
     std::fs::write(
         old.join("state.json"),
-        json!({"files": {transcript_path(h, sid).to_string_lossy(): {"offset": read_to}}})
-            .to_string(),
+        json!({"files": {transcript_path(h, sid).to_string_lossy(): {"offset": read_to}}}).to_string(),
     )
     .unwrap();
 }
@@ -872,46 +630,22 @@ fn claude_summarizer_was_here(h: &Home, sid: &str, read_to: u64) {
 #[tokio::test(start_paused = true)]
 async fn on_start_it_adopts_claude_summarizers_offsets_without_any_import() {
     let h = home();
-    let path = append(
-        &h,
-        "s1",
-        &[
-            human("s1", "Weeks of old work", 60 * 24 * 40),
-            human("s1", "Already summarised", 60),
-        ],
-    );
+    let path =
+        append(&h, "s1", &[human("s1", "Weeks of old work", 60 * 24 * 40), human("s1", "Already summarised", 60)]);
     claude_summarizer_was_here(&h, "s1", std::fs::metadata(&path).unwrap().len());
     append(&h, "s1", &[human("s1", "New since then", 5)]);
-    append(
-        &h,
-        "ended",
-        &[human("ended", "Not in claude-summarizer's state", 50)],
-    );
+    append(&h, "ended", &[human("ended", "Not in claude-summarizer's state", 50)]);
     let fake = Fake::new(vec![]);
     let r = run(&h, &fake, true);
-    r.signals
-        .send(status("s1", AgentStatus::Idle))
-        .await
-        .unwrap();
+    r.signals.send(status("s1", AgentStatus::Idle)).await.unwrap();
     advance(65).await;
     let prompts = fake.prompts();
-    let s1: Vec<&String> = prompts
-        .iter()
-        .filter(|p| p.contains("session ID s1"))
-        .collect();
-    assert_eq!(
-        s1.len(),
-        1,
-        "one call, for the new activity only: {prompts:?}"
-    );
+    let s1: Vec<&String> = prompts.iter().filter(|p| p.contains("session ID s1")).collect();
+    assert_eq!(s1.len(), 1, "one call, for the new activity only: {prompts:?}");
     assert!(
-        s1[0].contains("New since then")
-            && !s1[0].contains("Already summarised")
-            && !s1[0].contains("Weeks of old")
+        s1[0].contains("New since then") && !s1[0].contains("Already summarised") && !s1[0].contains("Weeks of old")
     );
-    assert!(
-        s1[0].contains("Current page (written 2026-11-20T10)") && s1[0].contains("The old page.")
-    );
+    assert!(s1[0].contains("Current page (written 2026-11-20T10)") && s1[0].contains("The old page."));
     // The sweep runs as usual for what claude-summarizer never read.
     assert!(prompts.iter().any(|p| p.contains("session ID ended")));
     // Nothing was sent to the deck for the history: that's the import's job.
@@ -938,15 +672,11 @@ async fn the_import_after_adopting_still_sends_the_history_and_sweeps() {
     let vault = h.home.join(".local/share/claude-summarizer");
     assert_eq!(r.handle.import_claude_summarizer(vault).await.unwrap(), 1);
     match r.events.try_recv() {
-        Ok(SummaryEvent::Summary(rec)) => assert_eq!(
-            (rec.origin, rec.sentence.as_str()),
-            (RecordOrigin::ClaudeSummarizer, "S.")
-        ),
+        Ok(SummaryEvent::Summary(rec)) => {
+            assert_eq!((rec.origin, rec.sentence.as_str()), (RecordOrigin::ClaudeSummarizer, "S."))
+        }
         other => panic!("{other:?}"),
     }
     advance(2).await;
-    assert!(
-        fake.prompts().is_empty(),
-        "claude-summarizer had read it all"
-    );
+    assert!(fake.prompts().is_empty(), "claude-summarizer had read it all");
 }

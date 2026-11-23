@@ -1,7 +1,7 @@
 //! Sessions: one agent conversation (a Claude Code or Codex session) on one node, usually in a herdr pane.
 
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// Which harness runs the session.

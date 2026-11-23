@@ -77,9 +77,7 @@ pub enum Accounts {
 impl Accounts {
     async fn pick(&self) -> Result<Option<Account>, String> {
         match self {
-            Accounts::Coordinator(socket) => accounts::pick(socket, Timestamp::now())
-                .await
-                .map_err(|e| e.to_string()),
+            Accounts::Coordinator(socket) => accounts::pick(socket, Timestamp::now()).await.map_err(|e| e.to_string()),
             Accounts::Fixed(a) => Ok(a.clone()),
         }
     }
@@ -125,9 +123,7 @@ pub struct Engine {
 
 /// The local hour, floored: `2026-11-23T14`.
 pub fn hour_name(ts: Timestamp, tz: &TimeZone) -> String {
-    ts.to_zoned_datetime(tz.clone())
-        .strftime("%Y-%m-%dT%H")
-        .to_string()
+    ts.to_zoned_datetime(tz.clone()).strftime("%Y-%m-%dT%H").to_string()
 }
 
 /// The timeline point a chunk becomes: its ISO week when it's older than the day chunks, its day when it's a day before
@@ -165,13 +161,7 @@ impl Engine {
         sink: mpsc::Sender<SummaryEvent>,
     ) -> std::io::Result<Engine> {
         let state = State::load(&config.state_file)?;
-        Ok(Engine {
-            config,
-            model,
-            accounts,
-            state: Mutex::new(state),
-            sink,
-        })
+        Ok(Engine { config, model, accounts, state: Mutex::new(state), sink })
     }
 
     pub(crate) async fn accounts_pick(&self) -> Result<Option<Account>, Stop> {
@@ -181,10 +171,7 @@ impl Engine {
     pub fn save(&self) {
         let state = self.state.lock().expect("state lock").clone();
         if let Err(e) = state.save(&self.config.state_file) {
-            tracing::error!(
-                "summaries: can't save {}: {e}",
-                self.config.state_file.display()
-            );
+            tracing::error!("summaries: can't save {}: {e}", self.config.state_file.display());
         }
     }
 
@@ -212,13 +199,11 @@ impl Engine {
                 }
             }
             Agent::Codex => {
-                let cutoff = std::time::SystemTime::now()
-                    - Duration::from_secs(self.config.max_age_days as u64 * 86400);
+                let cutoff =
+                    std::time::SystemTime::now() - Duration::from_secs(self.config.max_age_days as u64 * 86400);
                 for s in transcript::discover(&self.config.roots, cutoff) {
                     if s.agent == Agent::Codex
-                        && s.path
-                            .file_stem()
-                            .is_some_and(|n| n.to_string_lossy().ends_with(session_id))
+                        && s.path.file_stem().is_some_and(|n| n.to_string_lossy().ends_with(session_id))
                         && !found.contains(&s.path)
                     {
                         found.push(s.path);
@@ -226,10 +211,7 @@ impl Engine {
                 }
             }
         }
-        found
-            .into_iter()
-            .map(|path| Source { path, agent })
-            .collect()
+        found.into_iter().map(|path| Source { path, agent }).collect()
     }
 
     /// A transcript the node resolved for a session.
@@ -276,24 +258,13 @@ impl Engine {
     }
 
     fn set_file(&self, path: &Path, st: FileState) {
-        self.state
-            .lock()
-            .expect("state lock")
-            .files
-            .insert(path.to_path_buf(), st);
+        self.state.lock().expect("state lock").files.insert(path.to_path_buf(), st);
     }
 
     /// One pass over one transcript. `info.session_id` may be empty: the transcript's own ID is used.
     pub async fn process(&self, source: &Source, mut info: SessionInfo) -> Result<Pass, Stop> {
         let mut pass = Pass::default();
-        let st = self
-            .state
-            .lock()
-            .expect("state lock")
-            .files
-            .get(&source.path)
-            .cloned()
-            .unwrap_or_default();
+        let st = self.state.lock().expect("state lock").files.get(&source.path).cloned().unwrap_or_default();
         let Ok(size) = std::fs::metadata(&source.path).map(|m| m.len()) else {
             return Ok(pass);
         };
@@ -302,9 +273,7 @@ impl Engine {
             return Ok(pass);
         }
         let (src, home) = (source.clone(), self.config.roots.home.clone());
-        let res = match tokio::task::spawn_blocking(move || transcript::read(&src, offset, &home))
-            .await
-        {
+        let res = match tokio::task::spawn_blocking(move || transcript::read(&src, offset, &home)).await {
             Ok(Ok(res)) => res,
             Ok(Err(e)) => {
                 tracing::warn!("summaries: {}: {e}", source.path.display());
@@ -343,13 +312,7 @@ impl Engine {
             let chunk_end = chunk.last().expect("chunks aren't empty").end;
             if !condense::is_real(&chunk) {
                 pass.idle_chunks += 1;
-                self.set_file(
-                    &source.path,
-                    FileState {
-                        offset: chunk_end,
-                        ..Default::default()
-                    },
-                );
+                self.set_file(&source.path, FileState { offset: chunk_end, ..Default::default() });
                 continue;
             }
             let account = match self.accounts.pick().await {
@@ -375,8 +338,7 @@ impl Engine {
                 &condense::condense(&chunk, self.config.budget, tz),
                 &span,
             );
-            let real_ts =
-                condense::last_real_ts(&chunk).unwrap_or(chunk.last().expect("non-empty").ts);
+            let real_ts = condense::last_real_ts(&chunk).unwrap_or(chunk.last().expect("non-empty").ts);
             let period = period_for(chunk[0].ts, real_ts, now, self.config.daily_days, tz);
             pass.calls += 1;
             let req = CallRequest {
@@ -386,20 +348,12 @@ impl Engine {
                 account: account.clone(),
             };
             let label = info.tab.clone().unwrap_or_else(|| session_id.clone());
-            let result = self
-                .model
-                .call(req)
-                .await
-                .and_then(|(v, stats)| parse_summary(&v).map(|s| (s, stats)));
+            let result = self.model.call(req).await.and_then(|(v, stats)| parse_summary(&v).map(|s| (s, stats)));
             let (summary, stats) = match result {
                 Ok(ok) => ok,
                 Err(error) => {
                     pass.failures += 1;
-                    let fails = if st.failed_at == Some(chunk_end) {
-                        st.failures + 1
-                    } else {
-                        1
-                    };
+                    let fails = if st.failed_at == Some(chunk_end) { st.failures + 1 } else { 1 };
                     tracing::warn!(
                         "summaries: {label}: call failed ({fails}/{MAX_FAILURES}) on {}: {error}",
                         account.label()
@@ -409,16 +363,8 @@ impl Engine {
                         return Err(Stop::Limit(msg));
                     }
                     if fails >= MAX_FAILURES {
-                        tracing::warn!(
-                            "summaries: {label}: skipping {span} after {fails} failures"
-                        );
-                        self.set_file(
-                            &source.path,
-                            FileState {
-                                offset: chunk_end,
-                                ..Default::default()
-                            },
-                        );
+                        tracing::warn!("summaries: {label}: skipping {span} after {fails} failures");
+                        self.set_file(&source.path, FileState { offset: chunk_end, ..Default::default() });
                         continue;
                     }
                     let current = self
@@ -431,12 +377,7 @@ impl Engine {
                         .unwrap_or(offset);
                     self.set_file(
                         &source.path,
-                        FileState {
-                            offset: current,
-                            failed_at: Some(chunk_end),
-                            failures: fails,
-                            skip: None,
-                        },
+                        FileState { offset: current, failed_at: Some(chunk_end), failures: fails, skip: None },
                     );
                     self.save();
                     return Ok(pass);
@@ -453,17 +394,9 @@ impl Engine {
                 }
                 last
             };
-            let status = if matches!(summary, Summary::Update { .. }) {
-                "update"
-            } else {
-                "no_change"
-            };
+            let status = if matches!(summary, Summary::Update { .. }) { "update" } else { "no_change" };
             match summary {
-                Summary::Update {
-                    page,
-                    paragraph,
-                    sentence,
-                } => {
+                Summary::Update { page, paragraph, sentence } => {
                     pass.updates += 1;
                     let _ = self
                         .sink
@@ -485,13 +418,7 @@ impl Engine {
                 }
                 Summary::NoChange => pass.no_change += 1,
             }
-            let _ = self
-                .sink
-                .send(SummaryEvent::Activity {
-                    session_id: session_id.clone(),
-                    last_activity,
-                })
-                .await;
+            let _ = self.sink.send(SummaryEvent::Activity { session_id: session_id.clone(), last_activity }).await;
             tracing::info!(
                 "summaries: {label}: {} ({span}, {} chars, {} tokens, {}s, {})",
                 status,
@@ -500,22 +427,10 @@ impl Engine {
                 stats.seconds,
                 account.label()
             );
-            self.set_file(
-                &source.path,
-                FileState {
-                    offset: chunk_end,
-                    ..Default::default()
-                },
-            );
+            self.set_file(&source.path, FileState { offset: chunk_end, ..Default::default() });
             self.save();
         }
-        self.set_file(
-            &source.path,
-            FileState {
-                offset: res.end,
-                ..Default::default()
-            },
-        );
+        self.set_file(&source.path, FileState { offset: res.end, ..Default::default() });
         self.save();
         Ok(pass)
     }

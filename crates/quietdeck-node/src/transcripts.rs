@@ -221,7 +221,8 @@ mod tests {
             "{\"timestamp\":\"2026-11-23T10:00:00Z\",\"text\":\"sc-1234\"}\n{\"timestamp\":\"2026-11-23T11:00:00Z\",\"text\":\"about sc-1234 again\"}\n{\"timestamp\":\"2026-11-23T12:00:00Z\",\"text\":\"other\"}\n",
         )
         .unwrap();
-        std::fs::write(proj.join("s2.jsonl"), "{\"timestamp\":\"2026-11-23T10:00:00Z\",\"text\":\"nothing\"}\n").unwrap();
+        std::fs::write(proj.join("s2.jsonl"), "{\"timestamp\":\"2026-11-23T10:00:00Z\",\"text\":\"nothing\"}\n")
+            .unwrap();
         let codex = home.path().join(".codex/sessions/2026/11/23");
         std::fs::create_dir_all(&codex).unwrap();
         std::fs::write(

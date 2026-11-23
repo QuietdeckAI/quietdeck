@@ -60,7 +60,9 @@ pub struct UsageWindow {
 pub enum UsageHealth {
     Ok,
     /// Needs a browser sign-in on this machine; `why` is a sentence for the warning.
-    SigninNeeded { why: String },
+    SigninNeeded {
+        why: String,
+    },
     /// A browser sign-in is under way.
     SigningIn {
         #[ts(type = "string")]

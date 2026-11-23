@@ -32,23 +32,35 @@ pub enum NodeFrame {
         runner: Option<RunnerInfo>,
     },
     /// Every session on the machine. Replaces what the deck has for this node.
-    Sessions { sessions: Vec<SessionInfo> },
+    Sessions {
+        sessions: Vec<SessionInfo>,
+    },
     /// One session changed (herdr's status event, a new tab, a rename).
-    Session { session: SessionInfo },
+    Session {
+        session: SessionInfo,
+    },
     /// The tab closed or the agent's process exited.
     SessionClosed {
         session_id: String,
         #[ts(type = "string")]
         at: Timestamp,
     },
-    Summary { event: SummaryEvent },
+    Summary {
+        event: SummaryEvent,
+    },
     Usage {
         accounts: Vec<AccountUsage>,
         #[ts(type = "string")]
         at: Timestamp,
     },
-    Request { id: u64, request: NodeRequest },
-    Response { id: u64, reply: Reply },
+    Request {
+        id: u64,
+        request: NodeRequest,
+    },
+    Response {
+        id: u64,
+        reply: Reply,
+    },
 }
 
 /// What a node with its runner on tells the deck.
@@ -67,11 +79,21 @@ pub struct RunnerInfo {
 #[ts(export)]
 pub enum DeckFrame {
     /// The answer to `hello`: the name the deck knows this node by (from its token).
-    Welcome { node: String },
+    Welcome {
+        node: String,
+    },
     /// The deck can't take this node (wrong protocol version). The node logs it and stops reconnecting.
-    Refused { reason: String },
-    Request { id: u64, request: DeckRequest },
-    Response { id: u64, reply: Reply },
+    Refused {
+        reason: String,
+    },
+    Request {
+        id: u64,
+        request: DeckRequest,
+    },
+    Response {
+        id: u64,
+        reply: Reply,
+    },
 }
 
 /// What the node asks the deck.
@@ -98,12 +120,21 @@ pub struct TokenSession {
 #[ts(export)]
 pub enum DeckRequest {
     /// Put this in front of a session now. Answers `delivered`, or an error when the session is offline.
-    Deliver { delivery: Delivery },
+    Deliver {
+        delivery: Delivery,
+    },
     /// "Who has this ID?" over the raw transcripts on this machine.
-    SearchTranscripts { query: String, limit: u32 },
+    SearchTranscripts {
+        query: String,
+        limit: u32,
+    },
     /// The catch-up for the transcript viewer.
-    Catchup { session_id: String },
-    Usage { command: UsageCommand },
+    Catchup {
+        session_id: String,
+    },
+    Usage {
+        command: UsageCommand,
+    },
 }
 
 /// The answer to a request.
@@ -115,7 +146,9 @@ pub enum Reply {
         #[ts(type = "unknown")]
         value: serde_json::Value,
     },
-    Err { error: String },
+    Err {
+        error: String,
+    },
 }
 
 impl Reply {
@@ -209,12 +242,7 @@ pub enum LocalRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum LocalResponse {
-    Token {
-        token: String,
-        deck_url: String,
-        expires_at: Timestamp,
-        caller: SessionRef,
-    },
+    Token { token: String, deck_url: String, expires_at: Timestamp, caller: SessionRef },
     Status(NodeStatus),
     Usage { accounts: Vec<AccountUsage> },
     Imported { records: usize },

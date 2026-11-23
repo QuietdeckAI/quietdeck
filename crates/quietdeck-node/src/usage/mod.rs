@@ -35,8 +35,7 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use quietdeck_types::usage::{
-    AccountUsage, ReadingSource, UsageCommand, UsageConfig, UsageHealth, UsageProvider,
-    UsageWindow, UsageWindowKind,
+    AccountUsage, ReadingSource, UsageCommand, UsageConfig, UsageHealth, UsageProvider, UsageWindow, UsageWindowKind,
 };
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch};
@@ -93,12 +92,7 @@ enum Claude {
 struct Shared {
     claude: Mutex<Option<Claude>>,
     /// The Claude side as last read, from our own monitor or the one we follow.
-    claude_state: Mutex<
-        Option<(
-            SharedState,
-            std::collections::HashMap<String, ReadingSource>,
-        )>,
-    >,
+    claude_state: Mutex<Option<(SharedState, std::collections::HashMap<String, ReadingSource>)>>,
     codex: Mutex<Option<codex::CodexState>>,
     snapshot: Mutex<Vec<AccountUsage>>,
     /// Bumps when anything the snapshot reads changes.
@@ -129,19 +123,13 @@ impl UsageHandle {
         if *self.shared.stopped.borrow() {
             return Err(UsageError::Stopped);
         }
-        let claude = lock(&self.shared.claude)
-            .clone()
-            .ok_or(UsageError::Stopped)?;
+        let claude = lock(&self.shared.claude).clone().ok_or(UsageError::Stopped)?;
         let is_known = |id: &str| {
-            lock(&self.shared.claude_state)
-                .as_ref()
-                .is_some_and(|(s, _)| s.accounts.iter().any(|a| a.account.id == id))
+            lock(&self.shared.claude_state).as_ref().is_some_and(|(s, _)| s.accounts.iter().any(|a| a.account.id == id))
         };
         match command {
             UsageCommand::SignIn { local_id: Some(id) } if id == CODEX_ID => {
-                Err(UsageError::Other(
-                    "Codex signs in with `codex login` in a terminal on this machine.".into(),
-                ))
+                Err(UsageError::Other("Codex signs in with `codex login` in a terminal on this machine.".into()))
             }
             UsageCommand::SignIn { local_id } => {
                 if let Some(id) = &local_id
@@ -150,9 +138,7 @@ impl UsageHandle {
                     return Err(UsageError::UnknownAccount(id.clone()));
                 }
                 match claude {
-                    Claude::Own(c) => c
-                        .sign_in(local_id.as_deref())
-                        .map_err(|e| UsageError::Other(e.message)),
+                    Claude::Own(c) => c.sign_in(local_id.as_deref()).map_err(|e| UsageError::Other(e.message)),
                     Claude::Following(sock) => {
                         let body = local_id.map_or(json!({}), |id| json!({ "accountId": id }));
                         follow_call(&sock, "POST", "/signin", Some(&body)).await
@@ -184,8 +170,7 @@ impl UsageHandle {
                         Ok(())
                     }
                     Claude::Following(sock) => {
-                        let path = local_id
-                            .map_or("/check".to_string(), |id| format!("/accounts/{id}/check"));
+                        let path = local_id.map_or("/check".to_string(), |id| format!("/accounts/{id}/check"));
                         tokio::spawn(async move {
                             follow_call(&sock, "POST", &path, Some(&json!({ "fresh": true }))).await
                         });
@@ -197,23 +182,13 @@ impl UsageHandle {
     }
 }
 
-async fn follow_call(
-    sock: &std::path::Path,
-    method: &str,
-    path: &str,
-    body: Option<&Value>,
-) -> Result<(), UsageError> {
+async fn follow_call(sock: &std::path::Path, method: &str, path: &str, body: Option<&Value>) -> Result<(), UsageError> {
     match server::call(sock, method, path, body, Duration::from_secs(120)).await {
         Ok((200, _)) => Ok(()),
         Ok((_, body)) => Err(UsageError::Other(
-            body.get("error")
-                .and_then(Value::as_str)
-                .unwrap_or("the coordinator refused")
-                .to_string(),
+            body.get("error").and_then(Value::as_str).unwrap_or("the coordinator refused").to_string(),
         )),
-        Err(e) => Err(UsageError::Other(format!(
-            "the coordinator didn't answer: {e}"
-        ))),
+        Err(e) => Err(UsageError::Other(format!("the coordinator didn't answer: {e}"))),
     }
 }
 
@@ -227,11 +202,7 @@ fn window(kind: UsageWindowKind, model: Option<&str>, w: &model::UsageWindow) ->
         model: model.map(str::to_string),
         window_minutes: None,
         pct: w.pct,
-        resets_at: w
-            .resets_at
-            .as_deref()
-            .and_then(parse_iso)
-            .and_then(timestamp),
+        resets_at: w.resets_at.as_deref().and_then(parse_iso).and_then(timestamp),
     }
 }
 
@@ -246,10 +217,7 @@ pub fn claude_key(a: &model::Account) -> Option<String> {
     }
 }
 
-fn claude_usage(
-    a: &AccountState,
-    sources: &std::collections::HashMap<String, ReadingSource>,
-) -> AccountUsage {
+fn claude_usage(a: &AccountState, sources: &std::collections::HashMap<String, ReadingSource>) -> AccountUsage {
     let mut windows = Vec::new();
     if let Some(r) = &a.reading {
         if let Some(w) = &r.five_hour {
@@ -265,8 +233,7 @@ fn claude_usage(
     AccountUsage {
         provider: UsageProvider::Anthropic,
         // A slot nobody has signed in to yet has no subscription: keyed by machine, so it never merges.
-        account_key: claude_key(&a.account)
-            .unwrap_or_else(|| format!("unsigned/{}", a.account.slot)),
+        account_key: claude_key(&a.account).unwrap_or_else(|| format!("unsigned/{}", a.account.slot)),
         local_id: a.account.id.clone(),
         email: a.account.email.clone(),
         org_name: a.account.org_name.clone(),
@@ -275,9 +242,7 @@ fn claude_usage(
         health: match &a.health {
             Health::Ok { .. } => UsageHealth::Ok,
             Health::LoginNeeded { why } => UsageHealth::SigninNeeded { why: why.clone() },
-            Health::LoggingIn { since } => UsageHealth::SigningIn {
-                since: timestamp(*since).unwrap_or_default(),
-            },
+            Health::LoggingIn { since } => UsageHealth::SigningIn { since: timestamp(*since).unwrap_or_default() },
         },
         windows,
         read_at: a.reading.as_ref().and_then(|r| timestamp(r.at)),
@@ -317,13 +282,7 @@ fn codex_usage(s: &codex::CodexState) -> AccountUsage {
         },
         windows,
         read_at: r.and_then(|r| timestamp(r.at)),
-        source: r.map(|_| {
-            if s.is_from_session {
-                ReadingSource::Session
-            } else {
-                ReadingSource::Poll
-            }
-        }),
+        source: r.map(|_| if s.is_from_session { ReadingSource::Session } else { ReadingSource::Poll }),
         session_count: 0,
         retiring: false,
     }
@@ -331,20 +290,11 @@ fn codex_usage(s: &codex::CodexState) -> AccountUsage {
 
 /// Every subscription on the machine, from the Claude state and the Codex state as last read.
 pub fn snapshot_of(
-    claude: Option<&(
-        SharedState,
-        std::collections::HashMap<String, ReadingSource>,
-    )>,
+    claude: Option<&(SharedState, std::collections::HashMap<String, ReadingSource>)>,
     codex: Option<&codex::CodexState>,
 ) -> Vec<AccountUsage> {
-    let mut out: Vec<AccountUsage> = claude
-        .map(|(s, sources)| {
-            s.accounts
-                .iter()
-                .map(|a| claude_usage(a, sources))
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut out: Vec<AccountUsage> =
+        claude.map(|(s, sources)| s.accounts.iter().map(|a| claude_usage(a, sources)).collect()).unwrap_or_default();
     out.extend(codex.map(codex_usage));
     out
 }
@@ -354,10 +304,7 @@ fn persisted(file: &std::path::Path, logger: &Logger) -> Option<Value> {
     match serde_json::from_str(&text) {
         Ok(v) => Some(v),
         Err(e) => {
-            logger.log(&format!(
-                "could not read {}: {e}; starting afresh",
-                file.display()
-            ));
+            logger.log(&format!("could not read {}: {e}; starting afresh", file.display()));
             None
         }
     }
@@ -366,23 +313,14 @@ fn persisted(file: &std::path::Path, logger: &Logger) -> Option<Value> {
 /// Runs our own monitor until the module stops.
 async fn run_own(shared: Arc<Shared>, config: &UsageConfig, env: &UsageEnv, logger: Logger) {
     let dir = &env.rotator_dir;
-    let deps = RealDeps::new(
-        env.home.clone(),
-        env.claude_program.clone(),
-        server::state_path(dir),
-        logger.clone(),
-    );
+    let deps = RealDeps::new(env.home.clone(), env.claude_program.clone(), server::state_path(dir), logger.clone());
     let info = Info {
         version: API_VERSION.into(),
         pid: std::process::id(),
         started_at: Timestamp::now().as_millisecond(),
         is_managed: true,
     };
-    let coordinator = Coordinator::new(
-        deps,
-        info,
-        persisted(&server::state_path(dir), &logger).as_ref(),
-    );
+    let coordinator = Coordinator::new(deps, info, persisted(&server::state_path(dir), &logger).as_ref());
     *lock(&shared.claude) = Some(Claude::Own(coordinator.clone()));
 
     // The Claude state, whenever it changes.
@@ -419,10 +357,7 @@ async fn run_own(shared: Arc<Shared>, config: &UsageConfig, env: &UsageEnv, logg
                 let _ = std::fs::remove_file(server::socket_path(dir));
             }
             Err(e) => {
-                logger.log(&format!(
-                    "could not serve {}: {e}",
-                    server::socket_path(dir).display()
-                ));
+                logger.log(&format!("could not serve {}: {e}", server::socket_path(dir).display()));
                 coordinator.start().await;
                 until_stopped.await;
             }
@@ -473,9 +408,7 @@ pub fn spawn(config: UsageConfig, env: UsageEnv, events: mpsc::Sender<UsageEvent
         codex_ask,
         stopped,
     });
-    let handle = UsageHandle {
-        shared: shared.clone(),
-    };
+    let handle = UsageHandle { shared: shared.clone() };
     if !config.enabled {
         shared.stopped.send_replace(true);
         return handle;
@@ -486,17 +419,14 @@ pub fn spawn(config: UsageConfig, env: UsageEnv, events: mpsc::Sender<UsageEvent
 
     // The Claude side: our own monitor while we hold the lock, else the one that does.
     {
-        let (shared, config, env, logger) =
-            (shared.clone(), config.clone(), env.clone(), logger.clone());
+        let (shared, config, env, logger) = (shared.clone(), config.clone(), env.clone(), logger.clone());
         tokio::spawn(async move {
             let mut stopped = shared.stopped.subscribe();
             loop {
                 match server::take_lock(&server::lock_path(&env.rotator_dir)) {
                     Ok(None) => return run_own(shared, &config, &env, logger).await,
                     Ok(Some(pid)) => {
-                        logger.log(&format!(
-                            "{NAME}: a coordinator runs (pid {pid}); following it until it stops"
-                        ));
+                        logger.log(&format!("{NAME}: a coordinator runs (pid {pid}); following it until it stops"));
                         follow(shared.clone(), server::socket_path(&env.rotator_dir)).await;
                     }
                     Err(e) => logger.log(&format!("{NAME}: {e}")),
@@ -539,10 +469,7 @@ pub fn spawn(config: UsageConfig, env: UsageEnv, events: mpsc::Sender<UsageEvent
         let mut dirty = shared.dirty.subscribe();
         tokio::spawn(async move {
             loop {
-                let next = snapshot_of(
-                    lock(&shared.claude_state).as_ref(),
-                    lock(&shared.codex).as_ref(),
-                );
+                let next = snapshot_of(lock(&shared.claude_state).as_ref(), lock(&shared.codex).as_ref());
                 let is_new = {
                     let mut last = lock(&shared.snapshot);
                     let is_new = *last != next;

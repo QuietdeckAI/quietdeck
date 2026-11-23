@@ -36,10 +36,7 @@ impl Status {
 
     /// Running in a tab, for the sweep's "isn't running".
     pub fn is_running(self) -> bool {
-        matches!(
-            self,
-            Status::Idle | Status::Done | Status::Working | Status::Blocked
-        )
+        matches!(self, Status::Idle | Status::Done | Status::Working | Status::Blocked)
     }
 }
 
@@ -72,11 +69,7 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub fn new(limits: Limits) -> Self {
-        Scheduler {
-            limits,
-            sessions: HashMap::new(),
-            in_flight: 0,
-        }
+        Scheduler { limits, sessions: HashMap::new(), in_flight: 0 }
     }
 
     pub fn status(&self, session: &str) -> Option<Status> {
@@ -218,14 +211,7 @@ mod tests {
     const MIN: Duration = Duration::from_secs(60);
 
     fn sched() -> (Scheduler, Instant) {
-        (
-            Scheduler::new(Limits {
-                idle_delay: MIN,
-                min_gap: 30 * MIN,
-                max_concurrent: 2,
-            }),
-            Instant::now(),
-        )
+        (Scheduler::new(Limits { idle_delay: MIN, min_gap: 30 * MIN, max_concurrent: 2 }), Instant::now())
     }
 
     #[test]
@@ -262,11 +248,7 @@ mod tests {
         s.on_status("a", Status::Idle, t0);
         s.on_status("a", Status::Done, t0 + Duration::from_secs(20));
         s.on_status("a", Status::Idle, t0 + Duration::from_secs(40));
-        assert_eq!(
-            s.pending("a"),
-            Some(t0 + MIN),
-            "the first idle's timer stands"
-        );
+        assert_eq!(s.pending("a"), Some(t0 + MIN), "the first idle's timer stands");
         assert_eq!(s.take_ready(t0 + MIN), vec!["a"]);
         assert!(s.take_ready(t0 + 2 * MIN).is_empty(), "only one");
     }
@@ -332,11 +314,7 @@ mod tests {
         assert_eq!(first, vec!["a", "b"]);
         assert_eq!(s.in_flight(), 2);
         assert!(s.take_ready(t0 + 3 * MIN).is_empty());
-        assert_eq!(
-            s.next_due(),
-            None,
-            "full: nothing to wake for until one finishes"
-        );
+        assert_eq!(s.next_due(), None, "full: nothing to wake for until one finishes");
         assert!(!s.try_start("d", t0 + 3 * MIN), "the sweep waits too");
         s.on_finished("a", true, t0 + 3 * MIN);
         assert_eq!(s.take_ready(t0 + 3 * MIN), vec!["c"]);

@@ -67,7 +67,10 @@ async fn main() -> anyhow::Result<()> {
             let db = db::open(&data.db_path()).await?;
             let code = store::nodes::create_enrolment_code(&db).await?;
             println!("{}", code.code);
-            eprintln!("Valid for 15 minutes, once: quietdeck node enroll {} --deck <deck URL> --name <machine>", code.code);
+            eprintln!(
+                "Valid for 15 minutes, once: quietdeck node enroll {} --deck <deck URL> --name <machine>",
+                code.code
+            );
             Ok(())
         }
     }
@@ -85,12 +88,8 @@ fn vapid_keys() -> (String, String) {
 
 async fn serve(env: Env) -> anyhow::Result<()> {
     let config = DeckConfig::load(&env.data.config_path())?;
-    let owner_logins = env
-        .owner_login
-        .as_deref()
-        .or(config.owner.as_deref())
-        .map(config::parse_logins)
-        .unwrap_or_default();
+    let owner_logins =
+        env.owner_login.as_deref().or(config.owner.as_deref()).map(config::parse_logins).unwrap_or_default();
     if owner_logins.is_empty() {
         anyhow::bail!("set QUIETDECK_OWNER_LOGIN (or owner: in deck.yaml): the deck serves only its owner");
     }
@@ -127,7 +126,13 @@ async fn serve(env: Env) -> anyhow::Result<()> {
         let ready = ready.clone();
         move || {
             let ready = ready.clone();
-            async move { if ready.load(Ordering::SeqCst) { (StatusCode::OK, "ok") } else { (StatusCode::SERVICE_UNAVAILABLE, "starting") } }
+            async move {
+                if ready.load(Ordering::SeqCst) {
+                    (StatusCode::OK, "ok")
+                } else {
+                    (StatusCode::SERVICE_UNAVAILABLE, "starting")
+                }
+            }
         }
     };
     let app = Router::new()
