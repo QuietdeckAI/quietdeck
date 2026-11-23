@@ -15,6 +15,7 @@ struct CardRow {
     posted_node: String,
     posted_tab: String,
     posted_session_id: Option<String>,
+    section: String,
     state: String,
     handoff_reason: Option<String>,
     grant_id: Option<i64>,
@@ -25,7 +26,7 @@ struct CardRow {
     updated_at: i64,
 }
 
-const CARD_COLUMNS: &str = "id, version, posted_node, posted_tab, posted_session_id, state, handoff_reason, grant_id, \
+const CARD_COLUMNS: &str = "id, version, posted_node, posted_tab, posted_session_id, section, state, handoff_reason, grant_id, \
     input, prepared_at, rechecked_at, recheck_note, updated_at";
 
 #[derive(sqlx::FromRow)]
@@ -77,6 +78,9 @@ pub async fn actions_for(db: &Db, card_id: i64, version: i64) -> anyhow::Result<
 
 async fn hydrate(db: &Db, r: CardRow) -> anyhow::Result<Card> {
     let action_records = actions_for(db, r.id, r.version).await?;
+    let mut input: CardInput = from_json(&r.input)?;
+    // The deck moves cards between sections (Move up, Move down, handled elsewhere): its column wins.
+    input.section = parse_enum(&r.section)?;
     Ok(Card {
         id: r.id,
         version: r.version,
@@ -88,7 +92,7 @@ async fn hydrate(db: &Db, r: CardRow) -> anyhow::Result<Card> {
         rechecked_at: ts_opt(r.rechecked_at),
         recheck_note: r.recheck_note,
         updated_at: ts(r.updated_at),
-        input: from_json(&r.input)?,
+        input,
         action_records,
     })
 }
@@ -105,8 +109,9 @@ pub async fn get(db: &Db, id: i64) -> anyhow::Result<Option<Card>> {
     }
 }
 
-/// States in which a card is still the thread's card: a new post replaces its content.
-const LIVE_STATES: &str = "('open', 'revising', 'later', 'failed', 'handed_off')";
+/// States in which a card is still the thread's card: a new post replaces its content. That includes approved and
+/// executing cards: the agent posts a new version when a newer message arrives before it sends a reply (3.2a).
+const LIVE_STATES: &str = "('open', 'revising', 'approved', 'executing', 'later', 'failed', 'handed_off')";
 
 pub struct Added {
     pub card: Card,
@@ -354,10 +359,41 @@ async fn stop_unstarted(db: &Db, card_id: i64) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Whether every action on a card's current version is done or stopped.
-#[expect(dead_code, reason = "decisions and action reports use it (build step 2)")]
-pub fn all_finished(actions: &[ActionRecord]) -> bool {
-    actions.iter().all(|a| matches!(a.status, ActionStatus::Done | ActionStatus::Stopped))
+/// A card's state from its current version's actions, after something changed them (a release, a start, a report,
+/// Stop). Cards that are revising, left for later or finished keep their state.
+pub fn state_from_actions(current: CardState, actions: &[ActionRecord]) -> CardState {
+    if !matches!(current, CardState::Approved | CardState::Executing | CardState::Failed | CardState::Open) {
+        return current;
+    }
+    let has = |s: ActionStatus| actions.iter().any(|a| a.status == s);
+    if has(ActionStatus::Started) {
+        CardState::Executing
+    } else if has(ActionStatus::Released) {
+        if current == CardState::Open { CardState::Approved } else { current }
+    } else if has(ActionStatus::Failed) {
+        CardState::Failed
+    } else if has(ActionStatus::Pending) || has(ActionStatus::Stopped) {
+        CardState::Open
+    } else if !actions.is_empty() {
+        CardState::Done
+    } else {
+        current
+    }
+}
+
+/// Recompute a card's state from its actions and store it.
+pub async fn refresh_state(db: &Db, card_id: i64) -> anyhow::Result<()> {
+    let Some(card) = get(db, card_id).await? else { return Ok(()) };
+    let next = state_from_actions(card.state, &card.action_records);
+    if next != card.state {
+        sqlx::query("UPDATE cards SET state = ?, updated_at = ? WHERE id = ?")
+            .bind(enum_str(&next))
+            .bind(now_ms())
+            .bind(card_id)
+            .execute(db)
+            .await?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

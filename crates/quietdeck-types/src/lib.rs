@@ -4,6 +4,7 @@
 pub mod action;
 pub mod api;
 pub mod card;
+pub mod decision;
 pub mod directory;
 pub mod lease;
 pub mod node;
