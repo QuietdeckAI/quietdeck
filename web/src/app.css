@@ -1,0 +1,127 @@
+/* Hallmark · app scope · genre: editorial (dark, by the owner's rule) · theme: custom
+ * vibe: "a desk lamp on dark graphite, letters waiting"
+ * paper oklch(16% 0.008 70) · accent oklch(80% 0.11 75) amber · Newsreader + Geist + Geist Mono (times and IDs only)
+ * axes: dark / roman-serif / warm · motion: card arrival · undo hairline · enrichment: none
+ */
+@import "tailwindcss";
+@import "@fontsource-variable/newsreader";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+@theme {
+  --color-paper: oklch(16% 0.008 70);
+  --color-paper-2: oklch(19.5% 0.009 70);
+  --color-paper-3: oklch(23% 0.01 70);
+  --color-rule: oklch(30% 0.01 70);
+  --color-rule-strong: oklch(40% 0.012 70);
+  --color-neutral: oklch(62% 0.01 70);
+  --color-muted: oklch(76% 0.008 70);
+  --color-ink: oklch(94% 0.007 80);
+  --color-accent: oklch(80% 0.11 75);
+  --color-accent-ink: oklch(20% 0.03 70);
+  --color-focus: oklch(82% 0.12 75);
+  --color-danger: oklch(72% 0.13 28);
+  --color-danger-wash: oklch(24% 0.04 28);
+
+  --font-display: "Newsreader Variable", ui-serif, serif;
+  --font-sans: "Geist Variable", ui-sans-serif, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+:root {
+  --dur-quick: 120ms;
+  --dur-base: 200ms;
+  --dur-arrive: 320ms;
+  color-scheme: dark;
+}
+
+@layer base {
+html,
+body {
+  overflow-x: clip;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  font-weight: 350;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+}
+
+/* A new card slides in at the top of its section. */
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+.arrive {
+  animation: arrive var(--dur-arrive) var(--ease-out);
+}
+
+/* The undo window drains as a hairline across the bar. */
+@keyframes drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+.drain {
+  transform-origin: left;
+  animation: drain linear forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arrive {
+    animation: arrive-fade 150ms linear;
+  }
+  @keyframes arrive-fade {
+    from {
+      opacity: 0;
+    }
+  }
+}
