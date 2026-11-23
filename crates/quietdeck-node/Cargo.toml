@@ -1,0 +1,24 @@
+[package]
+name = "quietdeck-node"
+description = "Quietdeck's node daemon: herdr automation, summaries, transcripts, delivery and the runner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "quietdeck-node"
+path = "src/main.rs"
+
+[dependencies]
+quietdeck-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+jiff.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

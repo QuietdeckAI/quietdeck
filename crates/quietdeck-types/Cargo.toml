@@ -1,0 +1,19 @@
+[package]
+name = "quietdeck-types"
+description = "Every type Quietdeck's deck, nodes, CLI, MCP endpoint and web app share"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+jiff.workspace = true
+ts-rs.workspace = true
+schemars.workspace = true
+garde.workspace = true
+
+[lints]
+workspace = true

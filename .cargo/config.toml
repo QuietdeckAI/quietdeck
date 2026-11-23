@@ -1,0 +1,4 @@
+[env]
+# ts-rs writes the TypeScript the web app uses here when `cargo test` runs. The files are committed; CI fails if a
+# build leaves them changed.
+TS_RS_EXPORT_DIR = { value = "web/src/types", relative = true }
