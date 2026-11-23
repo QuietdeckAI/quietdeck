@@ -1,5 +1,5 @@
 //! Who's calling: agents with a session token from their node, nodes with their node token, and the owner in a
-//! browser (Tailscale identity now; the passkey sign-in joins it in the next step).
+//! browser signed in with a passkey (`passkeys`).
 //!
 //! Tokens:
 //! - node tokens `qdn_…`, issued at enrolment, stored as SHA-256 hashes;
@@ -134,19 +134,39 @@ pub async fn resolve(state: &AppState, parts: &Parts) -> Result<Caller, AppError
         }
         return Err(AppError::Unauthorized("unknown token type".into()));
     }
-    let login = parts.headers.get("tailscale-user-login").and_then(|v| v.to_str().ok());
-    match login {
-        Some(login) if state.owner_logins.iter().any(|o| o.eq_ignore_ascii_case(login.trim())) => {
-            Ok(Caller::Owner { login: login.trim().to_ascii_lowercase() })
-        }
-        Some(_) => Err(AppError::Forbidden("this deck belongs to someone else".into())),
-        None if state.dev_trust_local && !state.owner_logins.is_empty() => {
-            Ok(Caller::Owner { login: state.owner_logins[0].clone() })
-        }
-        None => Err(AppError::Unauthorized(
-            "sign in: a session token from your node (quietdeck CLI), or the web app over the tailnet".into(),
-        )),
+    if let Some((passkey_id, device)) = crate::passkeys::owner_from_cookie(&state.db, parts).await? {
+        same_origin(state, parts)?;
+        return Ok(Caller::Owner { device: format!("{device} (passkey {passkey_id})") });
     }
+    if state.dev_trust_local {
+        return Ok(Caller::Owner { device: "development".into() });
+    }
+    Err(AppError::Unauthorized(
+        "sign in: a session token from your node (the quietdeck CLI), or a passkey in the web app".into(),
+    ))
+}
+
+/// A browser's request that changes something must come from the deck's own pages. The cookie is SameSite=Strict
+/// already; this is the second lock.
+fn same_origin(state: &AppState, parts: &Parts) -> Result<(), AppError> {
+    use axum::http::Method;
+    if matches!(parts.method, Method::GET | Method::HEAD | Method::OPTIONS) {
+        return Ok(());
+    }
+    let origin = parts.headers.get(axum::http::header::ORIGIN).and_then(|v| v.to_str().ok());
+    if origin.is_some_and(|o| o.trim_end_matches('/') == public_origin(&state.public_url)) {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden("this request didn't come from the deck's own pages".into()))
+    }
+}
+
+/// `https://host[:port]` of the deck's public URL.
+pub fn public_origin(public_url: &str) -> String {
+    let rest = public_url.split_once("://").map_or(public_url, |(_, r)| r);
+    let host = rest.split('/').next().unwrap_or(rest);
+    let scheme = public_url.split_once("://").map_or("https", |(s, _)| s);
+    format!("{scheme}://{host}")
 }
 
 async fn node_active(db: &Db, node: &str) -> Result<bool, AppError> {
@@ -188,16 +208,26 @@ impl FromRequestParts<AppState> for Agent {
     }
 }
 
-/// The owner in a browser.
-pub struct Owner(#[allow(dead_code)] pub String);
+/// The owner in a browser, signed in with a passkey.
+pub struct Owner {
+    /// The passkey this browser signed in with (none in development, with QUIETDECK_DEV_TRUST_LOCAL).
+    pub passkey_id: Option<i64>,
+}
 
 impl FromRequestParts<AppState> for Owner {
     type Rejection = AppError;
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
-        match resolve(state, parts).await? {
-            Caller::Owner { login } => Ok(Owner(login)),
-            _ => Err(AppError::Forbidden("only the owner, in the web app, can do this".into())),
+        if parts.headers.contains_key(axum::http::header::AUTHORIZATION) {
+            return Err(AppError::Forbidden("only the owner, in the web app, can do this".into()));
         }
+        if let Some((passkey_id, _)) = crate::passkeys::owner_from_cookie(&state.db, parts).await? {
+            same_origin(state, parts)?;
+            return Ok(Owner { passkey_id: Some(passkey_id) });
+        }
+        if state.dev_trust_local {
+            return Ok(Owner { passkey_id: None });
+        }
+        Err(AppError::Unauthorized("sign in with your passkey".into()))
     }
 }
 
@@ -246,6 +276,12 @@ mod tests {
         let (_, sig) = t.split_once('.').unwrap();
         let (payload, _) = forged.split_once('.').unwrap();
         assert!(verify_session_token(key, &format!("{payload}.{sig}"), 0).is_err());
+    }
+
+    #[test]
+    fn origins_drop_the_path() {
+        assert_eq!(public_origin("https://deck.example.com/"), "https://deck.example.com");
+        assert_eq!(public_origin("http://localhost:18080"), "http://localhost:18080");
     }
 
     #[test]

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use quietdeck_types::SessionRef;
 use quietdeck_types::api::Caller;
-use quietdeck_types::card::{CardInput, CardResolution};
+use quietdeck_types::card::{ActionReport, CardInput, CardResolution};
 use quietdeck_types::relay::MsgSend;
 use quietdeck_types::timeline::TimelineAdd;
 
@@ -50,6 +50,18 @@ pub struct SessionsArgs {
 pub struct SearchArgs {
     /// Words to find (all of them), or an ID such as a story or invoice number.
     pub q: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ActionStartArgs {
+    pub action_id: i64,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ActionsReportArgs {
+    /// One entry per action: `{"action_id": 1, "result": "done", "outcome": {...}}` or
+    /// `{"action_id": 2, "result": "failed", "error": "..."}`.
+    pub reports: Vec<ActionReport>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -233,6 +245,39 @@ impl Mcp {
         ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
         let r = async { ops::timeline_add(&self.state, &self.caller(&ctx).await?, e).await }.await;
+        tool_try!(r)
+    }
+
+    #[tool(description = "Claim the person's released decisions on your cards, with each card's actions exactly as \
+        approved (their edits applied). Carry them out, calling action_start before each one, then actions_report.")]
+    async fn decisions_take(
+        &self,
+        _: Parameters<NoArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async { ops::take(&self.state, &self.agent(&ctx).await?).await }.await;
+        tool_try!(r)
+    }
+
+    #[tool(description = "Start one approved action before you run it. Refused once the person has pressed Stop: \
+        then don't run it.")]
+    async fn action_start(
+        &self,
+        Parameters(args): Parameters<ActionStartArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async { ops::action_start(&self.state, &self.agent(&ctx).await?, args.action_id).await }.await;
+        tool_try!(r)
+    }
+
+    #[tool(description = "Report the results of started actions: done (with what was sent and came back) or failed \
+        (with an error the person can act on).")]
+    async fn actions_report(
+        &self,
+        Parameters(args): Parameters<ActionsReportArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let r = async { ops::actions_report(&self.state, &self.agent(&ctx).await?, args.reports).await }.await;
         tool_try!(r)
     }
 

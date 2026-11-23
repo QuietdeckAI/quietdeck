@@ -4,4 +4,4 @@ import type { SessionRef } from "./SessionRef";
 /**
  * Who the deck thinks is calling.
  */
-export type Caller = { "kind": "session", session: SessionRef, } | { "kind": "node", node: string, } | { "kind": "owner", login: string, };
+export type Caller = { "kind": "session", session: SessionRef, } | { "kind": "node", node: string, } | { "kind": "owner", device: string, };

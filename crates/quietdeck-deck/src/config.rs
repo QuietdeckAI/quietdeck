@@ -10,13 +10,9 @@ use serde::Deserialize;
 /// Settings from the environment. `serve` reads these; the other subcommands read only what they need.
 #[derive(Debug, Clone, clap::Args)]
 pub struct Env {
-    /// The app's one stable HTTPS origin on the tailnet.
+    /// The deck's one stable HTTPS origin, on a private network. Passkeys are tied to its host name.
     #[arg(long, env = "QUIETDECK_PUBLIC_URL")]
     pub public_url: String,
-    /// The owner's Tailscale login, or several separated by commas (the same person on two tailnets, when the
-    /// deck's device is shared into another one). Overrides `owner:` in deck.yaml.
-    #[arg(long, env = "QUIETDECK_OWNER_LOGIN")]
-    pub owner_login: Option<String>,
     /// The public origin of the hooks port.
     #[arg(long, env = "QUIETDECK_HOOKS_PUBLIC_URL")]
     pub hooks_public_url: Option<String>,
@@ -32,8 +28,8 @@ pub struct Env {
     pub listen: String,
     #[arg(long, env = "QUIETDECK_HOOKS_LISTEN", default_value = "0.0.0.0:8081")]
     pub hooks_listen: String,
-    /// Development only: accept browser requests without `Tailscale-User-Login` (as the owner). Never set this on a
-    /// deck that's reachable from anywhere but your own machine.
+    /// Development only: treat every browser request as signed in, with no passkey. Never set this on a deck
+    /// that's reachable from anywhere but your own machine.
     #[arg(long, env = "QUIETDECK_DEV_TRUST_LOCAL", action = clap::ArgAction::SetTrue, value_parser = clap::builder::BoolishValueParser::new())]
     pub dev_trust_local: bool,
 }
@@ -60,8 +56,6 @@ impl DataEnv {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DeckConfig {
-    /// The owner's Tailscale login, or several separated by commas.
-    pub owner: Option<String>,
     pub accounts: Vec<AccountLabel>,
     pub boards: Vec<String>,
     pub tasks: Option<TasksConfig>,
@@ -165,11 +159,6 @@ impl DeckConfig {
     }
 }
 
-/// `a@x, b@y` -> each login, trimmed and lowercased.
-pub fn parse_logins(s: &str) -> Vec<String> {
-    s.split(',').map(|l| l.trim().to_ascii_lowercase()).filter(|l| !l.is_empty()).collect()
-}
-
 fn expand_home(dir: &str, home: Option<&str>) -> String {
     match (dir.strip_prefix("~/"), home) {
         (Some(rest), Some(home)) => format!("{}/{rest}", home.trim_end_matches('/')),
@@ -198,11 +187,6 @@ mod tests {
         assert_eq!(c.project_for_dir("/home/sam/code/app/src", Some("/home/sam")).as_deref(), Some("app"));
         assert_eq!(c.project_for_dir("/home/sam/code/app/infra/x", Some("/home/sam")).as_deref(), Some("infra"));
         assert_eq!(c.project_for_dir("/home/sam/code/apples", Some("/home/sam")), None);
-    }
-
-    #[test]
-    fn owner_logins_are_a_list() {
-        assert_eq!(parse_logins(" Sam@Example.com, sam@work.example ,"), vec!["sam@example.com", "sam@work.example"]);
     }
 
     #[test]

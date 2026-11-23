@@ -5,8 +5,9 @@ use axum::Json;
 use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::routing::{delete, get, post};
-use quietdeck_types::api::{DeckInfo, EnrolRequest, Enrolled, EnrolmentCode, Settings};
-use quietdeck_types::card::{Card, CardAdded, CardInput, CardResolution};
+use quietdeck_types::api::{Caller, Changed, DeckInfo, EnrolRequest, Enrolled, EnrolmentCode, Settings};
+use quietdeck_types::card::{ActionRecord, ActionReport, Card, CardAdded, CardInput, CardResolution, Released};
+use quietdeck_types::decision::{ApproveAll, Approving, Decide, Inbox, ReportReceipt, StopResult, UndoBatch};
 use quietdeck_types::directory::{NodeRow, SessionRow, WhoHas};
 use quietdeck_types::node::Delivered;
 use quietdeck_types::relay::MsgSend;
@@ -36,6 +37,18 @@ pub fn router() -> Router<AppState> {
         .route("/api/msg", post(msg_send))
         .route("/api/timeline", post(timeline_add))
         .route("/api/history", get(history))
+        .route("/api/inbox", get(inbox))
+        .route("/api/later", get(later))
+        .route("/api/events", get(crate::events::stream))
+        .route("/api/settings", get(get_settings).put(put_settings))
+        .route("/api/decisions/approve-all", post(approve_all))
+        .route("/api/decisions/undo", post(undo))
+        .route("/api/decisions/stop", post(stop))
+        .route("/api/decisions/take", post(take))
+        .route("/api/cards/{id}/decide", post(decide))
+        .route("/api/cards/{id}/retry", post(retry))
+        .route("/api/actions/{id}/start", post(action_start))
+        .route("/api/actions/report", post(actions_report))
 }
 
 async fn info(State(state): State<AppState>, Authed(caller): Authed) -> AppResult<Json<DeckInfo>> {
@@ -52,11 +65,11 @@ async fn enroll(State(state): State<AppState>, Json(req): Json<EnrolRequest>) ->
     Ok(Json(nodes::enrol(&state.db, &req.code, &req.name).await?))
 }
 
-async fn new_code(State(state): State<AppState>, Owner(_): Owner) -> AppResult<Json<EnrolmentCode>> {
+async fn new_code(State(state): State<AppState>, _owner: Owner) -> AppResult<Json<EnrolmentCode>> {
     Ok(Json(nodes::create_enrolment_code(&state.db).await?))
 }
 
-async fn revoke_node(State(state): State<AppState>, Owner(_): Owner, Path(name): Path<String>) -> AppResult<()> {
+async fn revoke_node(State(state): State<AppState>, _owner: Owner, Path(name): Path<String>) -> AppResult<()> {
     nodes::revoke(&state.db, &name).await
 }
 
@@ -87,7 +100,9 @@ async fn resolve_card(
     Json(how): Json<CardResolution>,
 ) -> AppResult<Json<Card>> {
     garde::Validate::validate(&how).map_err(bad)?;
-    Ok(Json(cards::resolve(&state.db, id, &how).await?))
+    let card = cards::resolve(&state.db, id, &how).await?;
+    state.changed(Changed::Cards);
+    Ok(Json(card))
 }
 
 async fn list_sessions(
@@ -138,16 +153,106 @@ async fn timeline_add(
 
 #[derive(Deserialize)]
 pub struct HistoryQuery {
-    /// `last` (since this session last asked), or an RFC 3339 time.
+    /// For an agent: `last` (since this session last asked, the default), or an RFC 3339 time. For the owner: an RFC
+    /// 3339 time, a week before `until` by default.
     pub since: Option<String>,
+    /// The owner's History screen only: the window's end, now by default.
+    pub until: Option<String>,
+    pub account: Option<String>,
 }
 
 async fn history(
     State(state): State<AppState>,
-    Agent(me): Agent,
+    Authed(caller): Authed,
     Query(q): Query<HistoryQuery>,
 ) -> AppResult<Json<History>> {
-    Ok(Json(ops::history(&state, &me, q.since.as_deref().unwrap_or("last")).await?))
+    match caller {
+        Caller::Session { session } => {
+            Ok(Json(ops::history(&state, &session, q.since.as_deref().unwrap_or("last")).await?))
+        }
+        Caller::Owner { .. } => {
+            Ok(Json(ops::owner_history(&state, q.since.as_deref(), q.until.as_deref(), q.account.as_deref()).await?))
+        }
+        Caller::Node { .. } => Err(AppError::Forbidden("history is for sessions and the owner".into())),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct AccountQuery {
+    pub account: Option<String>,
+}
+
+async fn inbox(State(state): State<AppState>, _owner: Owner, Query(q): Query<AccountQuery>) -> AppResult<Json<Inbox>> {
+    Ok(Json(ops::inbox(&state, q.account.as_deref()).await?))
+}
+
+async fn later(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Query(q): Query<AccountQuery>,
+) -> AppResult<Json<Vec<Card>>> {
+    Ok(Json(ops::later(&state, q.account.as_deref()).await?))
+}
+
+async fn get_settings(State(state): State<AppState>, Authed(_): Authed) -> AppResult<Json<Settings>> {
+    Ok(Json(load_settings(&state.db).await?))
+}
+
+async fn put_settings(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(s): Json<Settings>,
+) -> AppResult<Json<Settings>> {
+    Ok(Json(ops::save_settings(&state, s).await?))
+}
+
+async fn approve_all(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(req): Json<ApproveAll>,
+) -> AppResult<Json<Approving>> {
+    Ok(Json(ops::approve_all(&state, req).await?))
+}
+
+async fn undo(State(state): State<AppState>, _owner: Owner, Json(u): Json<UndoBatch>) -> AppResult<()> {
+    ops::undo(&state, &u.batch).await
+}
+
+async fn stop(State(state): State<AppState>, _owner: Owner) -> AppResult<Json<StopResult>> {
+    Ok(Json(ops::stop(&state).await?))
+}
+
+async fn decide(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(id): Path<i64>,
+    Json(d): Json<Decide>,
+) -> AppResult<Json<Card>> {
+    Ok(Json(ops::decide(&state, id, d).await?))
+}
+
+async fn retry(State(state): State<AppState>, _owner: Owner, Path(id): Path<i64>) -> AppResult<Json<Approving>> {
+    Ok(Json(ops::retry(&state, id).await?))
+}
+
+async fn take(State(state): State<AppState>, Agent(me): Agent) -> AppResult<Json<Vec<Released>>> {
+    Ok(Json(ops::take(&state, &me).await?))
+}
+
+async fn action_start(
+    State(state): State<AppState>,
+    Agent(me): Agent,
+    Path(id): Path<i64>,
+) -> AppResult<Json<ActionRecord>> {
+    Ok(Json(ops::action_start(&state, &me, id).await?))
+}
+
+async fn actions_report(
+    State(state): State<AppState>,
+    Agent(me): Agent,
+    Json(reports): Json<Vec<ActionReport>>,
+) -> AppResult<Json<Vec<ReportReceipt>>> {
+    Ok(Json(ops::actions_report(&state, &me, reports).await?))
 }
 
 /// The settings, read with defaults for anything never set.

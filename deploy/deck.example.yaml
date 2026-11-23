@@ -1,9 +1,6 @@
 # deck.yaml: the deck's own config, on its data volume (/data/deck.yaml). Copy this file and change it.
 # Nothing here is a credential. Missing means defaults.
 
-# The owner's Tailscale login. QUIETDECK_OWNER_LOGIN overrides it.
-owner: you@example.com
-
 # Account labels. Every card, timeline entry and ping carries one; the Inbox has a tab per account.
 # The addresses themselves live in your own files (the runner's node.yaml, the email-triage skill), not here.
 accounts:

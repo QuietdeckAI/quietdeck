@@ -76,8 +76,8 @@ pub enum Caller {
     Session { session: SessionRef },
     /// A node itself (its runner), with the node token.
     Node { node: String },
-    /// The owner in a browser.
-    Owner { login: String },
+    /// The owner in a browser, signed in with a passkey: `device` is that passkey's name.
+    Owner { device: String },
 }
 
 /// `GET /api/info`: what agents and the web app need to know about this deck.
@@ -89,4 +89,83 @@ pub struct DeckInfo {
     pub accounts: Vec<AccountLabel>,
     pub boards: Vec<String>,
     pub settings: Settings,
+}
+
+/// `GET /api/auth/state`: what the sign-in screen shows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct AuthState {
+    pub signed_in: bool,
+    /// No passkey is registered yet: the first one needs a setup code from the deck's container.
+    pub setup_needed: bool,
+}
+
+/// Start registering a passkey. Signed in, it adds one for this device; with a setup code (from
+/// `quietdeck-deck setup-code`), it registers the first one, or recovers a deck whose passkeys are all lost.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
+#[ts(export)]
+pub struct RegisterStart {
+    #[serde(default)]
+    #[garde(inner(length(min = 1, max = 40)))]
+    pub setup_code: Option<String>,
+    /// What to call this passkey in Settings ("MacBook", "iPhone").
+    #[garde(length(min = 1, max = 60))]
+    pub device_name: String,
+}
+
+/// A WebAuthn ceremony in progress: `options` goes to `navigator.credentials`, and the result comes back with
+/// `ceremony`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct Ceremony {
+    pub ceremony: String,
+    #[ts(type = "unknown")]
+    pub options: serde_json::Value,
+}
+
+/// The browser's answer to a ceremony.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct CeremonyFinish {
+    pub ceremony: String,
+    #[ts(type = "unknown")]
+    pub credential: serde_json::Value,
+}
+
+/// A registered passkey, for Settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct PasskeyInfo {
+    pub id: i64,
+    pub device_name: String,
+    #[ts(type = "string")]
+    #[schemars(with = "String")]
+    pub created_at: jiff::Timestamp,
+    #[ts(type = "string | null")]
+    #[schemars(with = "Option<String>")]
+    pub last_used_at: Option<jiff::Timestamp>,
+    /// The passkey this browser signed in with.
+    pub this_device: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
+#[ts(export)]
+pub struct PasskeyRename {
+    #[garde(length(min = 1, max = 60))]
+    pub device_name: String,
+}
+
+/// One message on the web app's event stream (`GET /api/events`): what changed, so it refetches that. Never the data
+/// itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum Changed {
+    Cards,
+    Timeline,
+    Sessions,
+    Settings,
+    Nodes,
+    /// The stream fell behind: refetch everything.
+    All,
 }

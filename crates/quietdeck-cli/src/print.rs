@@ -29,7 +29,7 @@ pub fn info(i: &DeckInfo) -> String {
             None => session.address(),
         },
         Caller::Node { node } => format!("node {node}"),
-        Caller::Owner { login } => format!("owner {login}"),
+        Caller::Owner { device } => format!("the owner, on {device}"),
     };
     let accounts: Vec<&str> = i.accounts.iter().map(|a| a.id.as_str()).collect();
     format!(
@@ -124,4 +124,38 @@ pub fn history(h: &History) -> String {
         lines.push("  nothing".into());
     }
     lines.join("\n")
+}
+
+pub fn released(r: &[quietdeck_types::card::Released]) -> String {
+    if r.is_empty() {
+        return "No decisions are waiting.".into();
+    }
+    let mut s = String::new();
+    for d in r {
+        s.push_str(&format!("{}\nDecision: {}", card_line(&d.card), snake(&d.decision.kind)));
+        if let Some(t) = &d.decision.text {
+            s.push_str(&format!(" \"{t}\""));
+        }
+        for a in &d.actions {
+            s.push_str(&format!(
+                "\n  a_{} {}\n    {}",
+                a.id,
+                snake(&a.action.action_type()),
+                serde_json::to_string(&a.action).unwrap_or_default()
+            ));
+        }
+        s.push_str("\n\n");
+    }
+    s.push_str("Run `quietdeck action start <id>` before each action, then report every result.");
+    s
+}
+
+pub fn receipts(r: &[quietdeck_types::decision::ReportReceipt]) -> String {
+    r.iter()
+        .map(|x| match &x.error {
+            None => format!("a_{} recorded.", x.action_id),
+            Some(e) => format!("a_{} refused: {e}", x.action_id),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }

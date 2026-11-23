@@ -9,7 +9,8 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 use quietdeck_types::api::{EnrolRequest, Enrolled};
-use quietdeck_types::card::{CardInput, CardResolution};
+use quietdeck_types::card::{ActionRecord, ActionReport, ActionResult, CardInput, CardResolution, Released};
+use quietdeck_types::decision::ReportReceipt;
 use quietdeck_types::relay::MsgSend;
 use quietdeck_types::timeline::{TimelineAdd, TimelineKind};
 
@@ -68,6 +69,21 @@ enum Command {
     Timeline {
         #[command(subcommand)]
         command: TimelineCommand,
+    },
+    /// The person's released decisions on your cards: take them to carry them out.
+    Decisions {
+        #[command(subcommand)]
+        command: DecisionsCommand,
+    },
+    /// One approved action: start it before you run it, then mark it done or failed.
+    Action {
+        #[command(subcommand)]
+        command: ActionCommand,
+    },
+    /// Report the results of several actions in one call.
+    Actions {
+        #[command(subcommand)]
+        command: ActionsCommand,
     },
     /// What happened since you last asked: timeline entries and cards that changed.
     History {
@@ -145,6 +161,37 @@ struct SessionsArgs {
     /// Include sessions that aren't running.
     #[arg(long)]
     all: bool,
+}
+
+#[derive(Subcommand)]
+enum DecisionsCommand {
+    /// Claim every released decision on your cards, with the actions exactly as approved.
+    Take,
+}
+
+#[derive(Subcommand)]
+enum ActionCommand {
+    /// Start an approved action. Refused once the person has pressed Stop: then don't run it.
+    Start { id: String },
+    /// Mark a started action done.
+    Done {
+        id: String,
+        /// What was sent and what came back, as JSON (or - for stdin).
+        #[arg(long)]
+        outcome: Option<String>,
+    },
+    /// Mark a started action failed, saying why in words the person can act on.
+    Fail { id: String, error: String },
+}
+
+#[derive(Subcommand)]
+enum ActionsCommand {
+    /// Report many results at once from a JSON array of
+    /// `{"action_id": 1, "result": "done", "outcome": {...}}` or `{"action_id": 2, "result": "failed", "error": "..."}`.
+    Report {
+        #[arg(long)]
+        file: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -282,6 +329,40 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             let e: quietdeck_types::timeline::TimelineEntry =
                 c.post("/api/timeline", &TimelineAdd { kind, account, refs, text, lease_id }).await?;
             print::out(json, &e, |e| format!("Timeline entry {} added.", e.id))
+        }
+        Command::Decisions { command: DecisionsCommand::Take } => {
+            let c = Client::connect().await?;
+            let r: Vec<Released> = c.post("/api/decisions/take", &serde_json::json!({})).await?;
+            print::out(json, &r, |r| print::released(r))
+        }
+        Command::Action { command } => {
+            let c = Client::connect().await?;
+            let (id, result) = match command {
+                ActionCommand::Start { id } => {
+                    let a: ActionRecord =
+                        c.post(&format!("/api/actions/{}/start", parse_id(&id)?), &serde_json::json!({})).await?;
+                    return print::out(json, &a, |a| format!("a_{} started.", a.id));
+                }
+                ActionCommand::Done { id, outcome } => {
+                    let outcome = outcome
+                        .map(|o| {
+                            serde_json::from_str(&read_arg(&o)?).map_err(|e| anyhow::anyhow!("the outcome's JSON: {e}"))
+                        })
+                        .transpose()?;
+                    (id, ActionResult::Done { outcome })
+                }
+                ActionCommand::Fail { id, error } => (id, ActionResult::Failed { error: read_arg(&error)? }),
+            };
+            let r: Vec<ReportReceipt> =
+                c.post("/api/actions/report", &[ActionReport { action_id: parse_id(&id)?, result }]).await?;
+            print::out(json, &r, |r| print::receipts(r))
+        }
+        Command::Actions { command: ActionsCommand::Report { file } } => {
+            let reports: Vec<ActionReport> =
+                serde_json::from_str(&read_file_arg(&file)?).map_err(|e| anyhow::anyhow!("the report's JSON: {e}"))?;
+            let c = Client::connect().await?;
+            let r: Vec<ReportReceipt> = c.post("/api/actions/report", &reports).await?;
+            print::out(json, &r, |r| print::receipts(r))
         }
         Command::History { since } => {
             let c = Client::connect().await?;

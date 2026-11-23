@@ -12,6 +12,7 @@ name = "quietdeck-deck"
 path = "src/main.rs"
 
 [dependencies]
+webauthn-rs = "0.6.2"
 quietdeck-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true

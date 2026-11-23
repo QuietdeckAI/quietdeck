@@ -11,6 +11,8 @@ use quietdeck_types::node::{
     DeckFrame, MintedToken, NodeFrame, NodeRequest, PROTOCOL_VERSION, Reply, TokenClaims, TokenSession,
 };
 
+use quietdeck_types::api::Changed;
+
 use crate::auth::{SESSION_TOKEN_TTL_SECONDS, caller_ref, mint_session_token, node_for_token};
 use crate::db::now_ms;
 use crate::error::AppError;
@@ -65,6 +67,7 @@ async fn run(state: AppState, node: String, socket: WebSocket) {
     }
     let mut reg = state.hub.register(&node).await;
     tracing::info!(%node, %version, runner = runner.is_some(), "node connected");
+    state.changed(Changed::Nodes);
     if send(&mut sink, &DeckFrame::Welcome { node: node.clone() }).await.is_err() {
         state.hub.unregister(&node, reg.conn_id).await;
         return;
@@ -102,6 +105,8 @@ async fn run(state: AppState, node: String, socket: WebSocket) {
     state.hub.unregister(&node, reg.conn_id).await;
     let _ = nodes::seen(&state.db, &node).await;
     tracing::info!(%node, "node disconnected");
+    state.changed(Changed::Nodes);
+    state.changed(Changed::Sessions);
 }
 
 async fn send(sink: &mut futures::stream::SplitSink<WebSocket, Message>, frame: &DeckFrame) -> Result<(), axum::Error> {
@@ -110,6 +115,13 @@ async fn send(sink: &mut futures::stream::SplitSink<WebSocket, Message>, frame: 
 }
 
 async fn handle(state: &AppState, node: &str, reg: &crate::hub::Registration, frame: NodeFrame) {
+    let sessions_changed = matches!(
+        frame,
+        NodeFrame::Sessions { .. }
+            | NodeFrame::Session { .. }
+            | NodeFrame::SessionClosed { .. }
+            | NodeFrame::Summary { .. }
+    );
     let result = match frame {
         NodeFrame::Hello { .. } => Ok(()),
         NodeFrame::Sessions { sessions } => sessions::replace_snapshot(&state.db, &state.config, node, &sessions).await,
@@ -127,8 +139,10 @@ async fn handle(state: &AppState, node: &str, reg: &crate::hub::Registration, fr
             Ok(())
         }
     };
-    if let Err(e) = result {
-        tracing::error!(%node, error = %e, "handling a node frame");
+    match result {
+        Ok(()) if sessions_changed => state.changed(Changed::Sessions),
+        Ok(()) => {}
+        Err(e) => tracing::error!(%node, error = %e, "handling a node frame"),
     }
 }
 

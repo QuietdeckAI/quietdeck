@@ -5,10 +5,12 @@ mod auth;
 mod config;
 mod db;
 mod error;
+mod events;
 mod hooks;
 mod hub;
 mod mcp;
 mod ops;
+mod passkeys;
 mod relay;
 mod state;
 mod store;
@@ -44,6 +46,9 @@ enum Command {
     VapidKeys,
     /// Print a one-time code for `quietdeck node enroll`, without the web app (run it in the deck's container).
     EnrolmentCode(DataEnv),
+    /// Print a one-time code for registering a passkey without being signed in: the first one, or a new one when
+    /// every passkey is lost (run it in the deck's container).
+    SetupCode(DataEnv),
 }
 
 #[tokio::main]
@@ -61,6 +66,13 @@ async fn main() -> anyhow::Result<()> {
             let (public, private) = vapid_keys();
             println!("QUIETDECK_VAPID_PUBLIC_KEY={public}");
             println!("QUIETDECK_VAPID_PRIVATE_KEY={private}");
+            Ok(())
+        }
+        Command::SetupCode(data) => {
+            let db = db::open(&data.db_path()).await?;
+            let code = passkeys::create_setup_code(&db).await?;
+            println!("{code}");
+            eprintln!("Valid for 15 minutes, once: enter it on the deck's sign-in page to register a passkey.");
             Ok(())
         }
         Command::EnrolmentCode(data) => {
@@ -88,11 +100,7 @@ fn vapid_keys() -> (String, String) {
 
 async fn serve(env: Env) -> anyhow::Result<()> {
     let config = DeckConfig::load(&env.data.config_path())?;
-    let owner_logins =
-        env.owner_login.as_deref().or(config.owner.as_deref()).map(config::parse_logins).unwrap_or_default();
-    if owner_logins.is_empty() {
-        anyhow::bail!("set QUIETDECK_OWNER_LOGIN (or owner: in deck.yaml): the deck serves only its owner");
-    }
+    let webauthn = passkeys::webauthn(&env.public_url)?;
     std::fs::create_dir_all(&env.data.data_dir)
         .map_err(|e| anyhow::anyhow!("the data directory {}: {e}", env.data.data_dir.display()))?;
 
@@ -102,7 +110,7 @@ async fn serve(env: Env) -> anyhow::Result<()> {
     let hooks_listener = tokio::net::TcpListener::bind(&env.hooks_listen).await?;
 
     let db = db::open(&env.data.db_path()).await?;
-    ensure_owner(&db, &owner_logins[0]).await?;
+    ensure_owner(&db).await?;
     let signing_key = auth::signing_key(&db).await?;
     if env.vapid_public_key.is_none() || env.vapid_private_key.is_none() {
         tracing::warn!("no VAPID keys: web push is off");
@@ -110,16 +118,20 @@ async fn serve(env: Env) -> anyhow::Result<()> {
     let state = AppState {
         db,
         config: Arc::new(config),
-        owner_logins,
         dev_trust_local: env.dev_trust_local,
         signing_key: Arc::new(signing_key),
         hub: Arc::default(),
         public_url: env.public_url.clone(),
+        webauthn: Arc::new(webauthn),
+        ceremonies: Arc::default(),
+        events: tokio::sync::broadcast::channel(256).0,
+        release: Arc::default(),
         hooks_public_url: env.hooks_public_url.clone(),
     };
     if env.dev_trust_local {
-        tracing::warn!("QUIETDECK_DEV_TRUST_LOCAL is on: requests without a Tailscale identity count as the owner");
+        tracing::warn!("QUIETDECK_DEV_TRUST_LOCAL is on: every browser request counts as the signed-in owner");
     }
+    tokio::spawn(ops::releaser(state.clone()));
     ready.store(true, Ordering::SeqCst);
 
     let health = {
@@ -138,6 +150,7 @@ async fn serve(env: Env) -> anyhow::Result<()> {
     let app = Router::new()
         .route("/healthz", get(health))
         .merge(api::router())
+        .merge(passkeys::router())
         .nest_service("/mcp", mcp::service(state.clone()))
         .fallback(web::serve)
         .with_state(state.clone())
@@ -151,15 +164,11 @@ async fn serve(env: Env) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn ensure_owner(db: &db::Db, login: &str) -> anyhow::Result<()> {
-    sqlx::query(
-        "INSERT INTO users (id, name, tailscale_login) VALUES (1, ?, ?) \
-         ON CONFLICT (id) DO UPDATE SET tailscale_login = excluded.tailscale_login",
-    )
-    .bind(login)
-    .bind(login)
-    .execute(db)
-    .await?;
+/// The owner's user row. One owner per deck; the columns for teams wait for teams.
+async fn ensure_owner(db: &db::Db) -> anyhow::Result<()> {
+    sqlx::query("INSERT OR IGNORE INTO users (id, name, tailscale_login) VALUES (1, 'owner', 'owner')")
+        .execute(db)
+        .await?;
     Ok(())
 }
 

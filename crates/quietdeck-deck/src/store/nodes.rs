@@ -28,7 +28,7 @@ pub async fn enrol(db: &Db, code: &str, name: &str) -> Result<Enrolled, AppError
     let hash = sha256_hex(&normalise_code(code));
     let used = sqlx::query(
         "UPDATE enrolment_codes SET used_at = ?, used_by_node = ? \
-         WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?",
+         WHERE code_hash = ? AND purpose = 'node' AND used_at IS NULL AND expires_at > ?",
     )
     .bind(now)
     .bind(name)

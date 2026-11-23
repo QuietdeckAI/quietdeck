@@ -281,6 +281,44 @@ pub async fn list(db: &Db, f: &ListFilter) -> anyhow::Result<Vec<Card>> {
     Ok(out)
 }
 
+/// The Inbox's cards, newest first: everything not finished or left for later, and "handled elsewhere" lines the
+/// person hasn't seen yet (an Approve All marks them seen).
+pub async fn inbox(db: &Db, account: Option<&str>) -> anyhow::Result<Vec<Card>> {
+    let mut sql = format!(
+        "SELECT {CARD_COLUMNS} FROM cards c WHERE (state NOT IN ('done', 'automatic', 'handled_elsewhere', 'later') \
+           OR (state = 'handled_elsewhere' AND NOT EXISTS (SELECT 1 FROM decisions d WHERE d.card_id = c.id \
+             AND d.released_at IS NOT NULL AND d.skipped IS NULL)))"
+    );
+    if account.is_some() {
+        sql.push_str(" AND account = ?");
+    }
+    sql.push_str(" ORDER BY prepared_at DESC LIMIT 500");
+    let mut q = sqlx::query_as::<_, CardRow>(sqlx::AssertSqlSafe(sql));
+    if let Some(a) = account {
+        q = q.bind(a);
+    }
+    let rows = q.fetch_all(db).await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for r in rows {
+        out.push(hydrate(db, r).await?);
+    }
+    Ok(out)
+}
+
+/// Whether any thread is left for later.
+pub async fn has_later(db: &Db, account: Option<&str>) -> anyhow::Result<bool> {
+    let row: Option<(i64,)> = match account {
+        Some(a) => {
+            sqlx::query_as("SELECT 1 FROM cards WHERE state = 'later' AND account = ? LIMIT 1")
+                .bind(a)
+                .fetch_optional(db)
+                .await?
+        }
+        None => sqlx::query_as("SELECT 1 FROM cards WHERE state = 'later' LIMIT 1").fetch_optional(db).await?,
+    };
+    Ok(row.is_some())
+}
+
 /// Cards changed since a moment, for `history`.
 pub async fn changed_since(db: &Db, since_ms: i64, until_ms: i64) -> anyhow::Result<Vec<Card>> {
     let rows: Vec<CardRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(

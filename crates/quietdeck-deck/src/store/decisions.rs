@@ -74,6 +74,11 @@ pub async fn approve_all(db: &Db, req: &ApproveAll, undo_seconds: u32) -> Result
             }
         }
     }
+    if decided.is_empty() && req.timeline.is_empty() {
+        // Every card was skipped: nothing to release or undo, so no batch.
+        tx.rollback().await?;
+        return Ok(Approving { batch, release_at: ts(now), cards: decided, skipped });
+    }
     tx.commit().await?;
     Ok(Approving { batch, release_at: ts(release_after), cards: decided, skipped })
 }
@@ -125,7 +130,10 @@ async fn why_not(tx: &mut sqlx::SqliteConnection, d: &CardDecision) -> anyhow::R
 
 /// Cancel a batch still in its undo window.
 pub async fn undo(db: &Db, batch: &str) -> Result<(), AppError> {
-    let res = sqlx::query("DELETE FROM decision_batches WHERE id = ? AND released_at IS NULL").bind(batch).execute(db).await?;
+    let res = sqlx::query("DELETE FROM decision_batches WHERE id = ? AND released_at IS NULL")
+        .bind(batch)
+        .execute(db)
+        .await?;
     if res.rows_affected() == 0 {
         let exists: Option<(i64,)> =
             sqlx::query_as("SELECT 1 FROM decision_batches WHERE id = ?").bind(batch).fetch_optional(db).await?;
@@ -140,7 +148,9 @@ pub async fn undo(db: &Db, batch: &str) -> Result<(), AppError> {
 /// When the next batch is due, if one is waiting.
 pub async fn next_due(db: &Db) -> anyhow::Result<Option<i64>> {
     let row: (Option<i64>,) =
-        sqlx::query_as("SELECT MIN(release_after) FROM decision_batches WHERE released_at IS NULL").fetch_one(db).await?;
+        sqlx::query_as("SELECT MIN(release_after) FROM decision_batches WHERE released_at IS NULL")
+            .fetch_one(db)
+            .await?;
     Ok(row.0)
 }
 
@@ -374,7 +384,8 @@ pub async fn take(db: &Db, me: &SessionRef) -> anyhow::Result<Vec<Released>> {
         .bind(row.card_version)
         .execute(db)
         .await?;
-        let card = cards::get(db, row.card_id).await?.ok_or_else(|| anyhow::anyhow!("card {} vanished", row.card_id))?;
+        let card =
+            cards::get(db, row.card_id).await?.ok_or_else(|| anyhow::anyhow!("card {} vanished", row.card_id))?;
         let handoff_reason = row.handoff_reason.clone();
         let mut decision = row.into_decision()?;
         decision.claimed_by = Some(RunBy::Agent);
@@ -492,7 +503,8 @@ pub async fn stop(db: &Db) -> anyhow::Result<StopResult> {
     sqlx::query("DELETE FROM decision_batches WHERE released_at IS NULL").execute(&mut *tx).await?;
     let cards_hit: Vec<(i64,)> =
         sqlx::query_as("SELECT DISTINCT card_id FROM actions WHERE status = 'released'").fetch_all(&mut *tx).await?;
-    let actions = sqlx::query("UPDATE actions SET status = 'stopped' WHERE status = 'released'").execute(&mut *tx).await?;
+    let actions =
+        sqlx::query("UPDATE actions SET status = 'stopped' WHERE status = 'released'").execute(&mut *tx).await?;
     tx.commit().await?;
     for (id,) in cards_hit {
         cards::refresh_state(db, id).await?;
@@ -562,10 +574,12 @@ pub async fn decide(db: &Db, card_id: i64, d: &Decide) -> Result<Card, AppError>
                 .bind(card_id)
                 .execute(&mut *tx)
                 .await?;
-            sqlx::query("UPDATE actions SET status = 'stopped' WHERE card_id = ? AND status IN ('pending', 'released')")
-                .bind(card_id)
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "UPDATE actions SET status = 'stopped' WHERE card_id = ? AND status IN ('pending', 'released')",
+            )
+            .bind(card_id)
+            .execute(&mut *tx)
+            .await?;
         }
         DecisionKind::MoveUp | DecisionKind::MoveDown => {
             let section = if d.kind == DecisionKind::MoveUp { CardSection::Actions } else { CardSection::ArchiveList };
@@ -584,17 +598,15 @@ pub async fn decide(db: &Db, card_id: i64, d: &Decide) -> Result<Card, AppError>
         }
     }
     // Kept for the learning loop, already released and never taken.
-    sqlx::query(
-        "INSERT INTO decisions (card_id, card_version, kind, text, released_at, at) VALUES (?, ?, ?, ?, ?, ?)",
-    )
-    .bind(card_id)
-    .bind(card.version)
-    .bind(enum_str(&d.kind))
-    .bind(&d.text)
-    .bind(now)
-    .bind(now)
-    .execute(&mut *tx)
-    .await?;
+    sqlx::query("INSERT INTO decisions (card_id, card_version, kind, text, released_at, at) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(card_id)
+        .bind(card.version)
+        .bind(enum_str(&d.kind))
+        .bind(&d.text)
+        .bind(now)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     Ok(cards::get(db, card_id).await?.ok_or_else(|| anyhow::anyhow!("card {card_id} vanished"))?)
 }
@@ -619,8 +631,9 @@ pub async fn approving(db: &Db) -> anyhow::Result<Option<Approving>> {
 
 /// Whether any approved action is still waiting or running.
 pub async fn running(db: &Db) -> anyhow::Result<bool> {
-    let row: Option<(i64,)> =
-        sqlx::query_as("SELECT 1 FROM actions WHERE status IN ('released', 'started') LIMIT 1").fetch_optional(db).await?;
+    let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM actions WHERE status IN ('released', 'started') LIMIT 1")
+        .fetch_optional(db)
+        .await?;
     Ok(row.is_some())
 }
 
@@ -716,6 +729,7 @@ mod tests {
         let a = approve_all(&db, &ApproveAll { cards: vec![approve(&v1)], timeline: vec![] }, 0).await.unwrap();
         assert!(a.cards.is_empty());
         assert!(a.skipped[0].reason.contains("version 2"));
+        assert!(approving(&db).await.unwrap().is_none(), "nothing approved leaves no batch to undo");
     }
 
     #[tokio::test]
@@ -853,8 +867,11 @@ mod tests {
         .unwrap();
         approve_all(&db, &ApproveAll { cards: vec![], timeline: vec![e.id] }, 0).await.unwrap();
         release_due(&db).await.unwrap();
-        let read: (Option<i64>,) =
-            sqlx::query_as("SELECT read_at FROM timeline_entries WHERE id = ?").bind(e.id).fetch_one(&db).await.unwrap();
+        let read: (Option<i64>,) = sqlx::query_as("SELECT read_at FROM timeline_entries WHERE id = ?")
+            .bind(e.id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
         assert!(read.0.is_some());
     }
 
