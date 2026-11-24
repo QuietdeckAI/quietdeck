@@ -189,6 +189,16 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
     if value.is_empty() {
         return Err(AppError::BadRequest("the answer is empty".into()));
     }
+    // A second change to the same default on the same version says it again differently: the agent goes by the newest.
+    let (earlier,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM report_answers WHERE report_id = ? AND report_version = ? AND control = ? AND kind = ?",
+    )
+    .bind(r.id)
+    .bind(a.report_version)
+    .bind(&a.control)
+    .bind(kind_str(a.kind))
+    .fetch_one(&state.db)
+    .await?;
     let id: (i64,) = sqlx::query_as(
         "INSERT INTO report_answers (report_id, report_version, control, kind, about, value, answered_at) \
          VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
@@ -210,9 +220,17 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
             a.about.trim(),
             a.control
         ),
+        AnswerKind::Change if earlier > 0 => format!(
+            "On the report (version {}), the change to the default \"{}\" [{}] is now: {value}\n\nThis replaces \
+             what was said about it before. Approve All leaves those cards to you.",
+            a.report_version,
+            a.about.trim(),
+            a.control
+        ),
         AnswerKind::Change => format!(
-            "On the report (version {}), instead of the default \"{}\" [{}]: {value}\n\nApprove All leaves those \
-             cards to you. Do what this says, or propose it in the report.",
+            "On the report (version {}), a change to the default \"{}\" [{}]: {value}\n\nUsually it adjusts the \
+             default or adds to it rather than replacing it. Approve All leaves those cards to you. Do what this \
+             says, or propose it in the report.",
             a.report_version,
             a.about.trim(),
             a.control

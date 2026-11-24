@@ -238,6 +238,10 @@ async fn answer(node: &Node, request: DeckRequest) -> Reply {
             Ok(()) => Reply::ok(&serde_json::json!({})),
             Err(error) => Reply::Err { error },
         },
+        DeckRequest::InterruptSession { session_id } => match crate::control::interrupt(node, &session_id).await {
+            Ok(()) => Reply::ok(&serde_json::json!({})),
+            Err(error) => Reply::Err { error },
+        },
         DeckRequest::DecisionsReleased => match node.runner.get() {
             Some(r) => {
                 r.signal(crate::runner::Signal::Released);

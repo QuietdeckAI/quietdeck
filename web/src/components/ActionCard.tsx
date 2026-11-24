@@ -20,8 +20,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/input";
+import { useInfo } from "@/components/AccountTabs";
 import { actionLine, sessionName } from "@/components/actionText";
 import { api } from "@/lib/api";
+import { emailLink } from "@/lib/emailLink";
 import { when } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Action } from "@/types/Action";
@@ -159,6 +161,7 @@ export function ActionCard({
     mutationFn: () =>
       api<Approving>(`/api/cards/${card.id}/retry`, { method: "POST" }),
   });
+  const gmail = emailLink(card, useInfo().data?.accounts ?? []);
   const watches = useQuery({
     queryKey: ["watches"],
     queryFn: () => api<ThreadWatch[]>("/api/watches"),
@@ -268,16 +271,17 @@ export function ActionCard({
               <MessageSquare />
             </Button>
           )}
-          <DropdownMenu>
+          {/* Not modal: a modal menu locks the page's scrolling, which hides the sticky bar at the bottom. */}
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button variant="quiet" size="icon" className="size-7" aria-label="More for this card">
                 <MoreHorizontal />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              {card.link && (
+              {gmail && (
                 <DropdownMenuItem asChild>
-                  <a href={card.link} target="_blank" rel="noreferrer">
+                  <a href={gmail} target="_blank" rel="noreferrer">
                     <ExternalLink /> Open in Gmail
                   </a>
                 </DropdownMenuItem>

@@ -177,7 +177,8 @@ impl Mcp {
     }
 
     #[tool(description = "Post a card for one email thread: summary, facts, section, reason and typed actions. \
-        A thread's open card gets a new version. Never put email bodies on a card.")]
+        A thread's open card gets a new version. `excerpt` carries the email's own words for the details pane; on a \
+        DocSpring account, never copy end users' personal data or document contents into it.")]
     async fn card_add(
         &self,
         Parameters(input): Parameters<CardInput>,

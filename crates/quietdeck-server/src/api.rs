@@ -42,6 +42,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/sessions/start", post(start_session))
         .route("/api/sessions/resume", post(resume_session))
         .route("/api/sessions/close", post(close_session))
+        .route("/api/sessions/interrupt", post(interrupt_session))
         .route("/api/who-has", get(who_has))
         .route("/api/msg", post(msg_send))
         .route("/api/timeline", post(timeline_add))
@@ -496,6 +497,17 @@ async fn close_session(
     let _ = owner;
     let caller = Caller::Owner { device: String::new() };
     control::close(&state, &caller, target).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+/// Stop is the owner's click: Esc in the session.
+async fn interrupt_session(
+    State(state): State<AppState>,
+    owner: Owner,
+    Json(target): Json<SessionTarget>,
+) -> AppResult<Json<serde_json::Value>> {
+    let _ = owner;
+    control::interrupt(&state, target).await?;
     Ok(Json(serde_json::json!({})))
 }
 

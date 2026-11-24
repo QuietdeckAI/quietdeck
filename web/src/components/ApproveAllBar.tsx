@@ -15,6 +15,7 @@ export function ApproveAllBar({
   request,
   beforeApprove,
   top,
+  inline,
 }: {
   inbox: Inbox;
   request: ApproveAll;
@@ -22,19 +23,23 @@ export function ApproveAllBar({
   beforeApprove?: () => Promise<void>;
   /** Above the report, rather than pinned to the bottom of the screen. */
   top?: boolean;
+  /** Just the buttons, compact, for another bar (the report's chat box): the status floats above that bar. */
+  inline?: boolean;
 }) {
   const qc = useQueryClient();
   const [skipped, setSkipped] = useState<Skipped[]>([]);
-  const refresh = () => void qc.invalidateQueries({ queryKey: ["inbox"] });
+  // Awaited in onSuccess, so a button stays busy until the Inbox it changed is back: otherwise Approve All shows
+  // again for a moment between the answer and the refreshed Inbox, then turns into Undo.
+  const refresh = () => qc.invalidateQueries({ queryKey: ["inbox"] });
 
   const approve = useMutation({
     mutationFn: async () => {
       await beforeApprove?.();
       return api<Approving>("/api/decisions/approve-all", { method: "POST", body: request });
     },
-    onSuccess: (a) => {
+    onSuccess: async (a) => {
       setSkipped(a.skipped);
-      refresh();
+      await refresh();
     },
   });
   const undo = useMutation({
@@ -63,8 +68,65 @@ export function ApproveAllBar({
     return () => window.clearTimeout(t);
   }, [approving]);
   const nothing = request.cards.length === 0 && request.timeline.length === 0;
-  if (nothing && !approving && !inbox.running && skipped.length === 0) return null;
+  // In the chat bar the button keeps its place, greyed out, so the row doesn't shift when there's nothing to approve.
+  if (!inline && nothing && !approving && !inbox.running && skipped.length === 0) return null;
   const error = approve.error ?? undo.error ?? stop.error;
+
+  if (inline) {
+    const status = approving
+      ? `Approving ${approving.cards.length === 1 ? "1 card" : `${approving.cards.length} cards`}`
+      : skipped.length > 0
+        ? `Left alone: ${skipped.map((s) => s.reason).filter((r, i, all) => all.indexOf(r) === i).join("; ")}`
+        : null;
+    return (
+      <>
+        {approving && (
+          <div
+            key={approving.batch}
+            className="drain absolute inset-x-0 top-0 h-px bg-accent"
+            style={{ animationDuration: `${Math.max(0, new Date(approving.release_at).getTime() - Date.now())}ms` }}
+            aria-hidden
+          />
+        )}
+        {(status || error) && (
+          <p
+            role={error ? "alert" : "status"}
+            className={
+              "absolute right-4 bottom-full mb-2 max-w-[calc(100%-2rem)] truncate rounded-md border border-rule " +
+              "bg-paper-2 px-2.5 py-1 text-xs " +
+              (error ? "text-danger" : "text-muted")
+            }
+          >
+            {error ? error.message : status}
+          </p>
+        )}
+        {approving ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-10 min-w-32"
+            loading={undo.isPending}
+            onClick={() => undo.mutate(approving.batch)}
+          >
+            <Undo2 aria-hidden /> Undo
+          </Button>
+        ) : (
+          // The chat bar's one Stop stops the run too. Undo and Approve All share one width, so swapping them
+          // doesn't move the row.
+          <Button
+            size="sm"
+            variant="primary"
+            className="h-10 min-w-32"
+            loading={approve.isPending}
+            disabled={settling || nothing}
+            onClick={() => approve.mutate()}
+          >
+            Approve All
+          </Button>
+        )}
+      </>
+    );
+  }
 
   return (
     <div

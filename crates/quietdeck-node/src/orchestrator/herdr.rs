@@ -53,6 +53,10 @@ impl Orchestrator for Herdr {
         close_session(&self.program, session_id).await
     }
 
+    async fn interrupt(&self, session_id: &str) -> Result<(), String> {
+        interrupt_session(&self.program, session_id).await
+    }
+
     async fn deliver(&self, address: &str, text: &str) -> Result<Delivered, String> {
         prompt(&self.program, address, text).await
     }
@@ -352,14 +356,32 @@ fn tab_create(tab: &OpenTab) -> Vec<String> {
     a
 }
 
+/// The herdr agent running a session.
+async fn agent_running(herdr: &str, session_id: &str) -> Result<Agent, String> {
+    let agents: AgentList = run_json(herdr, &["agent", "list"]).await.map_err(|e| e.to_string())?;
+    agents
+        .agents
+        .into_iter()
+        .find(|a| a.agent_session.as_ref().and_then(|s| s.value.as_deref()) == Some(session_id))
+        .ok_or_else(|| format!("session {session_id} isn't running on this machine"))
+}
+
+/// Press Esc in the session's pane: the agent stops its turn.
+async fn interrupt_session(herdr: &str, session_id: &str) -> Result<(), String> {
+    let pane = agent_running(herdr, session_id).await?.pane_id;
+    let out = tokio::process::Command::new(herdr)
+        .args(["agent", "send-keys", &pane, "esc"])
+        .output()
+        .await
+        .map_err(|e| format!("running {herdr}: {e}"))?;
+    if out.status.success() { Ok(()) } else { Err(herdr_error(&out.stderr)) }
+}
+
 /// Close the tab a running session is in.
 async fn close_session(herdr: &str, session_id: &str) -> Result<(), String> {
-    let agents: AgentList = run_json(herdr, &["agent", "list"]).await.map_err(|e| e.to_string())?;
-    let tab = agents
-        .agents
-        .iter()
-        .find(|a| a.agent_session.as_ref().and_then(|s| s.value.as_deref()) == Some(session_id))
-        .and_then(|a| a.tab_id.clone())
+    let tab = agent_running(herdr, session_id)
+        .await?
+        .tab_id
         .ok_or_else(|| format!("session {session_id} isn't running on this machine"))?;
     let out = tokio::process::Command::new(herdr)
         .args(["tab", "close", &tab])

@@ -100,8 +100,9 @@ The Inbox is one report the triage agent writes and keeps up to date as mail arr
 groups it handles the same way (sales pitches, mail it will archive, grouped by subject). Each item says what will
 happen by default. Read it like a document:
 
-- **Change this**, beside a default, opens a box: say what to do instead and **Send**. It goes straight to the agent,
-  and Approve All leaves that item to it.
+- **Change**, beside a default, opens a box in it: say what to adjust or add (or what to do instead) and **Send**. It
+  goes straight to the agent, and Approve All leaves that item to it. The **…** beside it has **View email**, which
+  opens the thread in Gmail.
 - **A question** shows its answers as buttons ("Was this you? Yes / No"), sometimes with **Other**. Your answer goes
   straight to the agent, which follows it up in the report.
 - **Approve All**, at the top, carries out every default you didn't change. Anything typed in a Change this box and
@@ -112,10 +113,11 @@ happen by default. Read it like a document:
 The agent writes the report with `quietdeck report show` and `quietdeck report set` (`quietdeck report --help` lists
 the two tags it uses for defaults and questions). Under the report, the agent's cards carry each default's actions.
 
-## Cards: every card in a list
+## Threads: every thread in a list
 
-**Cards**, beside Inbox, lists the same mail as cards: what each email is, its facts, the actions it proposes, and a
-box to say what to do instead. Use it when you want the whole list rather than the report. Its own **Approve All**
+**Threads**, beside Inbox, lists the same mail one thread per row: what each email is, its facts, the actions it
+proposes, and a box to say what to do instead. A new message in a thread updates its row. A session's request for a
+temporary Gmail filter is a row here too. Use it when you want the whole list rather than the report. Its own **Approve All**
 decides every card on screen, and **Later** is at the bottom. When the agent has posted cards its report doesn't
 mention yet, the Inbox says so under the report, with a link here.
 

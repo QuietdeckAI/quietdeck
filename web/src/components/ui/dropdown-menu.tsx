@@ -34,3 +34,11 @@ export function DropdownMenuItem({ className, ...props }: ComponentProps<typeof 
     />
   );
 }
+
+export function DropdownMenuLabel({ className, ...props }: ComponentProps<typeof Menu.Label>) {
+  return <Menu.Label className={cn("px-2 pt-1.5 pb-1 text-xs text-neutral", className)} {...props} />;
+}
+
+export function DropdownMenuSeparator({ className, ...props }: ComponentProps<typeof Menu.Separator>) {
+  return <Menu.Separator className={cn("my-1 h-px bg-rule", className)} {...props} />;
+}

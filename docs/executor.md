@@ -141,7 +141,7 @@ agent and the card both show, when:
 
 It runs each action it kept only after the deck agrees to start it, which Stop makes fail, and refuses one whose
 payload differs from what was approved. A thread that's already archived, or already read, counts as done. If a call
-fails, the action is marked failed with the error and its card waits on the Cards screen with Retry, and the triage agent
+fails, the action is marked failed with the error and its card waits on the Threads screen with Retry, and the triage agent
 gets one short report for the batch:
 
 ```text

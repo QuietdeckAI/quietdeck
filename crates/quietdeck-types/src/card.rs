@@ -1,7 +1,7 @@
 //! Cards, the actions on them, and the user's decisions.
 //!
 //! One card per thread: posting a card for a thread that already has an open card replaces that card's content
-//! with a new version. Cards carry what the person needs to decide, never email bodies.
+//! with a new version.
 
 use garde::Validate;
 use jiff::Timestamp;
@@ -123,6 +123,20 @@ pub struct CardInput {
     #[serde(default)]
     #[garde(skip)]
     pub sender_auth: SenderAuth,
+    /// Which of the person's addresses the newest message went to (an alias such as `hello@example.com` when that's
+    /// where it arrived). The Inbox shows it with the sender; without it, the account's address stands in.
+    #[serde(default)]
+    #[garde(inner(length(min = 3, max = 320)))]
+    #[ts(optional)]
+    pub to: Option<String>,
+    /// The email's own words for the Inbox's details pane, as plain text: the newest message verbatim, or a thread as
+    /// one line per message (`Mary: Did we update this for Compass?`). Leave out quoted replies, signatures and
+    /// footers. The pane shows the first lines. On a DocSpring account, leave out end users' personal data and
+    /// document contents, as stories and forwards do.
+    #[serde(default)]
+    #[garde(inner(length(max = 4000)))]
+    #[ts(optional)]
+    pub excerpt: Option<String>,
     /// The `List-Id` header, for strict rules and the learning loop.
     #[serde(default)]
     #[garde(inner(length(max = 500)))]

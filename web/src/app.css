@@ -23,6 +23,9 @@
   --color-focus: oklch(80% 0.1 238);
   --color-danger: oklch(72% 0.13 28);
   --color-danger-wash: oklch(24% 0.04 28);
+  /* An agent's status dot: idle, working. */
+  --color-ok: oklch(74% 0.14 150);
+  --color-busy: oklch(84% 0.14 90);
 
   --font-display: "Newsreader Variable", ui-serif, serif;
   --font-sans: "Geist Variable", ui-sans-serif, sans-serif;
@@ -175,6 +178,8 @@ input[type="file"]:not(:disabled),
 .report {
   font-size: 0.9375rem;
   line-height: 1.5;
+  /* No last line of one word ("do" alone under an item). */
+  text-wrap: pretty;
 }
 .report > * + * {
   margin-top: 0.45em;
@@ -187,6 +192,50 @@ input[type="file"]:not(:disabled),
 .report h3 {
   margin-top: 1.4em;
   color: var(--color-ink);
+}
+/* An item with a bold headline: the headline and its default in the page's ink, the description between them
+   secondary. Lists without headlines (the Archive part) stay in ink. */
+.report li:has(> strong:first-child) {
+  color: var(--color-muted);
+}
+.report li > strong:first-child {
+  color: var(--color-ink);
+}
+
+/* An item's default always starts its own line, so the eye finds it in the same place every time. */
+.report-default {
+  display: block;
+  margin-top: 0.35em;
+}
+/* A default for a whole list sits under it, lined up with the list's text like a default inside one item. Not in
+   the Archive part: Archive all covers every list there. */
+.report ul + .report-default {
+  margin-left: 1.25em;
+}
+.report ol + .report-default {
+  margin-left: 1.5em;
+}
+.report hr ~ ul + .report-default,
+.report hr ~ ol + .report-default {
+  margin-left: 0;
+}
+
+/* The Archive part's one default (Archive all) sits under all its lists, with room above it. */
+.report hr ~ .report-default {
+  margin-top: 1.5em;
+}
+/* One Archive part at the end: a rule above it, a bigger heading, its groups as smaller headings under it. */
+.report hr {
+  border: 0;
+  border-top: 1px solid var(--color-rule-strong);
+  margin-top: 2.25em;
+  margin-bottom: 1.25em;
+}
+.report h1 {
+  font-size: var(--text-2xl);
+}
+.report hr + h1 {
+  margin-top: 0;
 }
 .report > h1:first-child,
 .report > h2:first-child,
@@ -211,6 +260,21 @@ input[type="file"]:not(:disabled),
   background: var(--color-paper-3);
   border-radius: var(--radius-sm);
   padding: 0.05em 0.3em;
+}
+/* A session the report names (`dep updates`): code's look, in the link colour, so it reads as a place to go. */
+.report .session-ref {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--color-paper-3);
+  border-radius: var(--radius-sm);
+  padding: 0.05em 0.3em;
+  color: var(--color-accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.report .session-ref:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .md pre {
   background: var(--color-paper-2);

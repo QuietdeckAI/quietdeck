@@ -16,8 +16,8 @@ export function LaterScreen() {
   });
   return (
     <main className="mx-auto max-w-3xl px-4 py-6">
-      <Link to="/cards" className="text-sm text-neutral hover:text-ink">
-        ← Cards
+      <Link to="/threads" className="text-sm text-neutral hover:text-ink">
+        ← Threads
       </Link>
       <h1 className="mt-3 text-2xl">Later</h1>
       {later.isError && <p className="mt-4 text-danger">{later.error.message}</p>}

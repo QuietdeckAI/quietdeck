@@ -128,21 +128,34 @@ pub async fn resume_by_id(
     Ok(started)
 }
 
-pub async fn close(state: &AppState, caller: &Caller, target: SessionTarget) -> AppResult<()> {
+/// The one running session a target names.
+async fn running_one(state: &AppState, target: &SessionTarget) -> AppResult<quietdeck_types::directory::SessionRow> {
     target.validate().map_err(bad)?;
-    let rows = sessions::resolve_address(&state.db, &state.hub, &target.session).await?;
-    let row = match rows.as_slice() {
-        [] => return Err(AppError::NotFound(format!("no running session called {}", target.session))),
-        [row] => row,
-        many => {
-            let candidates: Vec<String> = many.iter().map(|r| r.info.session_id.clone() + "@" + &r.node).collect();
-            return Err(AppError::Conflict(format!(
+    let mut rows = sessions::resolve_address(&state.db, &state.hub, &target.session).await?;
+    match rows.len() {
+        0 => Err(AppError::NotFound(format!("no running session called {}", target.session))),
+        1 => Ok(rows.remove(0)),
+        _ => {
+            let candidates: Vec<String> = rows.iter().map(|r| r.info.session_id.clone() + "@" + &r.node).collect();
+            Err(AppError::Conflict(format!(
                 "{} names more than one running session: say which, as one of {}",
                 target.session,
                 candidates.join(", ")
-            )));
+            )))
         }
-    };
+    }
+}
+
+/// Stop: Esc in the session, so it ends its turn. The person's click on the report, while its agent works.
+pub async fn interrupt(state: &AppState, target: SessionTarget) -> AppResult<()> {
+    let row = running_one(state, &target).await?;
+    ask(state, &row.node, DeckRequest::InterruptSession { session_id: row.info.session_id.clone() }, CLOSE_TIMEOUT)
+        .await?;
+    Ok(())
+}
+
+pub async fn close(state: &AppState, caller: &Caller, target: SessionTarget) -> AppResult<()> {
+    let row = &running_one(state, &target).await?;
     let request = DeckRequest::CloseSession { session_id: row.info.session_id.clone() };
     ask(state, &row.node, request, CLOSE_TIMEOUT).await?;
     let refs = vec![row.address(), row.info.session_id.clone()];
@@ -302,5 +315,19 @@ mod tests {
         sessions::upsert(&state.db, &state.config, "laptop", &info("s1", "billing", true)).await.unwrap();
         let row = sessions::get(&state.db, &state.hub, "laptop", "s1").await.unwrap().unwrap();
         assert_eq!((row.info.running, row.ended, row.closed_at), (true, None, None));
+    }
+
+    #[tokio::test]
+    async fn stop_presses_esc_in_the_one_running_session_it_names() {
+        let state = AppState::for_tests().await;
+        sessions::upsert(&state.db, &state.config, "laptop", &info("s1", "email triage", true)).await.unwrap();
+        let mut reg = state.hub.register("laptop").await;
+        let s = state.clone();
+        let call = tokio::spawn(async move { interrupt(&s, SessionTarget { session: "s1@laptop".into() }).await });
+        let req = answer_next(&mut reg, Reply::ok(&serde_json::json!({}))).await;
+        assert_eq!(req, DeckRequest::InterruptSession { session_id: "s1".into() });
+        call.await.unwrap().unwrap();
+        let none = interrupt(&state, SessionTarget { session: "nobody@laptop".into() }).await;
+        assert!(matches!(none, Err(AppError::NotFound(_))), "{none:?}");
     }
 }

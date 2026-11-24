@@ -70,7 +70,8 @@ function approveAllRequest(
   return { cards, timeline: inbox.timeline.map((e) => e.id) };
 }
 
-export function CardsScreen() {
+/** Threads: every thread the agent has a card for, one row each, with its own Approve All. */
+export function ThreadsScreen() {
   const account = useAccount();
   const inbox = useQuery({
     queryKey: ["inbox", account ?? null],

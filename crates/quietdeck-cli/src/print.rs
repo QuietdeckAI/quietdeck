@@ -349,7 +349,7 @@ pub fn report_answers(a: &[quietdeck_types::report::ReportAnswer]) -> String {
         .map(|a| {
             let what = match a.kind {
                 quietdeck_types::report::AnswerKind::Choice => "answered",
-                quietdeck_types::report::AnswerKind::Change => "instead of the default",
+                quietdeck_types::report::AnswerKind::Change => "changes the default",
             };
             format!("- v{} [{}] \"{}\" {what}: {}", a.report_version, a.control, a.about, a.value)
         })

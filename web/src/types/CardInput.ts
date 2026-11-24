@@ -28,6 +28,18 @@ last_message_ref: string | null,
  */
 last_message_at: string | null, refs: Array<string>, sender: Sender | null, sender_auth: SenderAuth, 
 /**
+ * Which of the person's addresses the newest message went to (an alias such as `hello@example.com` when that's
+ * where it arrived). The Inbox shows it with the sender; without it, the account's address stands in.
+ */
+to?: string, 
+/**
+ * The email's own words for the Inbox's details pane, as plain text: the newest message verbatim, or a thread as
+ * one line per message (`Mary: Did we update this for Compass?`). Leave out quoted replies, signatures and
+ * footers. The pane shows the first lines. On a DocSpring account, leave out end users' personal data and
+ * document contents, as stories and forwards do.
+ */
+excerpt?: string, 
+/**
  * The `List-Id` header, for strict rules and the learning loop.
  */
 list_id: string | null, subject: string, 

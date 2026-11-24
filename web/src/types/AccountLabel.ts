@@ -3,4 +3,8 @@
 /**
  * An account label from deck config.
  */
-export type AccountLabel = { id: string, label: string, };
+export type AccountLabel = { id: string, label: string, 
+/**
+ * The mailbox's address (`you@example.com`): the web app's "View email" opens a card's thread in Gmail with it.
+ */
+address?: string, };

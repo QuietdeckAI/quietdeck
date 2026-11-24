@@ -9,9 +9,9 @@ const LINKS = [
     match: (p: string) => p === "/",
   },
   {
-    to: "/cards",
-    label: "Cards",
-    match: (p: string) => p.startsWith("/cards") || p.startsWith("/later"),
+    to: "/threads",
+    label: "Threads",
+    match: (p: string) => p.startsWith("/threads") || p.startsWith("/cards") || p.startsWith("/later"),
   },
   {
     to: "/sessions",

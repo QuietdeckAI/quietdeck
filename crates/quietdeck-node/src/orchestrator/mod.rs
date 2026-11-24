@@ -33,6 +33,9 @@ pub trait Orchestrator: Send + Sync {
     /// Close the tab a running session is in.
     async fn close(&self, session_id: &str) -> Result<(), String>;
 
+    /// Interrupt a running session, as Esc does: it stops its turn and waits for input.
+    async fn interrupt(&self, session_id: &str) -> Result<(), String>;
+
     /// Type a message into a session as if the person had. An error starting with
     /// [`crate::deliver::OFFLINE_PREFIX`] means the session isn't there.
     async fn deliver(&self, address: &str, text: &str) -> Result<Delivered, String>;

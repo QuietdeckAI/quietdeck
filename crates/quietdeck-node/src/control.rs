@@ -180,6 +180,12 @@ pub async fn close(node: &Node, session_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub async fn interrupt(node: &Node, session_id: &str) -> Result<(), String> {
+    node.orchestrator.interrupt(session_id).await?;
+    tracing::info!(%session_id, "interrupted a session for the deck");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

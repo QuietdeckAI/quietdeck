@@ -12,12 +12,18 @@ import type { CardDecision } from "@/types/CardDecision";
 import type { Inbox } from "@/types/Inbox";
 import type { Report } from "@/types/Report";
 
-// The Inbox is the triage agent's report and nothing else. The cards under it have their own screen (Cards).
+// The Inbox is the triage agent's report and nothing else. The cards under it have their own screen (Threads).
+
+/** Every card the Inbox holds, by ID: the report's defaults name them. */
+function cardsById(inbox: Inbox): Map<number, Card> {
+  const all = new Map<number, Card>();
+  for (const c of [...inbox.actions, ...inbox.suggestions, ...inbox.archive_list, ...inbox.sent]) all.set(Number(c.id), c);
+  return all;
+}
 
 /** With a report: approve the cards of every default he didn't change. Cards the report doesn't name wait. */
 function reportApproveRequest(inbox: Inbox, report: Report, changed: Set<string>): ApproveAll {
-  const all = new Map<number, Card>();
-  for (const c of [...inbox.actions, ...inbox.suggestions, ...inbox.archive_list, ...inbox.sent]) all.set(Number(c.id), c);
+  const all = cardsById(inbox);
   const seen = new Set<number>();
   const cards: CardDecision[] = [];
   for (const d of reportDefaults(report.markdown)) {
@@ -59,9 +65,9 @@ export function InboxScreen() {
         <>
           <p className="mt-16 text-center font-display text-xl text-neutral">No report yet.</p>
           <p className="mt-3 text-center text-sm text-neutral">
-            The triage agent writes one on its next round. Every card is on{" "}
-            <Link to="/cards" className="text-ink underline underline-offset-4 hover:text-accent">
-              Cards
+            The triage agent writes one on its next round. Every thread is on{" "}
+            <Link to="/threads" className="text-ink underline underline-offset-4 hover:text-accent">
+              Threads
             </Link>
             .
           </p>
@@ -109,22 +115,23 @@ function ReportScreen({
   };
   return (
     <>
-      <main className="mx-auto max-w-3xl px-4 pt-4 pb-4">
-        <ApproveAllBar inbox={inbox} request={request} beforeApprove={beforeApprove} top />
+      <main className="mx-auto max-w-3xl px-4 pt-6 pb-4">
         <div className="mt-6">
-          <ReportBody report={report} drafts={changes} setDraft={setChange} />
+          <ReportBody report={report} cards={cardsById(inbox)} drafts={changes} setDraft={setChange} />
         </div>
         {others && (
           <p className="mt-10 text-sm text-neutral">
-            Some cards aren't in the report yet:{" "}
-            <Link to="/cards" className="text-ink underline underline-offset-4 hover:text-accent">
-              Cards
+            Some threads aren't in the report yet:{" "}
+            <Link to="/threads" className="text-ink underline underline-offset-4 hover:text-accent">
+              Threads
             </Link>
           </p>
         )}
         {inbox.timeline.length > 0 && <Automatic inbox={inbox} />}
       </main>
-      <ReportChatBox agent={report.posted_by.tab} />
+      <ReportChatBox by={report.posted_by} running={inbox.running}>
+        <ApproveAllBar inbox={inbox} request={request} beforeApprove={beforeApprove} inline />
+      </ReportChatBox>
     </>
   );
 }

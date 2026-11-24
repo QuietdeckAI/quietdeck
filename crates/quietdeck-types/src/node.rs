@@ -197,6 +197,10 @@ pub enum DeckRequest {
     CloseSession {
         session_id: String,
     },
+    /// Interrupt a running session, as Esc does in Claude Code: it stops what it's doing and waits for input.
+    InterruptSession {
+        session_id: String,
+    },
     /// To the runner: decisions on its agent's cards were released. It takes them with `runner_take`.
     DecisionsReleased,
     /// To the runner: carry out a lease's create or remove step. Answers the kind's state (`{filter_id, ...}`) for

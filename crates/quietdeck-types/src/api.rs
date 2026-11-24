@@ -74,6 +74,10 @@ impl Default for Settings {
 pub struct AccountLabel {
     pub id: String,
     pub label: String,
+    /// The mailbox's address (`you@example.com`): the web app's "View email" opens a card's thread in Gmail with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub address: Option<String>,
 }
 
 /// Who the deck thinks is calling.

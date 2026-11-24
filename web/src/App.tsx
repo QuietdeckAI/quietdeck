@@ -4,7 +4,7 @@ import { Header } from "@/components/Header";
 import { api, setSignedOutHandler } from "@/lib/api";
 import { useDeckEvents } from "@/lib/events";
 import { usePath } from "@/lib/route";
-import { CardsScreen } from "@/screens/Cards";
+import { ThreadsScreen } from "@/screens/Threads";
 import { HistoryScreen } from "@/screens/History";
 import { InboxScreen } from "@/screens/Inbox";
 import { LaterScreen } from "@/screens/Later";
@@ -53,7 +53,8 @@ export function App() {
 
 function Screen() {
   const path = usePath();
-  if (path.startsWith("/cards")) return <CardsScreen />;
+  // `/cards` was the screen's old address.
+  if (path.startsWith("/threads") || path.startsWith("/cards")) return <ThreadsScreen />;
   if (path.startsWith("/history")) return <HistoryScreen />;
   if (path.startsWith("/later")) return <LaterScreen />;
   if (path.startsWith("/rules")) return <RulesScreen />;
