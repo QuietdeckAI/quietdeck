@@ -24,8 +24,36 @@ function baseIcon(): Promise<HTMLImageElement> {
 const BADGE_FILL = "#ffffff";
 const BADGE_TEXT = "#000000";
 
+/** `label` in black on a transparent canvas, and where its ink starts and ends, in fractional pixels: an edge row
+ * counts for as much of a row as it's covered. Chrome snaps text to whole pixels, so the caller places this canvas
+ * at the exact offset that centres the ink. */
+function inkedLabel(label: string, font: string): { canvas: HTMLCanvasElement; top: number; bottom: number } | null {
+  const canvas = document.createElement("canvas");
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.font = font;
+  ctx.fillStyle = BADGE_TEXT;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, SIZE / 2, SIZE / 2);
+  const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
+  const cover: number[] = [];
+  for (let row = 0; row < SIZE; row++) {
+    let most = 0;
+    for (let col = 0; col < SIZE; col++) most = Math.max(most, data[(row * SIZE + col) * 4 + 3]);
+    cover.push(most / 255);
+  }
+  const first = cover.findIndex((c) => c > 0);
+  if (first < 0) return null;
+  const last = cover.length - 1 - [...cover].reverse().findIndex((c) => c > 0);
+  return { canvas, top: first + 1 - cover[first], bottom: last + cover[last] };
+}
+
 /** The base icon with the count in a white badge across its lower half, as Gmail draws its unread count: as tall as
- * Gmail's, with figures nearly as tall as the badge, and as wide as the figures need (two or three fill the icon). */
+ * Gmail's, with figures about two thirds of its height, centred on their ink, and as wide as the figures need (two or
+ * three fill the icon). */
 async function badgedIcon(label: string): Promise<string> {
   const img = await baseIcon();
   const canvas = document.createElement("canvas");
@@ -35,7 +63,7 @@ async function badgedIcon(label: string): Promise<string> {
   if (!ctx) return BASE_ICON;
   ctx.drawImage(img, 0, 0, SIZE, SIZE);
   const h = 36;
-  let size = 38;
+  let size = 34;
   const font = () => `500 ${size}px "Geist Variable", ui-sans-serif, sans-serif`;
   ctx.font = font();
   while (size > 20 && ctx.measureText(label).width > SIZE - 4) {
@@ -49,10 +77,9 @@ async function badgedIcon(label: string): Promise<string> {
   ctx.roundRect(x, y, w, h, 9);
   ctx.fillStyle = BADGE_FILL;
   ctx.fill();
-  ctx.fillStyle = BADGE_TEXT;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label, x + w / 2, y + h / 2 + 2);
+  // Centred on the figures' drawn ink, so the space above them matches the space below.
+  const ink = inkedLabel(label, ctx.font);
+  if (ink) ctx.drawImage(ink.canvas, x + w / 2 - SIZE / 2, y + h / 2 - (ink.top + ink.bottom) / 2);
   return canvas.toDataURL("image/png");
 }
 
