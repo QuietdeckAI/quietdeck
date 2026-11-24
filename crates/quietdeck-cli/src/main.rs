@@ -163,9 +163,14 @@ enum Command {
 #[derive(Subcommand)]
 enum ReportCommand {
     /// The current report: its version, its text and the person's answers on it.
-    Show,
-    /// Replace the report's text with a file's (`-` reads stdin). Edit the text `report show` printed and pass its
-    /// version as --base, so you never overwrite an edit you didn't see. It lists any open card that no <Default>
+    Show {
+        /// Print only the report's text, exactly as stored, so it can be saved, edited and passed to `report set`.
+        /// The version to pass as --base goes to stderr.
+        #[arg(long)]
+        markdown: bool,
+    },
+    /// Replace the report's text with a file's (`-` reads stdin). Edit the text `report show --markdown` printed and
+    /// pass its version as --base, so you never overwrite an edit you didn't see. It lists any open card that no <Default>
     /// names.
     Set {
         file: String,
@@ -742,8 +747,16 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Report { command } => {
             let c = Client::connect().await?;
             match command {
-                ReportCommand::Show => {
+                ReportCommand::Show { markdown } => {
                     let r: Option<quietdeck_types::report::Report> = c.get("/api/report", &[]).await?;
+                    if markdown {
+                        let Some(r) = r else {
+                            anyhow::bail!("no report yet: write one with `quietdeck report set <file>`")
+                        };
+                        eprintln!("Report {} version {} (pass --base {} to `report set`)", r.id, r.version, r.version);
+                        print!("{}", r.markdown);
+                        return Ok(());
+                    }
                     print::out(json, &r, |r| print::report(r.as_ref()))
                 }
                 ReportCommand::Set { file, base, new } => {

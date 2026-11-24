@@ -110,8 +110,9 @@ happen by default. Read it like a document:
 - **The box at the bottom** sends plain words to the triage agent ("archive HelloFresh from now on"). It's only passed
   on: if the agent's session isn't running, it says so and keeps your text.
 
-The agent writes the report with `quietdeck report show` and `quietdeck report set` (`quietdeck report --help` lists
-the two tags it uses for defaults and questions). Under the report, the agent's cards carry each default's actions.
+The agent writes the report with `quietdeck report show` and `quietdeck report set` (`report show --markdown` prints
+only the text, ready to edit and pass back; `quietdeck report --help` lists the two tags it uses for defaults and
+questions). Under the report, the agent's cards carry each default's actions.
 
 ## Threads: every thread in a list
 
