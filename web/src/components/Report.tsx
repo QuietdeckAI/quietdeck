@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { clock } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { cn, enterSends } from "@/lib/utils";
 import type { Card } from "@/types/Card";
 import type { Delivered } from "@/types/Delivered";
 import { sessionKey, sessionPath } from "@/screens/Sessions";
@@ -104,16 +104,6 @@ function UndoButton({ onClick, label }: { onClick: () => void; label: string }) 
       Undo
     </button>
   );
-}
-
-/** Stop: Esc in the agent's session, as in Claude Code. It ends its turn and does nothing further. */
-export function useStopAgent(agent: SessionRow | undefined) {
-  return useMutation({
-    mutationFn: () => {
-      if (!agent) throw new Error("the agent isn't running");
-      return api("/api/sessions/interrupt", { method: "POST", body: { session: sessionKey(agent.node, agent.session_id) } });
-    },
-  });
 }
 
 // The panel's buttons, in the Threads list's quiet style: no outline, a wash on hover, a 1px dip when pressed.
@@ -453,7 +443,6 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
   const tab = report.posted_by.tab;
   // The agent is on his newest message until it replies.
   const working = useWorkingOn(newest && newest.kind !== "reply" ? newest : undefined);
-  const stop = useStopAgent(useReportAgent(report.posted_by));
   // A sent message waits out the undo window as a draft: Approve All keeps its cards out meanwhile, and sends it first.
   const undoWindow = useUndoWindow();
   const [sending, setSending] = useState<string | null>(null);
@@ -477,20 +466,10 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
     setSending(null);
     caret.focusAtEnd(draft.length);
   };
-  // In the undo window the chat button is Undo; while the agent works on his message, Stop.
+  // In the undo window the chat button is Undo. While the agent works on his message it stays the chat button, so the
+  // conversation can still be closed: the spinner shows the work, and the bar at the bottom has the one Stop.
   const chatButton = undoWindow.pending ? (
     <UndoButton onClick={undo} label={`Undo the message about: ${about}`} />
-  ) : working ? (
-    <button
-      type="button"
-      onClick={() => stop.mutate()}
-      disabled={stop.isPending}
-      aria-label={`Stop ${tab}`}
-      className={smallButton}
-    >
-      <Square aria-hidden className="size-3! fill-current" />
-      Stop
-    </button>
   ) : (
     <button
       type="button"
@@ -532,9 +511,7 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
               aria-label={`Message about: ${about}`}
               disabled={undoWindow.pending}
               onChange={(e) => setDraft(key, e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && draft.trim()) submit();
-              }}
+              onKeyDown={enterSends(() => draft.trim() && !undoWindow.pending && submit())}
               className="bg-paper py-[9px] text-sm leading-5"
             />
             <Button
@@ -561,9 +538,7 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
           </span>
         )
       )}
-      {(send.error ?? stop.error) && (
-        <span className="block text-sm text-danger">{(send.error ?? stop.error)?.message}</span>
-      )}
+      {send.error && <span className="block text-sm text-danger">{send.error.message}</span>}
     </span>
   );
 }
@@ -726,6 +701,7 @@ function Ask({
             placeholder="Your answer"
             aria-label={`Answer to: ${about}`}
             onChange={(e) => setOtherText(e.target.value)}
+            onKeyDown={enterSends(() => otherText.trim() && answer(otherText.trim()))}
             className="py-[9px] text-sm leading-5"
           />
           <Button
@@ -918,12 +894,7 @@ export function ReportChatBox({
             setText(e.target.value);
             setSent(false);
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-          }}
+          onKeyDown={enterSends(submit)}
           className="order-first min-h-10 basis-full text-sm sm:order-none sm:basis-auto"
         />
         {/* Pushes the buttons to the right on a phone's second row. */}

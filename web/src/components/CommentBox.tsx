@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { enterSends } from "@/lib/utils";
 import type { Comment } from "@/types/Comment";
 import type { CommentTarget } from "@/types/CommentTarget";
 
@@ -65,6 +66,7 @@ export function CommentBox({
         maxLength={4000}
         value={text}
         onChange={(e) => setText(e.target.value)}
+        onKeyDown={enterSends(() => text.trim() && !send.isPending && send.mutate())}
         aria-label={`Comment on ${label}`}
       />
       {send.error && (
