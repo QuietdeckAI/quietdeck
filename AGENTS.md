@@ -20,3 +20,6 @@ past 50 GB on Nathan's Mac and filled its disk. Use `scripts/on-dev test`, `scri
 TypeScript that ts-rs writes to `web/src/types`. The web app (pnpm, Vite, Playwright) runs locally. The one Rust build
 on a Mac is the dev deck's server, whose data stays there: `scripts/dev-deck-build` builds only that, without debug
 info, in `~/.cache/quietdeck-dev-deck`.
+
+Release images build on docspring-dev too: `scripts/build-images --wait <commit>` pushes
+`harbor.home.ndbroadbent.com/quietdeck/deck:<sha>` and `node-bin:<sha>`, which the homeserver session deploys.
