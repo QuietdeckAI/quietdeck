@@ -505,7 +505,9 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
             <Textarea
               rows={1}
               {...caret.props}
-              value={draft}
+              // Sent text leaves the box at once and shows in the conversation. It stays a draft behind the scenes
+              // until the undo window ends, so Approve All keeps its cards out, and Undo puts it back here.
+              value={sending !== null ? "" : draft}
               maxLength={4000}
               placeholder={thread.length > 0 ? `Reply to ${tab}` : "What to change"}
               aria-label={`Message about: ${about}`}
