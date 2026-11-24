@@ -23,3 +23,9 @@ info, in `~/.cache/quietdeck-dev-deck`.
 
 Release images build on docspring-dev too: `scripts/build-images --wait <commit>` pushes
 `harbor.home.ndbroadbent.com/quietdeck/deck:<sha>` and `node-bin:<sha>`, which the homeserver session deploys.
+
+## Guides to write
+
+When you solve a problem or settle a decision that other people running agents would need too (a setup step, a
+footgun, a safety rule, a design reason), add an entry to `docs/guides-to-write.md` in the same change, saying where the
+knowledge lives now. Nathan wants nothing from fast sessions to fall through the cracks before the guides are written.

@@ -36,7 +36,7 @@ export function ReadingRulesSection() {
         <h2 className="text-lg text-muted">While I’m reading</h2>
         {!creating && (
           <Button size="sm" variant="quiet" onClick={() => setCreating(true)}>
-            New rule
+            Add reading rule
           </Button>
         )}
       </div>
