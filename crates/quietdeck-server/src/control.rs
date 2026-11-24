@@ -5,6 +5,7 @@
 use std::time::Duration;
 
 use garde::Validate;
+use quietdeck_types::action::SessionRef;
 use quietdeck_types::api::{Caller, Changed};
 use quietdeck_types::directory::{SessionResume, SessionRow, SessionStart, SessionStarted, SessionTarget};
 use quietdeck_types::node::DeckRequest;
@@ -41,21 +42,32 @@ pub(crate) async fn ask(
     reply.into_result::<serde_json::Value>().map_err(AppError::Conflict)
 }
 
-pub async fn start(state: &AppState, caller: &Caller, spec: SessionStart) -> AppResult<SessionStarted> {
+pub async fn start(state: &AppState, caller: &Caller, mut spec: SessionStart) -> AppResult<SessionStarted> {
     spec.validate().map_err(bad)?;
+    // A start from a handoff continues the session that wrote it (the move-session skill).
+    let handoff = match spec.handoff.take() {
+        Some(id) => Some(crate::handoffs::unclaimed(&state.db, id).await?),
+        None => None,
+    };
+    if let Some(h) = &handoff
+        && spec.prompt.is_none()
+    {
+        spec.prompt = Some(crate::handoffs::first_prompt(h));
+    }
     let node = spec.on.clone();
     let what = format!("{} in {}", spec.tab, spec.cwd);
     let v = ask(state, &node, DeckRequest::StartSession { spec }, START_TIMEOUT).await?;
     let started: SessionStarted = serde_json::from_value(v).map_err(|e| AppError::Internal(e.into()))?;
     let mut refs = vec![format!("{}@{node}", started.tab)];
     refs.extend(started.session_id.clone());
-    timeline::log(
-        &state.db,
-        TimelineKind::SessionStarted,
-        &refs,
-        &format!("Started {what} on {node}{}", asked_by(caller)),
-    )
-    .await?;
+    let mut text = format!("Started {what} on {node}{}", asked_by(caller));
+    if let Some(h) = &handoff {
+        let by = SessionRef { node: node.clone(), tab: started.tab.clone(), session_id: started.session_id.clone() };
+        crate::handoffs::continued(&state.db, h.id, &by).await?;
+        refs.push(h.from.address());
+        text.push_str(&format!(", continuing {} from handoff h_{}", h.from.address(), h.id));
+    }
+    timeline::log(&state.db, TimelineKind::SessionStarted, &refs, &text).await?;
     state.changed(Changed::Timeline);
     Ok(started)
 }
@@ -156,6 +168,17 @@ pub async fn interrupt(state: &AppState, target: SessionTarget) -> AppResult<()>
 
 pub async fn close(state: &AppState, caller: &Caller, target: SessionTarget) -> AppResult<()> {
     let row = &running_one(state, &target).await?;
+    if let Caller::Session { session } = caller {
+        let own = session.node == row.node && session.session_id.as_deref() == Some(row.info.session_id.as_str());
+        let (_, moved_to) = crate::handoffs::links(&state.db, &row.node, &row.info.session_id).await?;
+        if !own && moved_to.is_none() {
+            return Err(AppError::Forbidden(format!(
+                "a session can close only itself, or a session that has moved (a session started from its handoff \
+                 continues it): {} hasn't moved",
+                row.address()
+            )));
+        }
+    }
     let request = DeckRequest::CloseSession { session_id: row.info.session_id.clone() };
     ask(state, &row.node, request, CLOSE_TIMEOUT).await?;
     let refs = vec![row.address(), row.info.session_id.clone()];
@@ -261,6 +284,7 @@ mod tests {
             effort: None,
             cwd: "~/code/app".into(),
             prompt: Some("Pick up the certificate order.".into()),
+            handoff: None,
         };
         let call = tokio::spawn(async move { start(&s, &owner(), spec).await });
         let msg = "esign cert needs you in herdr: the agent stopped at the folder trust prompt while starting.";
@@ -283,6 +307,7 @@ mod tests {
             effort: None,
             cwd: "~/code/app".into(),
             prompt: None,
+            handoff: None,
         };
         let flag = start(&state, &owner(), spec.clone()).await.unwrap_err();
         assert!(matches!(flag, AppError::BadRequest(_)), "a model can't smuggle in a flag: {flag}");

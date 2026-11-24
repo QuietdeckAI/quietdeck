@@ -1,5 +1,6 @@
 const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" });
 const day = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short" });
+const clockTime = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const longDay = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" });
 
 function startOfDay(d: Date) {
@@ -14,6 +15,11 @@ export function when(iso: string | null | undefined): string {
   if (days === 0) return time.format(d);
   if (days === 1) return `Yesterday ${time.format(d)}`;
   return `${day.format(d)} ${time.format(d)}`;
+}
+
+/** The time alone, as the person's locale writes it ("14:02", "2:02 PM"), for rows under a day heading. */
+export function clock(iso: string): string {
+  return clockTime.format(new Date(iso));
 }
 
 /** A day heading for History: "Today", "Yesterday", "Friday 20 November". */

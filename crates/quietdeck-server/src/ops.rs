@@ -272,9 +272,14 @@ pub async fn who_has(state: &AppState, query: &str) -> AppResult<WhoHas> {
                     tab,
                     source: HitSource::Transcript,
                     last_mentioned_at,
+                    moved_to: None,
                 }),
             }
         }
+    }
+    for h in &mut hits {
+        let (_, moved_to) = crate::handoffs::links(&state.db, &h.node, &h.session_id).await?;
+        h.moved_to = moved_to.map(|m| m.session.address());
     }
     hits.sort_by_key(|h| std::cmp::Reverse(h.last_mentioned_at));
     offline.sort();
@@ -349,7 +354,14 @@ pub async fn history(state: &AppState, me: &SessionRef, since: &str) -> AppResul
     .bind(until)
     .execute(&state.db)
     .await?;
-    Ok(History { since: crate::db::ts(since_ms), until: crate::db::ts(until), entries, cards, comments })
+    Ok(History {
+        since: crate::db::ts(since_ms),
+        until: crate::db::ts(until),
+        entries,
+        cards,
+        comments,
+        snapshots: vec![],
+    })
 }
 
 // Decisions, the Inbox and History.
@@ -358,6 +370,12 @@ pub async fn approve_all(state: &AppState, req: ApproveAll) -> AppResult<Approvi
     garde::Validate::validate(&req).map_err(bad)?;
     let settings = crate::api::load_settings(&state.db).await?;
     let a = decisions::approve_all(&state.db, &req, settings.undo_seconds).await?;
+    // History keeps the Inbox document as it was at this moment. Approve All doesn't fail over it.
+    if !a.cards.is_empty()
+        && let Err(e) = crate::reports::snapshot(&state.db, &a.batch, &a.cards).await
+    {
+        tracing::warn!(error = %e, "couldn't keep the Inbox document for History");
+    }
     state.release.notify_one();
     state.changed(Changed::Cards);
     Ok(a)
@@ -365,6 +383,7 @@ pub async fn approve_all(state: &AppState, req: ApproveAll) -> AppResult<Approvi
 
 pub async fn undo(state: &AppState, batch: &str) -> AppResult<()> {
     decisions::undo(&state.db, batch).await?;
+    crate::reports::drop_snapshot(&state.db, batch).await?;
     state.changed(Changed::Cards);
     Ok(())
 }
@@ -488,7 +507,12 @@ pub async fn owner_history(
         (c.state.is_finished() || c.state == CardState::Automatic) && account.is_none_or(|a| c.input.account == a)
     });
     let comments = comments::between(&state.db, since_ms, until_ms).await?;
-    Ok(History { since: crate::db::ts(since_ms), until: crate::db::ts(until_ms), entries, cards, comments })
+    // The Inbox document spans both accounts, so it's in History's view of everything.
+    let snapshots = match account {
+        None => crate::reports::snapshots_between(&state.db, since_ms, until_ms).await?,
+        Some(_) => vec![],
+    };
+    Ok(History { since: crate::db::ts(since_ms), until: crate::db::ts(until_ms), entries, cards, comments, snapshots })
 }
 
 pub async fn later(state: &AppState, account: Option<&str>) -> AppResult<Vec<Card>> {
@@ -635,5 +659,6 @@ pub async fn show_session(
     } else {
         Vec::new()
     };
-    Ok(quietdeck_types::directory::SessionDetail { session, timeline })
+    let (continues, moved_to) = crate::handoffs::links(&state.db, &session.node, &session.info.session_id).await?;
+    Ok(quietdeck_types::directory::SessionDetail { session, timeline, continues, moved_to })
 }

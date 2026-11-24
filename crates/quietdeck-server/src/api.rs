@@ -43,6 +43,8 @@ pub fn router() -> Router<AppState> {
         .route("/api/sessions/resume", post(resume_session))
         .route("/api/sessions/close", post(close_session))
         .route("/api/sessions/interrupt", post(interrupt_session))
+        .route("/api/handoffs", post(handoff_add))
+        .route("/api/handoffs/{id}", get(handoff_show))
         .route("/api/who-has", get(who_has))
         .route("/api/msg", post(msg_send))
         .route("/api/timeline", post(timeline_add))
@@ -78,6 +80,8 @@ pub fn router() -> Router<AppState> {
         .route("/api/report/answers", post(report_answer))
         .route("/api/report/answers/take", post(report_answers_take))
         .route("/api/report/chat", post(report_chat))
+        .route("/api/report/replies", post(report_reply))
+        .route("/api/report/snapshots/{id}", get(report_snapshot))
         .route("/api/pings", get(pings_view).post(ping_send))
         .route("/api/pings/{id}/feedback", post(ping_feedback))
         .route("/api/pings/feedback/take", post(ping_feedback_take))
@@ -101,6 +105,38 @@ async fn report_set(
     Json(req): Json<quietdeck_types::report::ReportSet>,
 ) -> AppResult<Json<quietdeck_types::report::Report>> {
     Ok(Json(crate::reports::set(&state, &me, req).await?))
+}
+
+async fn handoff_add(
+    State(state): State<AppState>,
+    Agent(me): Agent,
+    Json(req): Json<quietdeck_types::handoff::SessionHandoffAdd>,
+) -> AppResult<Json<quietdeck_types::handoff::SessionHandoff>> {
+    Ok(Json(crate::handoffs::add(&state.db, &me, req).await?))
+}
+
+async fn handoff_show(
+    State(state): State<AppState>,
+    Authed(_): Authed,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> AppResult<Json<quietdeck_types::handoff::SessionHandoff>> {
+    Ok(Json(crate::handoffs::get(&state.db, id).await?))
+}
+
+async fn report_reply(
+    State(state): State<AppState>,
+    _agent: Agent,
+    Json(req): Json<quietdeck_types::report::ReportReply>,
+) -> AppResult<Json<quietdeck_types::report::Report>> {
+    Ok(Json(crate::reports::reply(&state, req).await?))
+}
+
+async fn report_snapshot(
+    State(state): State<AppState>,
+    _owner: Owner,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> AppResult<Json<quietdeck_types::report::ReportSnapshot>> {
+    Ok(Json(crate::reports::snapshot_get(&state.db, id).await?))
 }
 
 async fn report_answer(
@@ -491,11 +527,11 @@ async fn resume_session(
 /// Closing a session is the owner's click on the registry.
 async fn close_session(
     State(state): State<AppState>,
-    owner: Owner,
+    Authed(caller): Authed,
     Json(target): Json<SessionTarget>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let _ = owner;
-    let caller = Caller::Owner { device: String::new() };
+    // The owner closes any session; a session closes itself, or one that has moved (control::close checks).
+    let caller = person_or_session(caller)?;
     control::close(&state, &caller, target).await?;
     Ok(Json(serde_json::json!({})))
 }

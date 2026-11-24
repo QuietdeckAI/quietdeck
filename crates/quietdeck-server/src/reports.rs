@@ -8,7 +8,8 @@ use quietdeck_types::api::Changed;
 use quietdeck_types::node::Delivered;
 use quietdeck_types::relay::{DeliveryError, DeliveryKind};
 use quietdeck_types::report::{
-    AnswerKind, Report, ReportAnswer, ReportAnswerAdd, ReportChat, ReportSet, default_cards,
+    AnswerKind, Report, ReportAnswer, ReportAnswerAdd, ReportChat, ReportReply, ReportSet, ReportSnapshot,
+    ReportSnapshotSummary, default_cards,
 };
 
 use crate::db::{Db, now_ms, ts};
@@ -37,6 +38,7 @@ struct AnswerRow {
     value: String,
     answered_at: i64,
     picked_up_at: Option<i64>,
+    cards: Option<String>,
 }
 
 impl From<AnswerRow> for ReportAnswer {
@@ -45,22 +47,29 @@ impl From<AnswerRow> for ReportAnswer {
             id: r.id,
             report_version: r.report_version,
             control: r.control,
-            kind: if r.kind == "change" { AnswerKind::Change } else { AnswerKind::Choice },
+            kind: match r.kind.as_str() {
+                KIND_CHANGE => AnswerKind::Change,
+                KIND_REPLY => AnswerKind::Reply,
+                _ => AnswerKind::Choice,
+            },
             about: r.about,
             value: r.value,
             answered_at: ts(r.answered_at),
             picked_up: r.picked_up_at.is_some(),
+            cards: r.cards,
         }
     }
 }
 
 const KIND_CHANGE: &str = "change";
 const KIND_CHOICE: &str = "choice";
+const KIND_REPLY: &str = "reply";
 
 fn kind_str(k: AnswerKind) -> &'static str {
     match k {
         AnswerKind::Change => KIND_CHANGE,
         AnswerKind::Choice => KIND_CHOICE,
+        AnswerKind::Reply => KIND_REPLY,
     }
 }
 
@@ -77,7 +86,7 @@ async fn open_row(db: &Db) -> AppResult<Option<ReportRow>> {
 pub async fn current(db: &Db) -> AppResult<Option<Report>> {
     let Some(r) = open_row(db).await? else { return Ok(None) };
     let answers: Vec<AnswerRow> = sqlx::query_as(
-        "SELECT id, report_version, control, kind, about, value, answered_at, picked_up_at \
+        "SELECT id, report_version, control, kind, about, value, answered_at, picked_up_at, cards \
          FROM report_answers WHERE report_id = ? ORDER BY id",
     )
     .bind(r.id)
@@ -189,19 +198,26 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
     if value.is_empty() {
         return Err(AppError::BadRequest("the answer is empty".into()));
     }
-    // A second change to the same default on the same version says it again differently: the agent goes by the newest.
+    if a.kind == AnswerKind::Reply {
+        return Err(AppError::BadRequest("replies come from the agent (`quietdeck report reply`)".into()));
+    }
+    // An Ask that names cards joins the thread of the default that names them.
+    let cards = a
+        .cards
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| a.kind == AnswerKind::Choice && !quietdeck_types::report::card_ids(c).is_empty());
+    // A default's messages are a thread: a later one continues the conversation.
     let (earlier,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM report_answers WHERE report_id = ? AND report_version = ? AND control = ? AND kind = ?",
+        "SELECT COUNT(*) FROM report_answers WHERE report_id = ? AND control = ? AND kind IN ('change', 'reply')",
     )
     .bind(r.id)
-    .bind(a.report_version)
     .bind(&a.control)
-    .bind(kind_str(a.kind))
     .fetch_one(&state.db)
     .await?;
     let id: (i64,) = sqlx::query_as(
-        "INSERT INTO report_answers (report_id, report_version, control, kind, about, value, answered_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        "INSERT INTO report_answers (report_id, report_version, control, kind, about, value, answered_at, cards) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
     )
     .bind(r.id)
     .bind(a.report_version)
@@ -210,31 +226,48 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
     .bind(a.about.trim())
     .bind(value)
     .bind(now_ms())
+    .bind(cards)
     .fetch_one(&state.db)
     .await?;
     let to = SessionRef { node: r.posted_node, tab: r.posted_tab, session_id: None };
     let body = match a.kind {
-        AnswerKind::Choice => format!(
-            "On the report (version {}), \"{}\" [{}]: {value}\n\nUpdate the report: follow up on the answer there.",
-            a.report_version,
-            a.about.trim(),
-            a.control
-        ),
+        AnswerKind::Choice => match cards {
+            Some(cards) => format!(
+                "On the report (version {}), \"{}\" [{}]: {value}\n\nThe question is about {cards}, so the Inbox shows \
+                 his answer in the thread of the default that names them. Act on it, update the report where it \
+                 changes things, and answer him in that thread: `quietdeck report reply 'cards:{cards}' \"…\"` (what \
+                 you did, or a question).",
+                a.report_version,
+                a.about.trim(),
+                a.control
+            ),
+            None => format!(
+                "On the report (version {}), \"{}\" [{}]: {value}\n\nUpdate the report: follow up on the answer there.",
+                a.report_version,
+                a.about.trim(),
+                a.control
+            ),
+        },
         AnswerKind::Change if earlier > 0 => format!(
-            "On the report (version {}), the change to the default \"{}\" [{}] is now: {value}\n\nThis replaces \
-             what was said about it before. Approve All leaves those cards to you.",
+            "On the report (version {}), in the thread on the default \"{}\" [{}]: {value}\n\nIt continues that \
+             conversation (`quietdeck report show` lists it). Approve All leaves those cards to you. Answer him in \
+             the thread: `quietdeck report reply '{}' \"…\"`.",
             a.report_version,
             a.about.trim(),
+            a.control,
             a.control
         ),
         AnswerKind::Change => format!(
             "On the report (version {}), a change to the default \"{}\" [{}]: {value}\n\nUsually it adjusts the \
              default or adds to it rather than replacing it. Approve All leaves those cards to you. Do what this \
-             says, or propose it in the report.",
+             says, or propose it in the report, and answer him in the default's thread: \
+             `quietdeck report reply '{}' \"…\"` (what you did, or a question).",
             a.report_version,
             a.about.trim(),
+            a.control,
             a.control
         ),
+        AnswerKind::Reply => unreachable!("refused above"),
     };
     match crate::relay::send(&state.db, &state.hub, &to.address(), DeliveryKind::Deck, body).await {
         Ok(_) => {
@@ -256,7 +289,7 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
 pub async fn take_answers(state: &AppState) -> AppResult<Vec<ReportAnswer>> {
     let rows: Vec<AnswerRow> = sqlx::query_as(
         "UPDATE report_answers SET picked_up_at = ? WHERE picked_up_at IS NULL \
-         RETURNING id, report_version, control, kind, about, value, answered_at, picked_up_at",
+         RETURNING id, report_version, control, kind, about, value, answered_at, picked_up_at, cards",
     )
     .bind(now_ms())
     .fetch_all(&state.db)
@@ -267,6 +300,44 @@ pub async fn take_answers(state: &AppState) -> AppResult<Vec<ReportAnswer>> {
         state.changed(Changed::Cards);
     }
     Ok(out)
+}
+
+/// `quietdeck report reply`: the agent's answer in a default's thread. `to` is the default's key as its messages
+/// carry it, or a card it names (`c_12`, kept as `cards:c_12`: the Inbox puts it in the thread of whichever default
+/// names that card).
+pub async fn reply(state: &AppState, req: ReportReply) -> AppResult<Report> {
+    req.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let Some(r) = open_row(&state.db).await? else {
+        return Err(AppError::NotFound("there's no report to reply on".into()));
+    };
+    let to = req.to.trim();
+    let keys = quietdeck_types::report::default_keys(&r.markdown);
+    let control = if keys.iter().any(|(k, _)| k == to) || to.starts_with("cards:") {
+        to.to_string()
+    } else if !quietdeck_types::report::card_ids(to).is_empty() {
+        format!("cards:{to}")
+    } else {
+        return Err(AppError::BadRequest(format!(
+            "no default {to:?} in the report: give the [key] from his message (cards:c_12, archive-all) or a card (c_12)"
+        )));
+    };
+    let now = now_ms();
+    sqlx::query(
+        "INSERT INTO report_answers (report_id, report_version, control, kind, about, value, answered_at, picked_up_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(r.id)
+    .bind(r.version)
+    .bind(&control)
+    .bind(KIND_REPLY)
+    .bind("")
+    .bind(req.text.trim())
+    .bind(now)
+    .bind(now)
+    .execute(&state.db)
+    .await?;
+    state.changed(Changed::Cards);
+    current(&state.db).await?.ok_or_else(|| AppError::Unavailable("the report vanished".into()))
 }
 
 /// The chat box: the words go to the report's agent now, or fail at once when it isn't running. Nothing is kept.
@@ -284,6 +355,130 @@ pub async fn chat(state: &AppState, c: ReportChat) -> AppResult<Delivered> {
         DeliveryError::Ambiguous { .. } => AppError::BadRequest(e.to_string()),
         DeliveryError::Failed { .. } => AppError::Unavailable(e.to_string()),
     })
+}
+
+/// How far back a card's changes are looked for: a card waits days at most.
+const CHANGES_WINDOW_MS: i64 = 30 * 24 * 3600 * 1000;
+
+/// The person's changes to a card's default, oldest first: those on a `<Default>` that names it in the current
+/// report (by its `id` or its `cards`), and any `cards:` change that names it, whatever the report says now.
+pub async fn changes_for_card(db: &Db, card_id: i64) -> anyhow::Result<Vec<String>> {
+    let markdown: Option<(String,)> =
+        sqlx::query_as("SELECT markdown FROM reports WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1")
+            .fetch_optional(db)
+            .await?;
+    let keys: Vec<String> = markdown
+        .map(|(m,)| quietdeck_types::report::default_keys(&m))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(_, cards)| cards.contains(&card_id))
+        .map(|(key, _)| key)
+        .collect();
+    let rows: Vec<(String, String, String, String, Option<String>)> = sqlx::query_as(
+        "SELECT control, kind, about, value, cards FROM report_answers \
+         WHERE kind IN ('change', 'choice') AND answered_at > ? ORDER BY id",
+    )
+    .bind(now_ms() - CHANGES_WINDOW_MS)
+    .fetch_all(db)
+    .await?;
+    let names = |c: &str| quietdeck_types::report::card_ids(c).contains(&card_id);
+    Ok(rows
+        .into_iter()
+        .filter_map(|(control, kind, about, value, cards)| {
+            if kind == KIND_CHOICE {
+                // His answer to a question about the card, with the question, so it reads on its own.
+                let about = about.trim();
+                return cards.as_deref().is_some_and(names).then(|| match about.ends_with('?') {
+                    true => format!("{about} {value}"),
+                    false => format!("{about}: {value}"),
+                });
+            }
+            (keys.contains(&control) || control.strip_prefix("cards:").is_some_and(names)).then_some(value)
+        })
+        .collect())
+}
+
+/// Approve All: keep the Inbox document as it is now, for History, with the person's changes and answers since the
+/// report's previous snapshot and the cards it names. Nothing when there's no report.
+pub async fn snapshot(db: &Db, batch: &str, approved: &[i64]) -> AppResult<()> {
+    let Some(report) = current(db).await? else { return Ok(()) };
+    let previous: Option<(Option<i64>,)> =
+        sqlx::query_as("SELECT last_answer_id FROM report_snapshots WHERE report_id = ? ORDER BY id DESC LIMIT 1")
+            .bind(report.id)
+            .fetch_optional(db)
+            .await?;
+    let after = previous.and_then(|p| p.0).unwrap_or(0);
+    let round_answers: Vec<ReportAnswer> = report.answers.iter().filter(|a| a.id > after).cloned().collect();
+    let last_answer_id = report.answers.iter().map(|a| a.id).max();
+    let (mut ids, _) = default_cards(&report.markdown);
+    ids.extend_from_slice(approved);
+    ids.sort_unstable();
+    ids.dedup();
+    let mut cards = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(c) = crate::store::cards::get(db, id).await? {
+            cards.push(c);
+        }
+    }
+    let now = now_ms();
+    let snap = ReportSnapshot {
+        id: 0,
+        taken_at: ts(now),
+        report: report.clone(),
+        cards,
+        approved: approved.len() as i64,
+        round_answers,
+    };
+    let json = serde_json::to_string(&snap).map_err(|e| AppError::Internal(e.into()))?;
+    sqlx::query(
+        "INSERT INTO report_snapshots (report_id, batch, taken_at, last_answer_id, approved, snapshot) \
+         VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(report.id)
+    .bind(batch)
+    .bind(now)
+    .bind(last_answer_id.or(Some(after)))
+    .bind(snap.approved)
+    .bind(json)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// An undone Approve All didn't happen: its snapshot goes.
+pub async fn drop_snapshot(db: &Db, batch: &str) -> AppResult<()> {
+    sqlx::query("DELETE FROM report_snapshots WHERE batch = ?").bind(batch).execute(db).await?;
+    Ok(())
+}
+
+pub async fn snapshot_get(db: &Db, id: i64) -> AppResult<ReportSnapshot> {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT snapshot FROM report_snapshots WHERE id = ?").bind(id).fetch_optional(db).await?;
+    let Some((json,)) = row else { return Err(AppError::NotFound(format!("no snapshot {id}"))) };
+    let mut snap: ReportSnapshot = serde_json::from_str(&json).map_err(|e| AppError::Internal(e.into()))?;
+    snap.id = id;
+    Ok(snap)
+}
+
+/// The snapshots taken in a time window, newest first, for History.
+pub async fn snapshots_between(db: &Db, since_ms: i64, until_ms: i64) -> AppResult<Vec<ReportSnapshotSummary>> {
+    let rows: Vec<(i64, i64, i64, String)> = sqlx::query_as(
+        "SELECT id, taken_at, approved, snapshot FROM report_snapshots WHERE taken_at >= ? AND taken_at < ? \
+         ORDER BY taken_at DESC",
+    )
+    .bind(since_ms)
+    .bind(until_ms)
+    .fetch_all(db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, taken_at, approved, json)| {
+            let answers = serde_json::from_str::<ReportSnapshot>(&json)
+                .map(|s| s.round_answers.iter().filter(|a| a.kind != AnswerKind::Reply).count() as i64)
+                .unwrap_or(0);
+            ReportSnapshotSummary { id, taken_at: ts(taken_at), approved, answers }
+        })
+        .collect())
 }
 
 #[cfg(test)]
@@ -352,6 +547,7 @@ mod tests {
                 kind: AnswerKind::Choice,
                 about: "Was this you?".into(),
                 value: "No".into(),
+                cards: None,
             },
         )
         .await
@@ -365,5 +561,69 @@ mod tests {
         assert!(take_answers(&state).await.unwrap().is_empty());
         let chat = chat(&state, ReportChat { text: "archive the HelloFresh ones from now on".into() }).await;
         assert!(chat.is_err(), "nobody is running, so the chat fails at once");
+    }
+
+    #[tokio::test]
+    async fn an_answer_about_cards_joins_their_thread_and_reaches_the_decision() {
+        let state = AppState::for_tests().await;
+        let markdown = "<Ask id=\"invoice\" options=\"DocSpring, Inc.|Me\" cards=\"c_5\">Who should BizSpace \
+                        invoice?</Ask>";
+        let r =
+            super::set(&state, &me(), ReportSet { markdown: markdown.into(), base: None, new: false }).await.unwrap();
+        let pick = |cards: Option<&str>| ReportAnswerAdd {
+            report_id: r.id,
+            report_version: r.version,
+            control: "invoice".into(),
+            kind: AnswerKind::Choice,
+            about: "Who should BizSpace invoice?".into(),
+            value: "DocSpring, Inc.".into(),
+            cards: cards.map(str::to_string),
+        };
+        let r = answer(&state, pick(Some(" c_5 "))).await.unwrap();
+        assert_eq!(r.answers[0].cards.as_deref(), Some("c_5"));
+        assert_eq!(changes_for_card(&state.db, 5).await.unwrap(), vec!["Who should BizSpace invoice? DocSpring, Inc."]);
+        assert!(changes_for_card(&state.db, 6).await.unwrap().is_empty());
+
+        // Without cards, or with a value that names none, the answer stays on its question.
+        let r = answer(&state, pick(Some("soon"))).await.unwrap();
+        assert_eq!(r.answers[1].cards, None);
+        answer(&state, pick(None)).await.unwrap();
+        assert_eq!(changes_for_card(&state.db, 5).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn approve_all_keeps_the_document_with_this_rounds_answers_and_undo_drops_it() {
+        let state = AppState::for_tests().await;
+        let r =
+            super::set(&state, &me(), ReportSet { markdown: "# Round".into(), base: None, new: false }).await.unwrap();
+        let change = |value: &str| ReportAnswerAdd {
+            report_id: r.id,
+            report_version: r.version,
+            control: "archive-all".into(),
+            kind: AnswerKind::Change,
+            about: "Archive all".into(),
+            value: value.into(),
+            cards: None,
+        };
+        answer(&state, change("keep the Stripe one")).await.unwrap();
+        snapshot(&state.db, "b1", &[7]).await.unwrap();
+        let listed = snapshots_between(&state.db, 0, i64::MAX).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!((listed[0].approved, listed[0].answers), (1, 1));
+        let first = snapshot_get(&state.db, listed[0].id).await.unwrap();
+        assert_eq!(first.report.markdown, "# Round");
+        assert_eq!(first.round_answers[0].value, "keep the Stripe one");
+
+        // The next Approve All lists only what was said after the first one.
+        answer(&state, change("and the Amex one")).await.unwrap();
+        snapshot(&state.db, "b2", &[8, 9]).await.unwrap();
+        let listed = snapshots_between(&state.db, 0, i64::MAX).await.unwrap();
+        let second = snapshot_get(&state.db, listed.iter().find(|s| s.approved == 2).unwrap().id).await.unwrap();
+        let values: Vec<&str> = second.round_answers.iter().map(|a| a.value.as_str()).collect();
+        assert_eq!(values, ["and the Amex one"]);
+        assert_eq!(second.report.answers.len(), 2, "the report itself keeps every answer");
+
+        drop_snapshot(&state.db, "b2").await.unwrap();
+        assert_eq!(snapshots_between(&state.db, 0, i64::MAX).await.unwrap().len(), 1);
     }
 }

@@ -4,4 +4,8 @@ import type { AnswerKind } from "./AnswerKind";
 /**
  * An answer from the Inbox.
  */
-export type ReportAnswerAdd = { report_id: number, report_version: number, control: string, kind: AnswerKind, about: string, value: string, };
+export type ReportAnswerAdd = { report_id: number, report_version: number, control: string, kind: AnswerKind, about: string, value: string, 
+/**
+ * An `<Ask>`'s `cards`, when it names them.
+ */
+cards?: string, };

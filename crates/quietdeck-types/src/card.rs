@@ -447,6 +447,10 @@ pub struct Released {
     pub actions: Vec<ActionRecord>,
     /// Why the runner handed it over, when it did.
     pub handoff_reason: Option<String>,
+    /// The person's changes to this card's default in the Inbox, oldest first, in his own words: carry them out
+    /// along with the actions.
+    #[serde(default)]
+    pub changes: Vec<String>,
 }
 
 /// One action's result, for `quietdeck action done|fail` and `quietdeck actions report`.

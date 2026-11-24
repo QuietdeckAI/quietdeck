@@ -7,6 +7,7 @@ mod control;
 mod db;
 mod error;
 mod events;
+mod handoffs;
 mod hooks;
 mod hub;
 mod leases;

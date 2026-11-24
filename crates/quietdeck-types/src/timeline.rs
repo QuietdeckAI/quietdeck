@@ -89,6 +89,9 @@ pub struct History {
     /// the History screen.
     #[serde(default)]
     pub comments: Vec<Comment>,
+    /// The Inbox document as it was at each Approve All in that time. Only on the History screen.
+    #[serde(default)]
+    pub snapshots: Vec<crate::report::ReportSnapshotSummary>,
 }
 
 /// What a comment is on: a timeline entry, or a card in History.

@@ -14,6 +14,7 @@ import { SessionPageScreen } from "@/screens/SessionPage";
 import { SessionsScreen } from "@/screens/Sessions";
 import { SettingsScreen } from "@/screens/Settings";
 import { SignInScreen } from "@/screens/SignIn";
+import { SnapshotScreen } from "@/screens/Snapshot";
 import type { AuthState } from "@/types/AuthState";
 
 export function App() {
@@ -55,6 +56,10 @@ function Screen() {
   const path = usePath();
   // `/cards` was the screen's old address.
   if (path.startsWith("/threads") || path.startsWith("/cards")) return <ThreadsScreen />;
+  if (path.startsWith("/history/inbox/")) {
+    const id = Number(path.split("/")[3]);
+    if (Number.isInteger(id)) return <SnapshotScreen key={id} id={id} />;
+  }
   if (path.startsWith("/history")) return <HistoryScreen />;
   if (path.startsWith("/later")) return <LaterScreen />;
   if (path.startsWith("/rules")) return <RulesScreen />;

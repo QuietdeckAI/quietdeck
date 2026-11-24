@@ -11,4 +11,9 @@ export type Released = { decision: Decision, card: Card, actions: Array<ActionRe
 /**
  * Why the runner handed it over, when it did.
  */
-handoff_reason: string | null, };
+handoff_reason: string | null, 
+/**
+ * The person's changes to this card's default in the Inbox, oldest first, in his own words: carry them out
+ * along with the actions.
+ */
+changes: Array<string>, };

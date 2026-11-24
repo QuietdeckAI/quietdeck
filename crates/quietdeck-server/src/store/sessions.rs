@@ -464,6 +464,7 @@ pub async fn summary_hits(db: &Db, text: &str) -> anyhow::Result<Vec<WhoHasHit>>
             tab,
             source: HitSource::Summary,
             last_mentioned_at: ts_opt(last),
+            moved_to: None,
         })
         .collect();
     // Older timeline points mention IDs the latest tiers dropped.
@@ -493,6 +494,7 @@ pub async fn summary_hits(db: &Db, text: &str) -> anyhow::Result<Vec<WhoHasHit>>
                 tab: tab.and_then(|t| t.0),
                 source: HitSource::Summary,
                 last_mentioned_at: Some(ts(at)),
+                moved_to: None,
             });
         }
     }

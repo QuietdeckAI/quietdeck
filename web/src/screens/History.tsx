@@ -3,18 +3,20 @@ import { createContext, useContext } from "react";
 import { AccountTabs, useAccount } from "@/components/AccountTabs";
 import { actionLine, sessionName } from "@/components/actionText";
 import { CommentBox } from "@/components/CommentBox";
+import { Link } from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { api, query } from "@/lib/api";
-import { dayHeading, dayKey, when } from "@/lib/format";
+import { clock, dayHeading, dayKey } from "@/lib/format";
 import { setParam, useSearch } from "@/lib/route";
 import { cn } from "@/lib/utils";
 import type { Card } from "@/types/Card";
 import type { History } from "@/types/History";
+import type { ReportSnapshotSummary } from "@/types/ReportSnapshotSummary";
 import type { Comment as CommentT } from "@/types/Comment";
 import type { CommentTarget } from "@/types/CommentTarget";
 import type { TimelineEntry } from "@/types/TimelineEntry";
 
-type Row = { at: string; card?: Card; entry?: TimelineEntry };
+type Row = { at: string; card?: Card; entry?: TimelineEntry; snapshot?: ReportSnapshotSummary };
 
 const CommentsContext = createContext<CommentT[]>([]);
 
@@ -51,6 +53,7 @@ export function HistoryScreen() {
       at: e.created_at,
       entry: e,
     })),
+    ...(history.data?.snapshots ?? []).map((s) => ({ at: s.taken_at, snapshot: s })),
   ].sort((a, b) => b.at.localeCompare(a.at));
   const days: { key: string; heading: string; rows: Row[] }[] = [];
   for (const r of rows) {
@@ -77,6 +80,8 @@ export function HistoryScreen() {
               {d.rows.map((r) =>
                 r.card ? (
                   <CardRow key={`c${r.card.id}`} card={r.card} />
+                ) : r.snapshot ? (
+                  <SnapshotRow key={`s${r.snapshot.id}`} snapshot={r.snapshot} />
                 ) : (
                   r.entry && <EntryRow key={`e${r.entry.id}`} entry={r.entry} />
                 ),
@@ -118,8 +123,8 @@ function CardRow({ card }: { card: Card }) {
   return (
     <li className="border-b border-rule py-3 last:border-b-0">
       <div className="flex items-baseline gap-3">
-        <time className="w-14 shrink-0 font-mono text-xs text-neutral">
-          {when(card.updated_at).split(" ").at(-1)}
+        <time className="w-16 shrink-0 font-mono text-xs text-neutral">
+          {clock(card.updated_at)}
         </time>
         <div className="min-w-0 flex-1">
           <p className="truncate">
@@ -169,11 +174,31 @@ function CardRow({ card }: { card: Card }) {
   );
 }
 
+/** An Approve All: a link to the Inbox document as it was then. */
+function SnapshotRow({ snapshot }: { snapshot: ReportSnapshotSummary }) {
+  const changes = snapshot.answers === 0 ? "" : ` · ${snapshot.answers} ${snapshot.answers === 1 ? "change or answer" : "changes and answers"}`;
+  return (
+    <li className="flex items-baseline gap-3 border-b border-rule py-2 text-sm last:border-b-0">
+      <time className="w-16 shrink-0 font-mono text-xs text-neutral">{clock(snapshot.taken_at)}</time>
+      <span className="min-w-0 flex-1">
+        <Link to={`/history/inbox/${snapshot.id}`} className="text-ink underline underline-offset-4 hover:text-accent">
+          Approve All: the Inbox as it was
+        </Link>
+        <span className="text-neutral">
+          {" "}
+          · {snapshot.approved} {snapshot.approved === 1 ? "card" : "cards"}
+          {changes}
+        </span>
+      </span>
+    </li>
+  );
+}
+
 function EntryRow({ entry }: { entry: TimelineEntry }) {
   return (
     <li className="flex items-baseline gap-3 border-b border-rule py-2 text-sm last:border-b-0">
-      <time className="w-14 shrink-0 font-mono text-xs text-neutral">
-        {when(entry.created_at).split(" ").at(-1)}
+      <time className="w-16 shrink-0 font-mono text-xs text-neutral">
+        {clock(entry.created_at)}
       </time>
       <span className="min-w-0 flex-1 text-muted">
         {entry.text}

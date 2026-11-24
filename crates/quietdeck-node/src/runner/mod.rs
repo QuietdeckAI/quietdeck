@@ -400,6 +400,7 @@ impl Runner {
                     effort: None,
                     cwd: cwd.clone(),
                     prompt: Some(prompt.clone()),
+                    handoff: None,
                 };
                 let s = self.deck.start_session(spec).await?;
                 Ok(serde_json::to_value(s).unwrap_or(Value::Null))

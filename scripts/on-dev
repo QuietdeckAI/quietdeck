@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Quietdeck's Rust builds, tests and lints run on docspring-dev, the home server, not on a Mac: the workspace's target/
+# grew past 50 GB on one and filled its disk. Each command copies the checkout there first
+# (/opt/code/quietdeck/checkouts/<name>, with its own target/), then runs cargo pinned to CPUs 0-23 under nice, which
+# leaves 8 cores for the CI jobs that also run there.
+#
+#   scripts/on-dev fmt | check [args] | clippy [args] | test [args] | build [args]
+#       cargo fmt --check; cargo check; clippy --all-targets -D warnings; cargo test; cargo build. test copies back
+#       the TypeScript ts-rs writes (web/src/types), as a local `cargo test` would.
+#   scripts/on-dev sync     only copy the checkout there
+#   scripts/on-dev clean    delete this checkout's copy and target/ there
+#
+# The checkout is the one the current directory is in (the main one or a worktree); its name there is its directory's.
+# The web app (pnpm, Vite, Playwright) still runs here. The dev deck, whose data stays on this Mac, is built here with
+# scripts/dev-deck-build, which compiles only the server with a small target directory of its own.
+set -euo pipefail
+host=docspring-dev.hs
+remote_root=/opt/code/quietdeck/checkouts
+dir=$(git rev-parse --show-toplevel)
+name=$(basename "$dir")
+remote=$remote_root/$name
+
+die() { echo "scripts/on-dev: $*" >&2; exit 1; }
+usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+[ $# -gt 0 ] || usage
+cmd=$1; shift
+
+sync() {
+  ssh "$host" "mkdir -p '$remote'"
+  rsync -a --no-owner --no-group --delete-after --filter=':- .gitignore' --exclude=.git "$dir/" "$host:$remote/"
+}
+
+# One remote command, quoted for the remote shell, with the toolchain on PATH and the CPUs pinned.
+run() {
+  local quoted
+  printf -v quoted '%q ' "$@"
+  local status
+  set +e
+  ssh "$host" "cd '$remote' && export PATH=\$HOME/.cargo/bin:\$PATH && nice -n 10 taskset -c 0-23 $quoted" 2>&1 |
+    grep --line-buffered -v setlocale
+  status=${PIPESTATUS[0]}
+  set -e
+  return "$status"
+}
+
+case $cmd in
+  sync) sync ;;
+  fmt) sync; run cargo fmt --all --check ;;
+  check) sync; run cargo check -q --locked -j 24 --workspace --all-targets "$@" ;;
+  clippy) sync; run cargo clippy -q --locked -j 24 --workspace --all-targets "$@" -- -D warnings ;;
+  build) sync; run cargo build -q --locked -j 24 "$@" ;;
+  test)
+    sync
+    status=0
+    run cargo test -q --locked -j 24 --workspace "$@" || status=$?
+    rsync -a --no-owner --no-group --delete "$host:$remote/web/src/types/" "$dir/web/src/types/"
+    exit "$status"
+    ;;
+  clean) ssh "$host" "rm -rf '$remote'" ;;
+  *) die "unknown command $cmd" ;;
+esac

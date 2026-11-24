@@ -55,10 +55,16 @@ enum Command {
     },
     /// Every session on every machine. `sessions search <words>` searches their summaries.
     Sessions(SessionsArgs),
-    /// One session: resume it.
+    /// One session: start, resume or close it.
     Session {
         #[command(subcommand)]
         command: SessionCommand,
+    },
+    /// Moving a session to another machine (the move-session skill): the handoff it writes for the session that
+    /// continues it.
+    Handoff {
+        #[command(subcommand)]
+        command: HandoffCommand,
     },
     /// Who has this ID? Summaries on the deck, raw transcripts on every connected machine.
     WhoHas {
@@ -129,7 +135,8 @@ enum Command {
     /// The triage report the Inbox shows: one living Markdown document you keep up to date as mail arrives.
     /// `<Default cards="c_1 c_2">forward both to ads, then archive</Default>` shows a default with Change this, and
     /// Approve All approves its cards unless the person changed it. `<Ask id="signin" options="Yes|No">Was this
-    /// you?</Ask>` asks a question (add `other` for an Other box); answers come to you as messages.
+    /// you?</Ask>` asks a question (add `other` for an Other box, and `cards="c_1"` when it's about cards: the answer
+    /// joins the thread of the default that names them); answers come to you as messages.
     Report {
         #[command(subcommand)]
         command: ReportCommand,
@@ -170,6 +177,13 @@ enum ReportCommand {
     },
     /// Answers you haven't had yet (they normally arrive as messages); taking them marks them.
     Answers,
+    /// Answer the person in a default's thread, which the Inbox shows under the default: what you did about his
+    /// change, or a question. `to` is the [key] his message carried (`cards:c_12`, `archive-all`) or a card (`c_12`).
+    Reply {
+        to: String,
+        /// The text (or - for stdin).
+        text: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -268,7 +282,8 @@ Example: a sales pitch for the archive list, with a one-line unsubscribe reply:
     ]
   }
 
-`thread_key` is Gmail's thread ID as it is, with no prefix: the account is its own field. `to` and `cc` are lists.
+`thread_key` is Gmail's thread ID as it is, with no prefix: the account is its own field. The card's own `to` is
+one address; an action's `to` and `cc` are lists.
 `section`: actions, archive_list, suggestion, later or sent. Action types: archive, mark_read, label, forward,
 draft, reply, story, task, calendar, resume, new_session, lease, watch."#;
 
@@ -410,11 +425,59 @@ enum SessionsCommand {
 
 #[derive(Subcommand)]
 enum SessionCommand {
+    /// Start a session in a new tab on a machine, with the agent's permission flags from that machine's node.yaml.
+    Start {
+        /// The machine (node) it runs on.
+        #[arg(long)]
+        on: String,
+        #[arg(long)]
+        tab: String,
+        /// The working directory on that machine; `~/` is that machine's home.
+        #[arg(long)]
+        cwd: String,
+        /// claude or codex.
+        #[arg(long, default_value = "claude", value_parser = parse_agent)]
+        agent: quietdeck_types::AgentKind,
+        #[arg(long)]
+        model: Option<String>,
+        #[arg(long)]
+        effort: Option<String>,
+        /// The first prompt (or - for stdin).
+        #[arg(long)]
+        prompt: Option<String>,
+        /// Continue the session that wrote this handoff (`h_3`). Without --prompt, its first prompt says to read it.
+        #[arg(long)]
+        handoff: Option<String>,
+    },
     /// Resume a session that isn't running, in a new tab on its machine, in its own working directory.
     Resume {
         /// tab@machine, a tab name (the session that ended last in it), or a session ID.
         session: String,
     },
+    /// Close a running session's tab. A session can close itself, or a session that has moved (one started from its
+    /// handoff continues it); the person closes any.
+    Close {
+        /// tab@machine, a tab name or a session ID.
+        session: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum HandoffCommand {
+    /// Write your handoff, as the session being moved: what the new session needs to know, and what it needs to
+    /// reach. Prints the handoff's ID for `quietdeck session start --handoff`.
+    Add {
+        /// Markdown file (or - for stdin): what you're for, where you're up to, open items, decisions and why,
+        /// conventions and gotchas, pointers.
+        #[arg(long)]
+        handoff: String,
+        /// Markdown file: repositories, CLIs, each credential and where it comes from, hosts and networks, MCP
+        /// servers, watchers and timers.
+        #[arg(long)]
+        manifest: String,
+    },
+    /// Show a handoff: who wrote it, who continues it, and both parts.
+    Show { id: String },
 }
 
 #[derive(Subcommand)]
@@ -456,6 +519,11 @@ fn parse_kind(s: &str) -> Result<TimelineKind, String> {
 pub fn parse_id(s: &str) -> anyhow::Result<i64> {
     let digits = s.rsplit_once('_').map(|(_, d)| d).unwrap_or(s);
     digits.parse().map_err(|_| anyhow::anyhow!("{s:?} isn't an ID"))
+}
+
+fn parse_agent(s: &str) -> Result<quietdeck_types::AgentKind, String> {
+    serde_json::from_value(serde_json::Value::String(s.to_string()))
+        .map_err(|_| format!("{s:?} isn't an agent: claude or codex"))
 }
 
 fn read_arg(s: &str) -> anyhow::Result<String> {
@@ -547,6 +615,60 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             };
             print::out(json, &rows, |rs| rs.iter().map(print::session_line).collect::<Vec<_>>().join("\n"))
         }
+        Command::Session { command: SessionCommand::Start { on, tab, cwd, agent, model, effort, prompt, handoff } } => {
+            let c = Client::connect().await?;
+            let spec = quietdeck_types::directory::SessionStart {
+                on,
+                tab,
+                name: None,
+                agent,
+                model,
+                effort,
+                cwd,
+                prompt: prompt.map(|p| read_arg(&p)).transpose()?,
+                handoff: handoff.map(|h| parse_id(&h)).transpose()?,
+            };
+            let r: quietdeck_types::directory::SessionStarted = c.post("/api/sessions/start", &spec).await?;
+            print::out(json, &r, |r| {
+                let mut s = format!("Started {}@{}", r.tab, r.node);
+                if let Some(id) = &r.session_id {
+                    s.push_str(&format!(" (session {id})"));
+                }
+                s.push('.');
+                if let Some(e) = &r.prompt_error {
+                    s.push_str(&format!(" Its first prompt wasn't sent: {e}"));
+                }
+                s
+            })
+        }
+        Command::Session { command: SessionCommand::Close { session } } => {
+            let c = Client::connect().await?;
+            let _: serde_json::Value = c
+                .post("/api/sessions/close", &quietdeck_types::directory::SessionTarget { session: session.clone() })
+                .await?;
+            print::out(json, &serde_json::json!({}), |_| format!("Closed {session}."))
+        }
+        Command::Handoff { command: HandoffCommand::Add { handoff, manifest } } => {
+            let c = Client::connect().await?;
+            let req = quietdeck_types::handoff::SessionHandoffAdd {
+                handoff: read_file_arg(&handoff)?,
+                manifest: read_file_arg(&manifest)?,
+            };
+            let h: quietdeck_types::handoff::SessionHandoff = c.post("/api/handoffs", &req).await?;
+            print::out(json, &h, |h| {
+                format!(
+                    "h_{} written. Start the session that continues you with `quietdeck session start --on <machine> \
+                     --tab {} --cwd <dir> --handoff h_{}`.",
+                    h.id, h.from.tab, h.id
+                )
+            })
+        }
+        Command::Handoff { command: HandoffCommand::Show { id } } => {
+            let c = Client::connect().await?;
+            let h: quietdeck_types::handoff::SessionHandoff =
+                c.get(&format!("/api/handoffs/{}", parse_id(&id)?), &[]).await?;
+            print::out(json, &h, print::handoff)
+        }
         Command::Session { command: SessionCommand::Resume { session } } => {
             let c = Client::connect().await?;
             let r: quietdeck_types::directory::SessionStarted =
@@ -613,6 +735,11 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                     let req = quietdeck_types::report::ReportSet { markdown: read_file_arg(&file)?, base, new };
                     let r: quietdeck_types::report::Report = c.post("/api/report", &req).await?;
                     print::out(json, &r, print::report_saved)
+                }
+                ReportCommand::Reply { to, text } => {
+                    let req = quietdeck_types::report::ReportReply { to, text: read_arg(&text)? };
+                    let r: quietdeck_types::report::Report = c.post("/api/report/replies", &req).await?;
+                    print::out(json, &r, |_| "Replied in the thread.".to_string())
                 }
                 ReportCommand::Answers => {
                     let r: Vec<quietdeck_types::report::ReportAnswer> =

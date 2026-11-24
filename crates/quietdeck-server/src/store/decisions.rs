@@ -441,7 +441,8 @@ pub async fn take(db: &Db, me: &SessionRef) -> anyhow::Result<Vec<Released>> {
         let mut decision = row.into_decision()?;
         decision.claimed_by = Some(RunBy::Agent);
         decision.picked_up_at = Some(ts(now));
-        out.push(Released { actions: card.action_records.clone(), decision, card, handoff_reason });
+        let changes = crate::reports::changes_for_card(db, card.id).await?;
+        out.push(Released { actions: card.action_records.clone(), decision, card, handoff_reason, changes });
     }
     Ok(out)
 }
@@ -467,7 +468,8 @@ pub async fn runner_take(db: &Db, agent: &SessionRef) -> anyhow::Result<Vec<Rele
         let card =
             cards::get(db, row.card_id).await?.ok_or_else(|| anyhow::anyhow!("card {} vanished", row.card_id))?;
         let decision = row.into_decision()?;
-        out.push(Released { actions: card.action_records.clone(), decision, card, handoff_reason: None });
+        let changes = crate::reports::changes_for_card(db, card.id).await?;
+        out.push(Released { actions: card.action_records.clone(), decision, card, handoff_reason: None, changes });
     }
     Ok(out)
 }

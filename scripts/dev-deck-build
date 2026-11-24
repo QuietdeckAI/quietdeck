@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Builds the deck server for the local dev deck (the web app's `pnpm dev` talks to it), on this Mac: the dev deck's
+# data stays here. Only quietdeck-server, without debug info, in a target directory of its own
+# (~/.cache/quietdeck-dev-deck), so it stays a few GB; every other build and test runs on docspring-dev
+# (scripts/on-dev). Prints the binary's path.
+set -euo pipefail
+dir=$(git rev-parse --show-toplevel)
+target=$HOME/.cache/quietdeck-dev-deck
+cd "$dir"
+CARGO_TARGET_DIR=$target CARGO_PROFILE_DEV_DEBUG=0 cargo build -q --locked -p quietdeck-server -p quietdeck-cli
+echo "$target/debug/quietdeck-server"

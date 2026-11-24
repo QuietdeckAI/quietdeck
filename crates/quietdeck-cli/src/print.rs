@@ -89,6 +89,17 @@ pub fn session_detail(d: &quietdeck_types::directory::SessionDetail) -> String {
     if let Some(c) = &r.info.resume_command {
         out.push(format!("resume: {c}"));
     }
+    if let Some(m) = &d.continues {
+        out.push(format!(
+            "continues {} (session {}), moved here from handoff h_{}",
+            m.session.address(),
+            m.session.session_id.as_deref().unwrap_or("?"),
+            m.handoff_id
+        ));
+    }
+    if let Some(m) = &d.moved_to {
+        out.push(format!("moved to {} on {} (handoff h_{})", m.session.address(), m.at, m.handoff_id));
+    }
     if let Some(p) = &r.page {
         out.push(String::new());
         out.push(p.clone());
@@ -118,7 +129,7 @@ pub fn who_has(w: &WhoHas) -> String {
                     HitSource::Transcript => "transcript",
                 },
                 h.last_mentioned_at.map(|t| t.to_string()).unwrap_or_else(|| "?".into())
-            )
+            ) + &h.moved_to.as_ref().map(|to| format!("  (moved to {to})")).unwrap_or_default()
         })
         .collect();
     if lines.is_empty() {
@@ -131,6 +142,29 @@ pub fn who_has(w: &WhoHas) -> String {
         lines.push(format!("Searched by summary only (offline): {}", w.offline_nodes.join(", ")));
     }
     lines.join("\n")
+}
+
+pub fn handoff(h: &quietdeck_types::handoff::SessionHandoff) -> String {
+    let mut out = vec![format!(
+        "h_{} from {} (session {}), written {}",
+        h.id,
+        h.from.address(),
+        h.from.session_id.as_deref().unwrap_or("?"),
+        h.created_at
+    )];
+    match &h.continued_by {
+        Some(by) => {
+            out.push(format!("continued by {} (session {})", by.address(), by.session_id.as_deref().unwrap_or("?")))
+        }
+        None => out.push("not continued yet".into()),
+    }
+    out.push(String::new());
+    out.push(h.handoff.trim_end().to_string());
+    out.push(String::new());
+    out.push("# Access manifest".into());
+    out.push(String::new());
+    out.push(h.manifest.trim_end().to_string());
+    out.join("\n")
 }
 
 pub fn history(h: &History) -> String {
@@ -349,9 +383,11 @@ pub fn report_answers(a: &[quietdeck_types::report::ReportAnswer]) -> String {
         .map(|a| {
             let what = match a.kind {
                 quietdeck_types::report::AnswerKind::Choice => "answered",
-                quietdeck_types::report::AnswerKind::Change => "changes the default",
+                quietdeck_types::report::AnswerKind::Change => "says about the default",
+                quietdeck_types::report::AnswerKind::Reply => "you replied",
             };
-            format!("- v{} [{}] \"{}\" {what}: {}", a.report_version, a.control, a.about, a.value)
+            let cards = a.cards.as_deref().map(|c| format!(" (about {c})")).unwrap_or_default();
+            format!("- v{} [{}]{cards} \"{}\" {what}: {}", a.report_version, a.control, a.about, a.value)
         })
         .collect::<Vec<_>>()
         .join("\n")

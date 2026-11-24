@@ -128,6 +128,12 @@ pub struct SessionStart {
     #[serde(default)]
     #[garde(inner(length(min = 1, max = 20000)))]
     pub prompt: Option<String>,
+    /// The handoff it starts from (`quietdeck handoff add`): the new session continues the one that wrote it, and
+    /// without a `prompt` its first prompt tells it to read the handoff. The deck's alone: never sent to the node.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    #[ts(optional)]
+    pub handoff: Option<i64>,
 }
 
 /// Resume a session that isn't running, in a new tab on its machine, from what the deck knows about it.
@@ -248,6 +254,9 @@ pub struct WhoHasHit {
     #[ts(type = "string | null")]
     #[schemars(with = "Option<String>")]
     pub last_mentioned_at: Option<Timestamp>,
+    /// `tab@machine` of the session that continues this one, when it was moved: ask that one instead.
+    #[serde(default)]
+    pub moved_to: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
@@ -305,4 +314,8 @@ pub struct NodeRow {
 pub struct SessionDetail {
     pub session: SessionRow,
     pub timeline: Vec<crate::summary::SummaryRecord>,
+    /// The session this one continues, when it was started from a handoff.
+    pub continues: Option<crate::handoff::MoveLink>,
+    /// The session that continues this one, when it was moved.
+    pub moved_to: Option<crate::handoff::MoveLink>,
 }

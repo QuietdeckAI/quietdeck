@@ -25,4 +25,9 @@ cwd: string,
 /**
  * Sent with `herdr agent prompt` once the agent is ready.
  */
-prompt: string | null, };
+prompt: string | null, 
+/**
+ * The handoff it starts from (`quietdeck handoff add`): the new session continues the one that wrote it, and
+ * without a `prompt` its first prompt tells it to read the handoff. The deck's alone: never sent to the node.
+ */
+handoff?: number, };

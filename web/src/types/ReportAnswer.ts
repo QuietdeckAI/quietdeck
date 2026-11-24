@@ -13,4 +13,9 @@ about: string, value: string, answered_at: string,
 /**
  * The agent has it: delivered as a message, or taken with `quietdeck report answers`.
  */
-picked_up: boolean, };
+picked_up: boolean, 
+/**
+ * For an answer to an `<Ask cards="…">`: the cards it's about. The Inbox shows it in the thread of the default
+ * that names them.
+ */
+cards?: string, };

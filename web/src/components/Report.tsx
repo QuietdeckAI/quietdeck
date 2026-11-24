@@ -7,6 +7,7 @@ import { EmailMenu } from "@/components/EmailMenu";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { clock } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Card } from "@/types/Card";
 import type { Delivered } from "@/types/Delivered";
@@ -198,7 +199,85 @@ type Ctx = {
   sessions: SessionRow[];
   drafts: Record<string, string>;
   setDraft: (key: string, text: string) => void;
+  /**
+   * What the person has open and is typing in. The agent rewrites the report as mail arrives, which rebuilds its
+   * controls, so this lives with the report, not in each control: a box he was typing in stays open with his
+   * cursor where it was.
+   */
+  kept: KeptFields;
 };
+
+type Caret = { key: string; start: number; end: number };
+
+type KeptFields = {
+  open: Set<string>;
+  setOpen: (key: string, on: boolean) => void;
+  /** An `<Ask>`'s Other text, by control. */
+  notes: Record<string, string>;
+  setNote: (key: string, text: string) => void;
+  /** The box with the cursor, and where the cursor is. */
+  caret: React.RefObject<Caret | null>;
+};
+
+function useKeptFields(): KeptFields {
+  const [open, setOpenKeys] = useState<Set<string>>(() => new Set());
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const caret = useRef<Caret | null>(null);
+  return {
+    open,
+    setOpen: (key, on) =>
+      setOpenKeys((all) => {
+        if (all.has(key) === on) return all;
+        const next = new Set(all);
+        if (on) next.add(key);
+        else next.delete(key);
+        return next;
+      }),
+    notes,
+    setNote: (key, text) => setNotes((all) => ({ ...all, [key]: text })),
+    caret,
+  };
+}
+
+/**
+ * Props for a text box that keeps the cursor through a rebuild: it records where the cursor is as he types, and a
+ * box rebuilt while he was in it takes the focus back with the cursor in the same place.
+ */
+function useKeptCaret(key: string) {
+  const { kept } = useReport();
+  const record = (el: HTMLTextAreaElement) => {
+    kept.caret.current = { key, start: el.selectionStart, end: el.selectionEnd };
+  };
+  return {
+    /** Opening the box: the cursor goes to the end of what's in it. */
+    focusAtEnd: (length: number) => {
+      kept.caret.current = { key, start: length, end: length };
+    },
+    /** For the textarea. */
+    props: {
+      ref: (el: HTMLTextAreaElement | null) => {
+        const c = kept.caret.current;
+        if (el && c?.key === key && document.activeElement !== el) {
+          el.focus();
+          el.setSelectionRange(c.start, c.end);
+        }
+      },
+      onSelect: (e: React.SyntheticEvent<HTMLTextAreaElement>) => record(e.currentTarget),
+      onInput: (e: React.FormEvent<HTMLTextAreaElement>) => record(e.currentTarget),
+      onKeyUp: (e: React.KeyboardEvent<HTMLTextAreaElement>) => record(e.currentTarget),
+      onMouseUp: (e: React.MouseEvent<HTMLTextAreaElement>) => record(e.currentTarget),
+      onFocus: (e: React.FocusEvent<HTMLTextAreaElement>) => record(e.currentTarget),
+      onBlur: (e: React.FocusEvent<HTMLTextAreaElement>) => {
+        const el = e.currentTarget;
+        // A rebuild takes the box out of the page: keep the cursor for the new one. A click elsewhere: forget it.
+        window.setTimeout(() => {
+          if (el.isConnected && kept.caret.current?.key === key) kept.caret.current = null;
+        });
+      },
+    },
+  };
+}
+
 const ReportCtx = createContext<Ctx | null>(null);
 
 function useReport(): Ctx {
@@ -225,29 +304,115 @@ function latest(answers: ReportAnswer[], control: string): ReportAnswer | undefi
   return answers.filter((a) => a.control === control).at(-1);
 }
 
+/** The card IDs in a `cards` value (`c_1 c_2`, `1,2`). */
+function cardIds(cards: string | undefined): number[] {
+  return (cards ?? "")
+    .split(/[\s,]+/)
+    .map((c) => Number(c.replace(/^c_/, "")))
+    .filter((n) => Number.isInteger(n) && n > 0);
+}
+
+/**
+ * A default's conversation, oldest first: what the person said about it and the agent's replies. A message belongs
+ * to it by the default's key, or by a card it names, so the conversation follows an email the agent moves to another
+ * group.
+ */
+function threadOf(report: Report, key: string, cards: string | undefined): ReportAnswer[] {
+  const mine = new Set(cardIds(cards));
+  return report.answers.filter(
+    (a) =>
+      (a.kind === "choice"
+        ? cardIds(a.cards).some((id) => mine.has(id))
+        : a.control === key || (a.control.startsWith("cards:") && cardIds(a.control.slice(6)).some((id) => mine.has(id)))),
+  );
+}
+
+/** One message in a default's thread: his on the right, the agent's on the left. */
+function Bubble({ answer, pending }: { answer?: ReportAnswer; pending?: string }) {
+  const { report } = useReport();
+  const mine = pending !== undefined || answer?.kind !== "reply";
+  return (
+    <span className={cn("flex flex-col", mine ? "items-end pl-8" : "items-start pr-8")}>
+      <span
+        className={cn(
+          "rounded-lg px-2.5 py-1.5 text-sm whitespace-pre-line text-ink",
+          mine ? "rounded-br-sm bg-accent/15" : "rounded-bl-sm bg-paper-3 [&_code]:bg-paper",
+        )}
+      >
+        {answer?.kind === "choice" && <span className="block text-xs text-muted">{answer.about}</span>}
+        {mine ? (pending ?? answer?.value) : <Render options={CHAT_OPTIONS}>{answer?.value ?? ""}</Render>}
+      </span>
+      <span className="mt-0.5 px-1 text-xs text-neutral">
+        {pending !== undefined
+          ? `Sending to ${report.posted_by.tab}…`
+          : `${mine ? "You" : report.posted_by.tab} · ${clock(answer?.answered_at ?? "")}`}
+      </span>
+    </span>
+  );
+}
+
+/** A paragraph of the agent's reply: a span, since the thread sits inside the report's own paragraphs. */
+function ChatParagraph({ children }: { children?: ReactNode }) {
+  return <span className="block [&+&]:mt-1.5">{children}</span>;
+}
+
+/** The thread's messages, scrolled to the newest. */
+function ThreadMessages({ thread, pending }: { thread: ReportAnswer[]; pending?: string | null }) {
+  const end = useRef<HTMLSpanElement>(null);
+  const [scrolled, setScrolled] = useState(false);
+  const count = thread.length + (pending ? 1 : 0);
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: "nearest" });
+  }, [count]);
+  if (count === 0) return null;
+  return (
+    <span className="mt-2 block border-t border-rule pt-2">
+      <span
+        onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}
+        className={cn(
+          "flex max-h-80 flex-col gap-2 overflow-y-auto pr-1",
+          scrolled && "[mask-image:linear-gradient(to_bottom,transparent,black_2rem)]",
+        )}
+      >
+        {thread.map((a) => (
+          <Bubble key={a.id} answer={a} />
+        ))}
+        {pending && <Bubble pending={pending} />}
+        <span ref={end} />
+      </span>
+    </span>
+  );
+}
+
 /**
  * `<Default cards="c_1 c_2">forward, then archive</Default>`: the text in a compact box of its own, which marks it as
- * the default without a label, and a small Change button at its right edge that opens, inside the same box, a
- * field to say what to change: usually an adjustment or an addition. The item's headline stays the only bold text in it.
+ * the default without a label. The chat button at its right edge opens the default's conversation inside the box: his
+ * messages on the right, the agent's replies on the left, and a box to say more. Closed, the box shows the newest
+ * message. The item's headline stays the only bold text in it.
  */
 function Default({ id, cards, children }: { id?: string; cards?: string; children?: ReactNode }) {
-  const { report, cards: byId, drafts, setDraft } = useReport();
+  const { report, cards: byId, drafts, setDraft, kept } = useReport();
   const key = defaultKey(id, cards);
-  const [open, setOpen] = useState(false);
+  const open = kept.open.has(key);
+  const setOpen = (on: boolean) => kept.setOpen(key, on);
+  const caret = useKeptCaret(key);
   const send = useAnswer();
-  const change = report.answers.filter((a) => a.kind === "change" && a.control === key && a.report_version === report.version).at(-1);
+  const thread = threadOf(report, key, cards);
+  const lastMine = thread.filter((a) => a.kind !== "reply").at(-1);
+  const newest = thread.at(-1);
   const draft = drafts[key] ?? "";
   const about = text(children).trim();
-  const working = useWorkingOn(change);
+  const tab = report.posted_by.tab;
+  // The agent is on his newest message until it replies.
+  const working = useWorkingOn(newest && newest.kind !== "reply" ? newest : undefined);
   const stop = useStopAgent(useReportAgent(report.posted_by));
-  // A sent change waits out the undo window as a draft: Approve All keeps its cards out meanwhile, and sends it first.
+  // A sent message waits out the undo window as a draft: Approve All keeps its cards out meanwhile, and sends it first.
   const undoWindow = useUndoWindow();
   const [sending, setSending] = useState<string | null>(null);
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
   const submit = () => {
     const value = draft.trim();
-    setOpen(false);
     setSending(value);
     undoWindow.start(() => {
       setSending(null);
@@ -262,18 +427,17 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
   const undo = () => {
     undoWindow.cancel();
     setSending(null);
-    setOpen(true);
+    caret.focusAtEnd(draft.length);
   };
-  // In the undo window, Change is Undo; while the agent works on the change, Stop; after, Change again, to say it
-  // differently.
-  const changeButton = undoWindow.pending ? (
-    <UndoButton onClick={undo} label={`Undo the change to: ${about}`} />
+  // In the undo window the chat button is Undo; while the agent works on his message, Stop.
+  const chatButton = undoWindow.pending ? (
+    <UndoButton onClick={undo} label={`Undo the message about: ${about}`} />
   ) : working ? (
     <button
       type="button"
       onClick={() => stop.mutate()}
       disabled={stop.isPending}
-      aria-label={`Stop ${report.posted_by.tab}`}
+      aria-label={`Stop ${tab}`}
       className={smallButton}
     >
       <Square aria-hidden className="size-3! fill-current" />
@@ -283,63 +447,68 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
     <button
       type="button"
       onClick={() => {
-        if (!open && change && !draft) setDraft(key, change.value);
+        if (!open) caret.focusAtEnd(draft.length);
         setOpen(!open);
       }}
       aria-expanded={open}
-      aria-label={`Change: ${about}`}
-      title="Change"
-      className={cn(smallButton, "w-7 px-0")}
+      aria-label={`${thread.length > 0 ? "Conversation" : "Change"}: ${about}`}
+      title={thread.length > 0 ? "Conversation" : "Change"}
+      className={cn(smallButton, thread.length > 0 ? "px-1.5" : "w-7 px-0")}
     >
       <MessageSquare aria-hidden />
+      {thread.length > 0 && <span className="tabular-nums">{thread.length}</span>}
     </button>
   );
-  const named = (cards ?? "")
-    .split(/[\s,]+/)
-    .map((c) => byId.get(Number(c.replace(/^c_/, ""))))
-    .filter((c): c is Card => c !== undefined);
   return (
     <span className="report-default relative rounded-md border border-rule bg-paper-2 py-1 pr-1 pl-3">
-      <WorkingSpinner answer={change} />
+      <WorkingSpinner answer={working ? newest : undefined} />
       <span className="-my-0.5 flex items-start gap-0.5">
-        <span className="min-w-0 flex-1 py-0.5 text-ink">
-          {children}
-        </span>
-        {changeButton}
-        <EmailMenu about={about} cards={named} />
+        <span className="min-w-0 flex-1 py-0.5 text-ink">{children}</span>
+        {chatButton}
+        <EmailMenu about={about} cards={namedCards(cards, byId)} />
       </span>
-      {sending !== null ? (
-        <span className="block text-accent">
-          {sending}
-          <span className="block text-sm text-neutral">Sending to {report.posted_by.tab}…</span>
-        </span>
+      {open ? (
+        <>
+          <ThreadMessages thread={thread} pending={sending} />
+          {lastMine && !sending && newest?.kind !== "reply" && <ChatStatus answer={lastMine} />}
+          <span className="mt-2 mb-1 flex flex-col gap-2 sm:flex-row sm:items-end">
+            <Textarea
+              rows={1}
+              {...caret.props}
+              value={draft}
+              maxLength={4000}
+              placeholder={thread.length > 0 ? `Reply to ${tab}` : "What to change"}
+              aria-label={`Message about: ${about}`}
+              disabled={undoWindow.pending}
+              onChange={(e) => setDraft(key, e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && draft.trim()) submit();
+              }}
+              className="bg-paper py-[9px] text-sm leading-5"
+            />
+            <Button
+              size="sm"
+              loading={send.isPending}
+              disabled={!draft.trim() || undoWindow.pending}
+              onClick={submit}
+              className="h-10 shrink-0"
+            >
+              Send
+            </Button>
+          </span>
+        </>
       ) : (
-        change && (
-          <span className="block text-accent">
-            {change.value}
-            <SentStatus answer={change} />
+        (sending !== null || newest) && (
+          <span className="mt-0.5 block truncate text-sm text-muted">
+            {sending !== null ? (
+              <>You: {sending} <span className="text-neutral">· Sending to {tab}…</span></>
+            ) : (
+              <>
+                {newest?.kind === "reply" ? tab : "You"}: {newest?.value.replace(/`/g, "")}
+              </>
+            )}
           </span>
         )
-      )}
-      {open && !working && !undoWindow.pending && (
-        <span className="mt-1.5 mb-1 flex flex-col gap-2 sm:flex-row sm:items-end">
-          <Textarea
-            rows={1}
-            autoFocus
-            value={draft}
-            maxLength={4000}
-            placeholder="What to change"
-            aria-label={`Change to: ${about}`}
-            onChange={(e) => setDraft(key, e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && draft.trim()) submit();
-            }}
-            className="bg-paper text-sm"
-          />
-          <Button size="sm" loading={send.isPending} disabled={!draft.trim()} onClick={submit} className="h-10 shrink-0">
-            Send
-          </Button>
-        </span>
       )}
       {(send.error ?? stop.error) && (
         <span className="block text-sm text-danger">{(send.error ?? stop.error)?.message}</span>
@@ -348,15 +517,91 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
   );
 }
 
-/** `<Ask id="signin" options="Yes|No" other>Was this you?</Ask>`: the question, a button per option, Other. */
-function Ask({ id, options, other, children }: { id?: string; options?: string; other?: unknown; children?: ReactNode }) {
+/** Under his newest message while the agent hasn't replied: whether it reached the agent, and whether it's on it. */
+function ChatStatus({ answer }: { answer: ReportAnswer }) {
   const { report } = useReport();
+  const working = useWorkingOn(answer);
+  const tab = report.posted_by.tab;
+  const words = !answer.picked_up
+    ? `Not sent to ${tab} yet: it gets this when it's next online.`
+    : working
+      ? `${tab} is working on it…`
+      : `Sent to ${tab}.`;
+  return <span className="mt-1 block pr-1 text-right text-xs text-neutral">{words}</span>;
+}
+
+/** The cards a `<Default cards="c_1 c_2">` names, among those the report has. */
+function namedCards(cards: string | undefined, byId: Map<number, Card>): Card[] {
+  return cardIds(cards)
+    .map((id) => byId.get(id))
+    .filter((c): c is Card => c !== undefined);
+}
+
+/** A default in a snapshot: the text, the emails, and its conversation, with nothing to press but the email menu. */
+function SnapshotDefault({ id, cards, children }: { id?: string; cards?: string; children?: ReactNode }) {
+  const { report, cards: byId } = useReport();
+  const thread = threadOf(report, defaultKey(id, cards), cards);
+  return (
+    <span className="report-default relative rounded-md border border-rule bg-paper-2 py-1 pr-1 pl-3">
+      <span className="-my-0.5 flex items-start gap-0.5">
+        <span className="min-w-0 flex-1 py-0.5 text-ink">{children}</span>
+        <EmailMenu about={text(children).trim()} cards={namedCards(cards, byId)} />
+      </span>
+      {thread.length > 0 && (
+        <span className="mt-1.5 mb-1 flex flex-col gap-2 pr-1">
+          {thread.map((a) => (
+            <Bubble key={a.id} answer={a} />
+          ))}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** A question in a snapshot, with his answer. */
+function SnapshotAsk({ id, children }: { id?: string; children?: ReactNode }) {
+  const { report } = useReport();
+  const answered = latest(report.answers, id ?? text(children).trim());
+  return (
+    <span className="report-ask">
+      <span>{children}</span>{" "}
+      {answered ? (
+        <span className="text-accent">{answered.value}</span>
+      ) : (
+        <span className="text-sm text-neutral">Not answered</span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * `<Ask id="signin" options="Yes|No" other>Was this you?</Ask>`: the question, a button per option, Other. With
+ * `cards="c_12"`, the answer also shows in the thread of the default that names those cards, as his message.
+ */
+function Ask({
+  id,
+  options,
+  other,
+  cards,
+  children,
+}: {
+  id?: string;
+  options?: string;
+  other?: unknown;
+  cards?: string;
+  children?: ReactNode;
+}) {
+  const { report, kept } = useReport();
   const control = id ?? text(children).trim();
   const about = text(children).trim();
   const choices = (options ?? "").split("|").map((o) => o.trim()).filter(Boolean);
   const answered = latest(report.answers, control);
-  const [otherOpen, setOtherOpen] = useState(false);
-  const [otherText, setOtherText] = useState("");
+  const keptKey = `ask:${control}`;
+  const otherOpen = kept.open.has(keptKey);
+  const setOtherOpen = (on: boolean) => kept.setOpen(keptKey, on);
+  const otherText = kept.notes[keptKey] ?? "";
+  const setOtherText = (t: string) => kept.setNote(keptKey, t);
+  const caret = useKeptCaret(keptKey);
   const send = useAnswer();
   const undoWindow = useUndoWindow();
   const [sending, setSending] = useState<string | null>(null);
@@ -366,7 +611,7 @@ function Ask({ id, options, other, children }: { id?: string; options?: string; 
     undoWindow.start(() => {
       setSending(null);
       send.mutate(
-        { report_id: report.id, report_version: report.version, control, kind: "choice", about, value },
+        { report_id: report.id, report_version: report.version, control, kind: "choice", about, value, cards },
         { onSuccess: () => setOtherText("") },
       );
     });
@@ -374,7 +619,10 @@ function Ask({ id, options, other, children }: { id?: string; options?: string; 
   const undo = () => {
     undoWindow.cancel();
     // An Other answer goes back into its box.
-    if (sending !== null && !choices.includes(sending)) setOtherOpen(true);
+    if (sending !== null && !choices.includes(sending)) {
+      caret.focusAtEnd(otherText.length);
+      setOtherOpen(true);
+    }
     setSending(null);
   };
   const shown = sending ?? answered?.value;
@@ -402,7 +650,10 @@ function Ask({ id, options, other, children }: { id?: string; options?: string; 
             size="sm"
             variant={answered && !choices.includes(answered.value) ? "primary" : "secondary"}
             aria-expanded={otherOpen}
-            onClick={() => setOtherOpen(!otherOpen)}
+            onClick={() => {
+              if (!otherOpen) caret.focusAtEnd(otherText.length);
+              setOtherOpen(!otherOpen);
+            }}
             className="h-7"
           >
             Other
@@ -420,13 +671,13 @@ function Ask({ id, options, other, children }: { id?: string; options?: string; 
         <span className="mt-1.5 flex flex-col gap-2 sm:flex-row sm:items-end">
           <Textarea
             rows={1}
-            autoFocus
+            {...caret.props}
             value={otherText}
             maxLength={4000}
             placeholder="Your answer"
             aria-label={`Answer to: ${about}`}
             onChange={(e) => setOtherText(e.target.value)}
-            className="text-sm"
+            className="py-[9px] text-sm leading-5"
           />
           <Button
             size="sm"
@@ -492,6 +743,18 @@ const OPTIONS = {
   overrides: { Default, Ask, a: Link, code: Code },
 };
 
+const SNAPSHOT_OPTIONS = {
+  forceBlock: true,
+  overrides: { Default: SnapshotDefault, Ask: SnapshotAsk, a: Link, code: Code },
+};
+
+/** An agent's reply in a thread: inline Markdown, with no headings or blocks of the report's size. */
+const CHAT_OPTIONS = {
+  wrapper: "span",
+  forceWrapper: true,
+  overrides: { a: Link, code: Code, p: ChatParagraph },
+} as const;
+
 /**
  * Only the report's own two tags are HTML: every other `<` is escaped first, so a tag an email slipped into the
  * agent's text shows as text and never reaches the page as markup.
@@ -513,9 +776,26 @@ export function ReportBody({
   setDraft: (key: string, text: string) => void;
 }) {
   const running = useRunningSessions();
+  const kept = useKeptFields();
   return (
-    <ReportCtx value={{ report, cards, sessions: running.data ?? [], drafts, setDraft }}>
+    <ReportCtx value={{ report, cards, sessions: running.data ?? [], drafts, setDraft, kept }}>
       <Render className="md report" options={OPTIONS}>
+        {onlyReportTags(report.markdown)}
+      </Render>
+    </ReportCtx>
+  );
+}
+
+const noDraft = () => undefined;
+
+/** The report as it was at an Approve All (History): his changes and answers in place, nothing to press but the
+ * email menus. */
+export function ReportSnapshotBody({ report, cards }: { report: Report; cards: Map<number, Card> }) {
+  const running = useRunningSessions();
+  const kept = useKeptFields();
+  return (
+    <ReportCtx value={{ report, cards, sessions: running.data ?? [], drafts: {}, setDraft: noDraft, kept }}>
+      <Render className="md report" options={SNAPSHOT_OPTIONS}>
         {onlyReportTags(report.markdown)}
       </Render>
     </ReportCtx>
