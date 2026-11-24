@@ -56,7 +56,15 @@ pub async fn start(state: &AppState, caller: &Caller, mut spec: SessionStart) ->
     }
     let node = spec.on.clone();
     let what = format!("{} in {}", spec.tab, spec.cwd);
-    let v = ask(state, &node, DeckRequest::StartSession { spec }, START_TIMEOUT).await?;
+    let v = ask(state, &node, DeckRequest::StartSession { spec }, START_TIMEOUT).await.map_err(|e| match (&handoff, e) {
+        // The tab may be open with the agent in it: the move finishes from there, not with another start.
+        (Some(h), AppError::Conflict(m)) => AppError::Conflict(format!(
+            "{m}. Handoff h_{id} isn't continued yet. If the new tab is open, deal with what it stopped at, send it its \
+             first prompt (`quietdeck msg send`), and have it run `quietdeck handoff claim h_{id}`.",
+            id = h.id
+        )),
+        (_, e) => e,
+    })?;
     let started: SessionStarted = serde_json::from_value(v).map_err(|e| AppError::Internal(e.into()))?;
     let mut refs = vec![format!("{}@{node}", started.tab)];
     refs.extend(started.session_id.clone());

@@ -45,6 +45,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/sessions/interrupt", post(interrupt_session))
         .route("/api/handoffs", post(handoff_add))
         .route("/api/handoffs/{id}", get(handoff_show))
+        .route("/api/handoffs/{id}/claim", post(handoff_claim))
         .route("/api/who-has", get(who_has))
         .route("/api/msg", post(msg_send))
         .route("/api/timeline", post(timeline_add))
@@ -121,6 +122,16 @@ async fn handoff_show(
     axum::extract::Path(id): axum::extract::Path<i64>,
 ) -> AppResult<Json<quietdeck_types::handoff::SessionHandoff>> {
     Ok(Json(crate::handoffs::get(&state.db, id).await?))
+}
+
+async fn handoff_claim(
+    State(state): State<AppState>,
+    Agent(me): Agent,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> AppResult<Json<quietdeck_types::handoff::SessionHandoff>> {
+    let h = crate::handoffs::claim(&state.db, id, &me).await?;
+    state.changed(Changed::Cards);
+    Ok(Json(h))
 }
 
 async fn report_reply(

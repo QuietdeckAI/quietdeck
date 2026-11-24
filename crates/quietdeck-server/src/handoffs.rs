@@ -130,6 +130,29 @@ pub async fn continued(db: &Db, id: i64, by: &SessionRef) -> AppResult<()> {
     Ok(())
 }
 
+/// `quietdeck handoff claim`: the calling session continues the handoff's session. For a start that stopped before
+/// the deck could record it (a prompt in the new tab while the agent started): the new session claims it once it's
+/// running. Claiming again is fine; a handoff someone else continues, or your own, isn't yours to claim.
+pub async fn claim(db: &Db, id: i64, me: &SessionRef) -> AppResult<SessionHandoff> {
+    let h = get(db, id).await?;
+    if let Some(by) = &h.continued_by {
+        if by.node == me.node && by.tab == me.tab {
+            return Ok(h);
+        }
+        return Err(AppError::Conflict(format!(
+            "h_{id} is already continued by {}: a handoff starts one session",
+            by.address()
+        )));
+    }
+    if h.from.node == me.node && h.from.tab == me.tab && h.from.session_id == me.session_id {
+        return Err(AppError::BadRequest(format!(
+            "h_{id} is your own handoff: the session that continues it claims it"
+        )));
+    }
+    continued(db, id, me).await?;
+    get(db, id).await
+}
+
 /// The first prompt of a session started from a handoff, when the starter gave none.
 pub fn first_prompt(h: &SessionHandoff) -> String {
     format!(
@@ -246,6 +269,20 @@ mod tests {
         assert_eq!(node(done).await, "laptop", "finished cards stay with the session that did them");
         let r = crate::reports::current(&state.db).await.unwrap().unwrap();
         assert_eq!(r.posted_by, new);
+    }
+
+    #[tokio::test]
+    async fn a_running_session_claims_a_handoff_its_start_never_recorded() {
+        let state = AppState::for_tests().await;
+        let h = add(&state.db, &old(), add_req()).await.unwrap();
+        let err = claim(&state.db, h.id, &old()).await.unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)), "{err}");
+        let new = SessionRef { node: "vm".into(), tab: "infra".into(), session_id: Some("s-new".into()) };
+        assert_eq!(claim(&state.db, h.id, &new).await.unwrap().continued_by, Some(new.clone()));
+        claim(&state.db, h.id, &new).await.unwrap();
+        let other = SessionRef { node: "vm2".into(), tab: "infra".into(), session_id: None };
+        let err = claim(&state.db, h.id, &other).await.unwrap_err();
+        assert!(err.to_string().contains("already continued by infra@vm"), "{err}");
     }
 
     #[tokio::test]

@@ -478,6 +478,9 @@ enum HandoffCommand {
     },
     /// Show a handoff: who wrote it, who continues it, and both parts.
     Show { id: String },
+    /// As the new session, continue the handoff's session when your start didn't record it (it stopped at a prompt):
+    /// you take over its open cards and report.
+    Claim { id: String },
 }
 
 #[derive(Subcommand)]
@@ -668,6 +671,18 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             let h: quietdeck_types::handoff::SessionHandoff =
                 c.get(&format!("/api/handoffs/{}", parse_id(&id)?), &[]).await?;
             print::out(json, &h, print::handoff)
+        }
+        Command::Handoff { command: HandoffCommand::Claim { id } } => {
+            let c = Client::connect().await?;
+            let h: quietdeck_types::handoff::SessionHandoff =
+                c.post(&format!("/api/handoffs/{}/claim", parse_id(&id)?), &serde_json::json!({})).await?;
+            print::out(json, &h, |h| {
+                format!(
+                    "You continue {} from h_{}: its open cards and its report are yours now.",
+                    h.from.address(),
+                    h.id
+                )
+            })
         }
         Command::Session { command: SessionCommand::Resume { session } } => {
             let c = Client::connect().await?;

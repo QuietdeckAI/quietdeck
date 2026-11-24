@@ -70,6 +70,12 @@ quietdeck session start --on <node> --tab "<tab>" --cwd "~/code/<repo>" --handof
 Keep the tab's name, so messages to it still arrive. Add `--agent codex`, `--model` or `--effort` to match the old
 session. Without `--prompt`, the new session's first prompt tells it to read the handoff and check the manifest.
 
+On a machine where the agent has never run, its first-run screens (Claude Code's theme picker, a one-off offer) stop
+the start: dismiss or pre-set them during step 3, never during a start. If a start stops anyway ("needs you in
+herdr", "never showed it ready"), don't start again: open the tab, deal with what it stopped at, send it the first
+prompt with `quietdeck msg send`, and have the new session run `quietdeck handoff claim h_N`. Until the handoff is
+claimed, the old session's open cards and report stay with it.
+
 ## 5. As the new session: read, check, report
 
 Run `quietdeck handoff show h_N` and read both parts. Check every manifest line you can (run each CLI, open each
