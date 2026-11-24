@@ -92,8 +92,14 @@ pub struct MailWatchConfig {
     pub every: String,
     /// Reads the account's current history ID (Gmail's `users.getProfile` shape).
     pub profile: ToolSpec,
-    /// Lists changes since a history ID (Gmail's `users.history.list` shape), message IDs and labels only.
+    /// Lists changes since a history ID (Gmail's `users.history.list` shape): message and thread IDs and labels.
     pub history: ToolSpec,
+    /// Reads one new message's headers, labels and snippet (Gmail's `users.messages.get` with `format: metadata`
+    /// and `metadataHeaders: [From, To, Subject]`), with `${message_id}`. Optional: with it, "while I'm reading"
+    /// rules can match the sender and subject, and a message that's already gone (a follow-up nudge Gmail took back)
+    /// doesn't wake the agent.
+    #[serde(default)]
+    pub message: Option<ToolSpec>,
 }
 
 /// One tool: an Executor app tool by path, or a command that reads the input as JSON on stdin and prints JSON. In

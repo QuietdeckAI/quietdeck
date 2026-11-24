@@ -130,6 +130,11 @@ pub enum NodeRequest {
     /// A node that reads a chat source (Matrix): new messages for the deck to keep. Any node may send it; the deck
     /// keeps each message once, by room and ID. Answers [`crate::message::MessagesStored`].
     MessagesIngest { messages: Vec<crate::message::IncomingMessage> },
+    /// The runner, for new items while the person reads the Inbox: let each through now, or hold it? Answers
+    /// `Vec<crate::reading::HoldVerdict>`, one per item.
+    HoldCheck { items: Vec<crate::reading::ItemFacts> },
+    /// The runner: what it holds for the person's idle moment, for the Inbox's "waiting" line. Answers `()`.
+    RunnerHeld { summary: Option<String>, count: u64 },
 }
 
 /// A decision the runner hands to the agent, and why.
@@ -217,6 +222,13 @@ pub enum DeckRequest {
     MessagesArrived {
         channels: Vec<crate::message::ChannelCount>,
     },
+    /// To the runner: whether the person is reading the Inbox now. Sent on every change and when the runner
+    /// connects. Going idle lets the held wake-up go.
+    Presence {
+        active: bool,
+    },
+    /// To the runner: the person pressed "Show now": wake the agent for what it holds, even while they read.
+    ReleaseHeld,
     /// To the runner: its agent finished its round (`quietdeck round done`), so the next wake-up can go.
     RoundDone,
     /// To the runner: where its mail watch is. Answers [`crate::api::RoundStatus`].

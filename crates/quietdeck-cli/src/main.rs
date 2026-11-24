@@ -194,6 +194,10 @@ enum ReportCommand {
         /// Start a new report: everything on the current one is approved or handled.
         #[arg(long)]
         new: bool,
+        /// What this edit changes, in a line, for the toast the person sees ("New: CI failure on homeserver
+        /// (c_67)"). Left out, the deck works one out from the defaults that changed.
+        #[arg(long)]
+        change: Option<String>,
     },
     /// Answers you haven't had yet (they normally arrive as messages); taking them marks them.
     Answers,
@@ -774,8 +778,8 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                     }
                     print::out(json, &r, |r| print::report(r.as_ref()))
                 }
-                ReportCommand::Set { file, base, new } => {
-                    let req = quietdeck_types::report::ReportSet { markdown: read_file_arg(&file)?, base, new };
+                ReportCommand::Set { file, base, new, change } => {
+                    let req = quietdeck_types::report::ReportSet { markdown: read_file_arg(&file)?, base, new, change };
                     let r: quietdeck_types::report::Report = c.post("/api/report", &req).await?;
                     print::out(json, &r, print::report_saved)
                 }

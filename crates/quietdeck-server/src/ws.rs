@@ -72,6 +72,17 @@ async fn run(state: AppState, node: String, socket: WebSocket) {
         state.hub.unregister(&node, reg.conn_id).await;
         return;
     }
+    if runner.is_some() {
+        // A runner starts out knowing whether the person is reading the Inbox.
+        let (state, node) = (state.clone(), node.clone());
+        tokio::spawn(async move {
+            if let Ok(req) = crate::reading::presence_request(&state.db).await
+                && let Err(e) = state.hub.request(&node, req, std::time::Duration::from_secs(10)).await
+            {
+                tracing::info!(%node, error = %e, "telling the runner whether the person is reading");
+            }
+        });
+    }
 
     let mut ping = tokio::time::interval(PING_EVERY);
     let mut last_heard = tokio::time::Instant::now();

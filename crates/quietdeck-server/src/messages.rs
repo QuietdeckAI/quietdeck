@@ -2,19 +2,17 @@
 //! over its connection (`messages_ingest`); the deck keeps each once, by room and ID, and tells every connected runner
 //! how many arrived, so it counts them into its agent's next wake-up. Agents read them with `quietdeck messages`.
 
-use std::time::Duration;
-
 use quietdeck_types::SessionRef;
 use quietdeck_types::message::{
     ChannelCount, ChannelMessage, IncomingMessage, MAX_INGEST, MessagesPage, MessagesStored, SOURCES, clip_body,
 };
-use quietdeck_types::node::{DeckRequest, RunnerInfo};
+use quietdeck_types::node::DeckRequest;
+use quietdeck_types::reading::{HoldVerdict, ItemFacts};
 
 use crate::db::{Db, now_ms, ts};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
-const ASK_TIMEOUT: Duration = Duration::from_secs(10);
 /// Most messages one read returns.
 pub const MAX_PAGE: u32 = 200;
 
@@ -66,9 +64,12 @@ pub async fn store(db: &Db, node: &str, messages: &[IncomingMessage]) -> AppResu
         }
         match counts.iter_mut().find(|c| c.source == m.source && c.channel_name == m.channel_name) {
             Some(c) => c.count += 1,
-            None => {
-                counts.push(ChannelCount { source: m.source.clone(), channel_name: m.channel_name.clone(), count: 1 })
-            }
+            None => counts.push(ChannelCount {
+                source: m.source.clone(),
+                channel_name: m.channel_name.clone(),
+                count: 1,
+                let_through: vec![],
+            }),
         }
     }
     Ok(counts)
@@ -76,7 +77,27 @@ pub async fn store(db: &Db, node: &str, messages: &[IncomingMessage]) -> AppResu
 
 /// `messages_ingest` from a node: keep the new messages and tell the runners.
 pub async fn ingest(state: &AppState, node: &str, messages: Vec<IncomingMessage>) -> AppResult<MessagesStored> {
-    let counts = store(&state.db, node, &messages).await?;
+    let mut counts = store(&state.db, node, &messages).await?;
+    // While the person reads the Inbox, a rule may let a message through now; the rest wait for the runner's next
+    // wake-up after they go idle.
+    if crate::reading::is_active(&state.db).await? && !counts.is_empty() {
+        let rules = crate::reading::list(&state.db).await?;
+        for m in &messages {
+            let item = ItemFacts {
+                source: m.source.clone(),
+                account: m.channel_name.clone(),
+                thread_key: Some(m.channel.clone()),
+                from: Some(m.sender.clone()),
+                text: Some(m.body.clone()),
+                ..ItemFacts::default()
+            };
+            if let HoldVerdict::Let { reason } = crate::reading::verdict(&state.db, &rules, &item).await?
+                && let Some(c) = counts.iter_mut().find(|c| c.channel_name == m.channel_name)
+            {
+                c.let_through.push(reason);
+            }
+        }
+    }
     let new: u32 = counts.iter().map(|c| c.count).sum();
     if new > 0 {
         tracing::info!(%node, new, "messages arrived");
@@ -89,33 +110,7 @@ pub async fn ingest(state: &AppState, node: &str, messages: Vec<IncomingMessage>
 /// Tell every connected runner what arrived. A runner that's offline misses the count, not the messages: its agent
 /// reads them with `quietdeck messages --new` on its next round.
 async fn notify_runners(state: &AppState, channels: Vec<ChannelCount>) {
-    let rows: Vec<(String, String)> = match sqlx::query_as(
-        "SELECT name, runner_info FROM nodes WHERE runner_info IS NOT NULL AND revoked_at IS NULL",
-    )
-    .fetch_all(&state.db)
-    .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(error = %e, "finding runners to tell about new messages");
-            return;
-        }
-    };
-    let mut told = 0;
-    for (node, info) in rows {
-        if serde_json::from_str::<RunnerInfo>(&info).is_err() || !state.hub.is_connected(&node).await {
-            continue;
-        }
-        let req = DeckRequest::MessagesArrived { channels: channels.clone() };
-        match state.hub.request(&node, req, ASK_TIMEOUT).await {
-            Ok(reply) => match reply.into_result::<()>() {
-                Ok(()) => told += 1,
-                Err(e) => tracing::warn!(%node, error = %e, "the runner refused the new-messages count"),
-            },
-            Err(e) => tracing::warn!(%node, error = %e, "the runner didn't answer the new-messages count"),
-        }
-    }
-    if told == 0 {
+    if crate::runner::tell_runners(state, DeckRequest::MessagesArrived { channels }).await == 0 {
         tracing::info!("no runner was connected to hear about new messages");
     }
 }

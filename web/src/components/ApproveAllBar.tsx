@@ -16,6 +16,7 @@ export function ApproveAllBar({
   beforeApprove,
   top,
   inline,
+  settleUntil = 0,
 }: {
   inbox: Inbox;
   request: ApproveAll;
@@ -25,7 +26,22 @@ export function ApproveAllBar({
   top?: boolean;
   /** Just the buttons, compact, for another bar (the report's chat box): the status floats above that bar. */
   inline?: boolean;
+  /** Until this time (ms), something Approve All would approve changed too recently to have been read. */
+  settleUntil?: number;
 }) {
+  // Counts down while something changed too recently: "Approve All in 4s". The deck refuses it too.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (settleUntil <= Date.now()) return;
+    setNow(Date.now());
+    const t = window.setInterval(() => {
+      setNow(Date.now());
+      if (Date.now() >= settleUntil) window.clearInterval(t);
+    }, 250);
+    return () => window.clearInterval(t);
+  }, [settleUntil]);
+  const wait = Math.ceil((settleUntil - now) / 1000);
+  const fresh = wait > 0;
   const qc = useQueryClient();
   const [skipped, setSkipped] = useState<Skipped[]>([]);
   // Awaited in onSuccess, so a button stays busy until the Inbox it changed is back: otherwise Approve All shows
@@ -118,10 +134,11 @@ export function ApproveAllBar({
             variant="primary"
             className="h-10 min-w-32"
             loading={approve.isPending}
-            disabled={settling || nothing}
+            disabled={settling || nothing || fresh}
+            title={fresh ? "Something just changed: read it first" : undefined}
             onClick={() => approve.mutate()}
           >
-            Approve All
+            {fresh ? `Approve All in ${wait}s` : "Approve All"}
           </Button>
         )}
       </>
@@ -172,10 +189,10 @@ export function ApproveAllBar({
               <Button
                 variant="primary"
                 loading={approve.isPending}
-                disabled={settling}
+                disabled={settling || fresh}
                 onClick={() => approve.mutate()}
               >
-                Approve All
+                {fresh ? `Approve All in ${wait}s` : "Approve All"}
               </Button>
             )}
           </>

@@ -70,6 +70,10 @@ pub struct ChannelCount {
     pub source: String,
     pub channel_name: String,
     pub count: u32,
+    /// While the person reads the Inbox: why each message that may get through now does ("rule Critical alerts").
+    /// The others wait until the person is idle.
+    #[serde(default)]
+    pub let_through: Vec<String>,
 }
 
 /// `quietdeck messages`: messages after the caller's last read (`new`), or after a message ID.

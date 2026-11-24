@@ -313,3 +313,37 @@ input[type="file"]:not(:disabled),
 .md hr {
   border-color: var(--color-rule);
 }
+
+/* A default a toast pointed at: a brief accent ring, so the eye lands on it. */
+@keyframes flash {
+  0%,
+  60% {
+    box-shadow: 0 0 0 2px var(--color-accent);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+.flash {
+  animation: flash 2.4s var(--ease-out);
+}
+
+/* A toast rises into the corner. */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.toast-in {
+  animation: toast-in var(--dur-arrive) var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .flash {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--color-accent);
+  }
+  .toast-in {
+    animation: arrive-fade 150ms linear;
+  }
+}

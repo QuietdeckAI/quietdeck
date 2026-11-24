@@ -508,7 +508,10 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
     </button>
   );
   return (
-    <span className="report-default relative rounded-md border border-rule bg-paper-2 py-1 pr-1 pl-3">
+    <span
+      className="report-default relative rounded-md border border-rule bg-paper-2 py-1 pr-1 pl-3"
+      data-card-ids={cardIds(cards).join(" ")}
+    >
       <WorkingSpinner answer={working ? newest : undefined} />
       <span className="-my-0.5 flex items-start gap-0.5">
         <span className="min-w-0 flex-1 py-0.5 text-ink">{children}</span>
@@ -850,7 +853,18 @@ export function ReportSnapshotBody({ report, cards }: { report: Report; cards: M
 
 /** The chat box under the report: plain words straight to the agent that writes it. Nothing is kept. Approve All
  * sits at its right end (children), the agent's status at its left, and one Stop for the agent and the run. */
-export function ReportChatBox({ by, running, children }: { by: SessionRef; running: boolean; children?: ReactNode }) {
+export function ReportChatBox({
+  by,
+  running,
+  children,
+  corner,
+}: {
+  by: SessionRef;
+  running: boolean;
+  children?: ReactNode;
+  /** In the bar's bottom-right corner, outside the column, on screens wide enough to have room ("Updated 2 min ago"). */
+  corner?: ReactNode;
+}) {
   const agent = by.tab;
   const session = useReportAgent(by);
   const working = agentState(session) === "working";
@@ -890,7 +904,9 @@ export function ReportChatBox({ by, running, children }: { by: SessionRef; runni
   };
   return (
     <div className="sticky bottom-0 z-10 mt-10 border-t border-rule bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm">
-      <div className="relative mx-auto flex max-w-3xl items-center gap-2 px-4 py-3">
+      {corner && <div className="absolute right-4 bottom-3 hidden text-right xl:block">{corner}</div>}
+      {/* On a phone the message box takes its own row above the buttons, which would otherwise squeeze it. */}
+      <div className="relative mx-auto flex max-w-3xl flex-wrap items-center gap-2 px-4 py-3 sm:flex-nowrap">
         <AgentStatus by={by} />
         <Textarea
           rows={1}
@@ -908,8 +924,10 @@ export function ReportChatBox({ by, running, children }: { by: SessionRef; runni
               submit();
             }
           }}
-          className="min-h-10 text-sm"
+          className="order-first min-h-10 basis-full text-sm sm:order-none sm:basis-auto"
         />
+        {/* Pushes the buttons to the right on a phone's second row. */}
+        <span className="flex-1 sm:hidden" aria-hidden />
         {undoWindow.pending ? (
           <Button size="sm" variant="secondary" onClick={undo} aria-label="Undo the message" className="h-10 min-w-20">
             <Undo2 aria-hidden /> Undo

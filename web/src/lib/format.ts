@@ -44,3 +44,51 @@ export function ago(iso: string): string {
   if (hours < 36) return `${hours} hours ago`;
   return `on ${when(iso)}`;
 }
+
+/** "23 min ago": how long ago, in whole minutes up to an hour, then hours, then days. */
+export function agoShort(iso: string, now = Date.now()): string {
+  const secs = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
+  if (secs < 60) return "just now";
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+
+const stamp = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+});
+
+/**
+ * The time zone's abbreviation ("NZDT", "AEST", "BST", "PST"). A browser in another locale often knows it only as an
+ * offset ("GMT+13"), so English locales that name more zones are tried before settling for the offset.
+ */
+function zoneName(d: Date): string {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const name = (locale: string | undefined) =>
+    new Intl.DateTimeFormat(locale, { timeZone: zone, timeZoneName: "short" })
+      .formatToParts(d)
+      .find((p) => p.type === "timeZoneName")?.value ?? "";
+  let fallback = "";
+  for (const locale of [undefined, "en-NZ", "en-AU", "en-GB", "en-US", "en-IN", "en-ZA"]) {
+    const n = name(locale);
+    if (n && !/^(GMT|UTC)[+-]/.test(n)) return n;
+    fallback ||= n;
+  }
+  return fallback;
+}
+
+/** "Wed 25 Nov, 10:13am NZDT", in the person's own time zone. */
+export function stampWithZone(iso: string): string {
+  const d = new Date(iso);
+  const parts = Object.fromEntries(stamp.formatToParts(d).map((p) => [p.type, p.value]));
+  const period = (parts.dayPeriod ?? "").toLowerCase().replace(/\s|\./g, "");
+  return `${parts.weekday} ${parts.day} ${parts.month}, ${parts.hour}:${parts.minute}${period} ${zoneName(d)}`;
+}

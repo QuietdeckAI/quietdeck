@@ -272,6 +272,22 @@ async fn answer(node: &Node, request: DeckRequest) -> Reply {
             }
             None => Reply::Err { error: "this node's runner is off".into() },
         },
+        DeckRequest::Presence { active } => match node.runner.get() {
+            Some(r) => {
+                let runner = r.runner.clone();
+                tokio::spawn(async move { runner.set_reading(active).await });
+                Reply::ok(&())
+            }
+            None => Reply::Err { error: "this node's runner is off".into() },
+        },
+        DeckRequest::ReleaseHeld => match node.runner.get() {
+            Some(r) => {
+                let runner = r.runner.clone();
+                tokio::spawn(async move { runner.release_held().await });
+                Reply::ok(&())
+            }
+            None => Reply::Err { error: "this node's runner is off".into() },
+        },
         DeckRequest::RoundStatus => match node.runner.get() {
             Some(r) => Reply::ok(&r.runner.round_status().await),
             None => Reply::Err { error: "this node's runner is off".into() },

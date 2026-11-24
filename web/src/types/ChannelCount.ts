@@ -3,4 +3,9 @@
 /**
  * New messages in one room, as the deck tells the runner.
  */
-export type ChannelCount = { source: string, channel_name: string, count: number, };
+export type ChannelCount = { source: string, channel_name: string, count: number, 
+/**
+ * While the person reads the Inbox: why each message that may get through now does ("rule Critical alerts").
+ * The others wait until the person is idle.
+ */
+let_through: Array<string>, };

@@ -10,6 +10,7 @@ use quietdeck_types::card::{ActionRecord, ActionReport, ActionResult, ActionStat
 use quietdeck_types::decision::ReportReceipt;
 use quietdeck_types::directory::{SessionStart, SessionStarted};
 use quietdeck_types::node::{Delivered, Handoff};
+use quietdeck_types::reading::{HoldVerdict, ItemFacts};
 use quietdeck_types::relay::DeliveryKind;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -138,10 +139,27 @@ struct FakeDeck {
     stopped: StdMutex<HashSet<i64>>,
     reports: StdMutex<Vec<ActionReport>>,
     relayed: StdMutex<Vec<(String, String)>>,
+    /// While the person reads: subjects the deck lets through, with why. Everything else is held.
+    lets: StdMutex<HashMap<String, String>>,
+    held: StdMutex<Vec<(Option<String>, u64)>>,
 }
 
 #[async_trait]
 impl DeckApi for FakeDeck {
+    async fn hold_check(&self, items: Vec<ItemFacts>) -> Result<Vec<HoldVerdict>, String> {
+        let lets = self.lets.lock().unwrap();
+        Ok(items
+            .iter()
+            .map(|i| match i.thread_key.as_deref().and_then(|t| lets.get(t)) {
+                Some(reason) => HoldVerdict::Let { reason: reason.clone() },
+                None => HoldVerdict::Hold,
+            })
+            .collect())
+    }
+    async fn held(&self, summary: Option<String>, count: u64) -> Result<(), String> {
+        self.held.lock().unwrap().push((summary, count));
+        Ok(())
+    }
     async fn take(&self) -> Result<Vec<Released>, String> {
         Ok(self.released.lock().unwrap().clone())
     }
@@ -510,6 +528,62 @@ async fn the_mail_watch_wakes_once_per_round_and_resumes_after_a_restart() {
     assert_eq!(agent.told.lock().unwrap().len(), 2);
     let paths: HashSet<String> = calls.lock().unwrap().iter().map(|(p, _)| p.clone()).collect();
     assert_eq!(paths, HashSet::from([PROFILE.to_string(), HISTORY.to_string()]));
+}
+
+#[tokio::test]
+async fn while_the_person_reads_only_what_the_deck_lets_through_wakes_the_agent() {
+    let head = Arc::new(StdMutex::new(100u64));
+    let added: Added = Arc::default();
+    let (url, _) = executor(feed(head.clone(), added.clone())).await;
+    let dir = tempfile::tempdir().unwrap();
+    let agent = Arc::new(FakeAgent::default());
+    let deck = Arc::new(FakeDeck::default());
+    let cfg = config(&url, "");
+    let tools = ConfiguredTools::new(Some((cfg.executor.clone().unwrap(), "t".into())));
+    let runner = Runner::new(cfg, deck.clone(), Arc::new(tools), agent.clone(), dir.path().to_path_buf());
+    runner.check_mail().await; // first run: starts from now
+    runner.set_reading(true).await;
+
+    added.lock().unwrap().push((101, "a", "INBOX"));
+    *head.lock().unwrap() = 101;
+    runner.check_mail().await;
+    assert!(agent.told.lock().unwrap().is_empty(), "held while the person reads");
+    assert_eq!(deck.held.lock().unwrap().last(), Some(&(Some("1 Personal".to_string()), 1)));
+
+    // An update the deck lets through wakes the agent for that alone.
+    deck.lets.lock().unwrap().insert("b".into(), "an update on c_4's thread".into());
+    added.lock().unwrap().push((102, "b", "INBOX"));
+    *head.lock().unwrap() = 102;
+    runner.check_mail().await;
+    let told = agent.told.lock().unwrap().clone();
+    assert_eq!(told.len(), 1);
+    assert!(
+        told[0]
+            .1
+            .starts_with("The person is reading the Inbox, so only these get through now: an update on c_4's thread"),
+        "{}",
+        told[0].1
+    );
+    assert!(told[0].1.contains("Everything else new (1 Personal) waits"), "{}", told[0].1);
+
+    // Going idle after the round lets the held mail go.
+    runner.round_done().await;
+    assert_eq!(agent.told.lock().unwrap().len(), 1, "still reading");
+    runner.set_reading(false).await;
+    let told = agent.told.lock().unwrap().clone();
+    assert_eq!(told.len(), 2);
+    assert!(told[1].1.starts_with("New mail: 1 Personal."), "{}", told[1].1);
+    assert_eq!(deck.held.lock().unwrap().last(), Some(&(None, 0)));
+
+    // "Show now" wakes for what's held even while the person reads.
+    runner.round_done().await;
+    runner.set_reading(true).await;
+    added.lock().unwrap().push((103, "c", "INBOX"));
+    *head.lock().unwrap() = 103;
+    runner.check_mail().await;
+    assert_eq!(agent.told.lock().unwrap().len(), 2);
+    runner.release_held().await;
+    assert!(agent.told.lock().unwrap()[2].1.starts_with("New mail: 1 Personal."));
 }
 
 #[tokio::test]

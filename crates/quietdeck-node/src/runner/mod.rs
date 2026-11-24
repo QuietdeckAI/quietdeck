@@ -27,6 +27,7 @@ use quietdeck_types::action::{Action, StoryOp};
 use quietdeck_types::card::{ActionRecord, ActionReport, ActionResult, ActionStatus, DecisionKind, Released};
 use quietdeck_types::directory::SessionStart;
 use quietdeck_types::node::{Handoff, RunnerInfo, SendAsCheck};
+use quietdeck_types::reading::{HoldVerdict, ItemFacts};
 use quietdeck_types::relay::DeliveryKind;
 use quietdeck_types::{ActionType, AgentKind};
 use serde_json::{Value, json};
@@ -77,6 +78,12 @@ pub struct Runner {
     mail_state_path: PathBuf,
     mail: Mutex<MailState>,
     send_as: Mutex<HashMap<String, (Instant, Vec<String>)>>,
+    /// The person is reading the Inbox (the deck says so): new items wait unless the deck lets them through.
+    reading: std::sync::atomic::AtomicBool,
+    /// "Show now": the next wake-up goes even while the person reads.
+    release: std::sync::atomic::AtomicBool,
+    /// What the deck was last told the runner holds, so it's told only of changes.
+    last_held: std::sync::Mutex<Option<(Option<String>, u64)>>,
 }
 
 /// What a batch did, for logs and tests.
@@ -160,7 +167,18 @@ impl Runner {
     ) -> Runner {
         let mail_state_path = state_dir.join("runner-mail.json");
         let mail = Mutex::new(MailState::load(&mail_state_path));
-        Runner { cfg, deck, tools, agent, mail_state_path, mail, send_as: Mutex::default() }
+        Runner {
+            cfg,
+            deck,
+            tools,
+            agent,
+            mail_state_path,
+            mail,
+            send_as: Mutex::default(),
+            reading: Default::default(),
+            release: Default::default(),
+            last_held: Default::default(),
+        }
     }
 
     fn account_ctx(&self, id: &str) -> Option<Value> {
@@ -541,7 +559,110 @@ impl Runner {
     pub async fn check_mail(&self) {
         let Some(watch) = &self.cfg.mail_watch else { return };
         let mut state = self.mail.lock().await;
-        mail::check(&self.cfg, watch, self.tools.as_ref(), &mut state).await;
+        let new = mail::check(&self.cfg, watch, self.tools.as_ref(), &mut state).await;
+        if !new.is_empty() {
+            let mut facts = Vec::with_capacity(new.len());
+            for m in &new {
+                // A message that's already gone (Gmail took back a follow-up nudge) isn't mail.
+                if let Some(f) = self.facts(watch, m).await {
+                    facts.push((m.account.clone(), f));
+                }
+            }
+            self.sort_new(&mut state, facts).await;
+        }
+        self.wake_if_due(&mut state).await;
+        state.save(&self.mail_state_path);
+    }
+
+    /// What's known about a new message without reading its body. None when it no longer exists.
+    async fn facts(&self, watch: &config::MailWatchConfig, m: &mail::NewMail) -> Option<ItemFacts> {
+        let mut f = ItemFacts {
+            source: "gmail".into(),
+            account: m.account.clone(),
+            thread_key: m.thread_id.clone(),
+            labels: m.labels.clone(),
+            ..ItemFacts::default()
+        };
+        let Some(spec) = &watch.message else { return Some(f) };
+        let acct = self.account_ctx(&m.account)?;
+        let input = match tools::render(&spec.input, &json!({"account": acct, "message_id": m.id})) {
+            Ok(i) => i,
+            Err(e) => {
+                tracing::warn!(error = %e, "runner.mail_watch.message input");
+                return Some(f);
+            }
+        };
+        match self.tools.call(spec, input).await {
+            Ok(v) => {
+                let header = |name: &str| {
+                    v.pointer("/payload/headers").and_then(Value::as_array).and_then(|hs| {
+                        hs.iter().find_map(|h| {
+                            (h.get("name")?.as_str()?.eq_ignore_ascii_case(name))
+                                .then(|| h.get("value")?.as_str().map(str::to_string))
+                                .flatten()
+                        })
+                    })
+                };
+                f.from = header("From");
+                f.subject = header("Subject");
+                f.text = v.get("snippet").and_then(Value::as_str).map(str::to_string);
+                if let Some(t) = v.get("threadId").and_then(Value::as_str) {
+                    f.thread_key = Some(t.to_string());
+                }
+                Some(f)
+            }
+            Err(e) if e.contains("404") => {
+                tracing::info!(account = %m.account, message = %m.id, "a new message was already gone: not waking for it");
+                None
+            }
+            Err(e) => {
+                tracing::warn!(account = %m.account, error = %e, "reading a new message's headers");
+                Some(f)
+            }
+        }
+    }
+
+    /// Count new items, or while the person reads, ask the deck which may get through now.
+    async fn sort_new(&self, state: &mut MailState, items: Vec<(String, ItemFacts)>) {
+        let reading = self.reading.load(std::sync::atomic::Ordering::SeqCst);
+        let verdicts = if reading {
+            match self.deck.hold_check(items.iter().map(|(_, f)| f.clone()).collect()).await {
+                Ok(v) if v.len() == items.len() => v,
+                Ok(_) | Err(_) => {
+                    tracing::info!("the deck didn't say what may get through: holding the new mail");
+                    items.iter().map(|_| HoldVerdict::Hold).collect()
+                }
+            }
+        } else {
+            items.iter().map(|_| HoldVerdict::Hold).collect()
+        };
+        for ((account, f), v) in items.into_iter().zip(verdicts) {
+            match v {
+                HoldVerdict::Let { reason } if reading && !reason.is_empty() => {
+                    let what = f.subject.as_deref().map(|s| format!(" \"{s}\"")).unwrap_or_default();
+                    state.urgent.push(format!("{reason}: new mail on {}{what}", self.cfg.account_label(&account)));
+                }
+                _ => state.add(&account, Some(1)),
+            }
+        }
+    }
+
+    /// The deck says whether the person is reading the Inbox. Going idle lets the held wake-up go.
+    pub async fn set_reading(&self, active: bool) {
+        let was = self.reading.swap(active, std::sync::atomic::Ordering::SeqCst);
+        if was == active {
+            return;
+        }
+        tracing::info!(active, "the person's reading the Inbox changed");
+        let mut state = self.mail.lock().await;
+        self.wake_if_due(&mut state).await;
+        state.save(&self.mail_state_path);
+    }
+
+    /// "Show now": wake the agent for what's held, even while the person reads.
+    pub async fn release_held(&self) {
+        self.release.store(true, std::sync::atomic::Ordering::SeqCst);
+        let mut state = self.mail.lock().await;
         self.wake_if_due(&mut state).await;
         state.save(&self.mail_state_path);
     }
@@ -558,9 +679,31 @@ impl Runner {
     /// between rounds.
     pub async fn messages_arrived(&self, channels: &[quietdeck_types::message::ChannelCount]) {
         let mut state = self.mail.lock().await;
-        state.add_messages(channels);
+        let reading = self.reading.load(std::sync::atomic::Ordering::SeqCst);
+        let mut held = channels.to_vec();
+        for c in &mut held {
+            if reading && !c.let_through.is_empty() {
+                for why in &c.let_through {
+                    state.urgent.push(format!("{why}: a new message in {} ({})", c.channel_name, c.source));
+                }
+                c.count = c.count.saturating_sub(c.let_through.len() as u32);
+            }
+        }
+        state.add_messages(&held);
         self.wake_if_due(&mut state).await;
         state.save(&self.mail_state_path);
+    }
+
+    /// Tell the deck what waits for the person's idle moment (nothing, when they aren't reading).
+    async fn report_held(&self, state: &MailState, reading: bool) {
+        let now = if reading { state.held(&self.cfg) } else { (None, 0) };
+        if self.last_held.lock().expect("held lock").as_ref() == Some(&now) {
+            return;
+        }
+        match self.deck.held(now.0.clone(), now.1).await {
+            Ok(()) => *self.last_held.lock().expect("held lock") = Some(now),
+            Err(e) => tracing::debug!(error = %e, "telling the deck what the runner holds"),
+        }
     }
 
     pub async fn round_status(&self) -> quietdeck_types::api::RoundStatus {
@@ -568,10 +711,38 @@ impl Runner {
     }
 
     async fn wake_if_due(&self, state: &mut MailState) {
+        let reading = self.reading.load(std::sync::atomic::Ordering::SeqCst)
+            && !self.release.load(std::sync::atomic::Ordering::SeqCst);
+        self.report_held(state, reading).await;
         if state.waiting {
             return;
         }
-        let Some(text) = state.wakeup_text(&self.cfg) else { return };
+        if reading {
+            // Only what the deck let through goes now; the rest waits for the person's idle moment.
+            let Some(text) = state.urgent_text(&self.cfg) else { return };
+            match self.agent.tell(DeliveryKind::Wakeup, text).await {
+                Ok(()) => {
+                    tracing::info!(
+                        items = state.urgent.len(),
+                        "woke the triage agent for what got through while the person reads"
+                    );
+                    state.waiting = true;
+                    state.woke_at = Some(jiff::Timestamp::now());
+                    state.urgent.clear();
+                }
+                Err(e) => tracing::info!(error = %e, "the triage agent isn't reachable for its wake-up"),
+            }
+            return;
+        }
+        let Some(mut text) = state.wakeup_text(&self.cfg).or_else(|| {
+            (!state.urgent.is_empty())
+                .then(|| "Run your triage round, then `quietdeck round done` so the next wake-up can come.".to_string())
+        }) else {
+            return;
+        };
+        if !state.urgent.is_empty() {
+            text = format!("Also: {}. {text}", state.urgent.join("; "));
+        }
         let mail = state.mail_counts(&self.cfg).unwrap_or_default();
         let messages = state.message_counts().unwrap_or_default();
         match self.agent.tell(DeliveryKind::Wakeup, text).await {
@@ -580,6 +751,8 @@ impl Runner {
                 state.waiting = true;
                 state.woke_at = Some(jiff::Timestamp::now());
                 state.clear_pending();
+                self.release.store(false, std::sync::atomic::Ordering::SeqCst);
+                self.report_held(state, false).await;
             }
             // Kept: the next check tries again, with anything newer added.
             Err(e) => tracing::info!(error = %e, "the triage agent isn't reachable for its wake-up"),

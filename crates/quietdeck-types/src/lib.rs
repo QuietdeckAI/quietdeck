@@ -10,6 +10,7 @@ pub mod handoff;
 pub mod lease;
 pub mod message;
 pub mod node;
+pub mod reading;
 pub mod relay;
 pub mod report;
 pub mod rules;

@@ -4042,6 +4042,7 @@ version = "0.1.0"
 dependencies = [
  "garde",
  "jiff 1.0.2",
+ "regex",
  "schemars 1.2.3",
  "serde",
  "serde_json",

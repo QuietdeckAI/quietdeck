@@ -248,7 +248,8 @@ mod tests {
             }
         };
         let (open, done) = (card("open").await, card("done").await);
-        let report = quietdeck_types::report::ReportSet { markdown: "# Round".into(), base: None, new: false };
+        let report =
+            quietdeck_types::report::ReportSet { markdown: "# Round".into(), base: None, new: false, change: None };
         crate::reports::set(&state, &old(), report).await.unwrap();
 
         let h = add(&state.db, &old(), add_req()).await.unwrap();

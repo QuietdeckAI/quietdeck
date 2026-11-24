@@ -12,4 +12,9 @@ base: number | null,
 /**
  * Start a new report: the current one is finished (everything on it approved or handled).
  */
-new: boolean, };
+new: boolean, 
+/**
+ * What this edit changes, in a line, for the toast the person sees ("New: CI failure on homeserver (c_67)").
+ * Left out, the deck works one out from the defaults that changed.
+ */
+change: string | null, };

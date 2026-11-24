@@ -33,11 +33,11 @@ programs:
   claude: claude
   codex: codex
 
-# The runner: only on the machine where the triage agent runs. It watches Gmail's history (message IDs and labels
-# only) and wakes the agent when mail arrives, and it carries out approved actions that need no thought. Every tool
+# The runner: only on the machine where the triage agent runs. It watches Gmail's history (message and thread IDs and
+# labels) and wakes the agent when mail arrives, and it carries out approved actions that need no thought. Every tool
 # is an Executor app tool (`path`) or a command that reads JSON on stdin and prints JSON (`command`). In `input`,
 # ${...} names a value: account.address, account.<var>, action.<field>, card.<field>, board.<field>, and for the mail
-# watch history_id and page_token. See docs/executor.md.
+# watch history_id, page_token and message_id. See docs/executor.md.
 runner:
   enabled: false
   agent: { tab: email triage }                  # gets wake-ups, hand-offs and error reports
@@ -58,7 +58,12 @@ runner:
         accountId: "${account.executor_account}"
         input:
           path: { userId: me }
-          query: { startHistoryId: "${history_id}", pageToken: "${page_token}", historyTypes: [messageAdded], fields: "history(messagesAdded(message(id,labelIds))),historyId,nextPageToken" }
+          query: { startHistoryId: "${history_id}", pageToken: "${page_token}", historyTypes: [messageAdded], fields: "history(messagesAdded(message(id,threadId,labelIds))),historyId,nextPageToken" }
+    # Each new message's From, To, Subject and snippet (never its body), for "while I'm reading" rules; a message
+    # that's already gone doesn't wake the agent. Optional.
+    message:
+      path: tools.google.api.gmail.users.gmailUsersMessagesGet
+      input: { accountId: "${account.executor_account}", input: { path: { userId: me, id: "${message_id}" }, query: { format: metadata, metadataHeaders: [From, To, Subject], fields: "id,threadId,labelIds,snippet,payload(headers)" } } }
   thread:
     path: tools.google.api.gmail.users.gmailUsersThreadsGet
     input: { accountId: "${account.executor_account}", input: { path: { userId: me, id: "${action.thread_id}" }, query: { format: minimal, fields: "id,messages(id,labelIds)" } } }

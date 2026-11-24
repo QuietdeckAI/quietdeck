@@ -110,6 +110,14 @@ happen by default. Read it like a document:
 - **The box at the bottom** sends plain words to the triage agent ("archive HelloFresh from now on"). It's only passed
   on: if the agent's session isn't running, it says so and keeps your text.
 
+**While you read, nothing new lands.** The Inbox tells the deck when you're active on it (a mouse move, a scroll, a
+key or a touch; idle after two minutes, or as soon as the tab is hidden). Meanwhile the runner holds new mail and
+messages instead of waking the triage agent, and a toast in the top right says what's waiting, with **Show now**.
+Your own requests still go through, and so do updates to a thread already on screen and anything a rule under Rules →
+**While I'm reading** lets through (sender, label, or an RE2 regex on the subject or text). Every change to the report
+shows as a toast saying what changed. **Approve All** waits ten seconds after anything it would approve changes, and
+the deck leaves out a card that changed in the last ten seconds even if the click got through.
+
 The agent writes the report with `quietdeck report show` and `quietdeck report set` (`report show --markdown` prints
 only the text, ready to edit and pass back; `quietdeck report --help` lists the two tags it uses for defaults and
 questions). Under the report, the agent's cards carry each default's actions.

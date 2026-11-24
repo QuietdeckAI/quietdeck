@@ -4,8 +4,10 @@ import { useAccount } from "@/components/AccountTabs";
 import { ApproveAllBar } from "@/components/ApproveAllBar";
 import { Link } from "@/components/Header";
 import { changedKeys, ReportBody, ReportChatBox, reportDefaults } from "@/components/Report";
+import { ReportMeta, ReportToasts, settleUntil, UpdatedAt } from "@/components/ReportMeta";
 import { TimelineRow } from "@/components/TimelineRow";
 import { api, query } from "@/lib/api";
+import { usePresence } from "@/lib/presence";
 import type { ApproveAll } from "@/types/ApproveAll";
 import type { Card } from "@/types/Card";
 import type { CardDecision } from "@/types/CardDecision";
@@ -89,6 +91,7 @@ function ReportScreen({
   changes: Record<string, string>;
   setChanges: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
+  usePresence();
   const setChange = (k: string, t: string) => setChanges((all) => ({ ...all, [k]: t }));
   const others = report.cards_not_in_report.length > 0;
   // A change typed but not sent goes to the agent before Approve All, so its cards stay out of the approval.
@@ -96,6 +99,14 @@ function ReportScreen({
   const changed = changedKeys(report);
   for (const [k] of pending) changed.add(k);
   const request = reportApproveRequest(inbox, report, changed);
+  const byId = cardsById(inbox);
+  const settle = settleUntil(
+    report,
+    request.cards.flatMap((d) => {
+      const c = byId.get(Number(d.card_id));
+      return c ? [c] : [];
+    }),
+  );
   const beforeApprove = async () => {
     const defaults = reportDefaults(report.markdown);
     for (const [k, t] of pending) {
@@ -116,8 +127,9 @@ function ReportScreen({
   return (
     <>
       <main className="mx-auto max-w-3xl px-4 pt-6 pb-4">
-        <div className="mt-6">
-          <ReportBody report={report} cards={cardsById(inbox)} drafts={changes} setDraft={setChange} />
+        <ReportMeta report={report} />
+        <div className="mt-4">
+          <ReportBody report={report} cards={byId} drafts={changes} setDraft={setChange} />
         </div>
         {others && (
           <p className="mt-10 text-sm text-neutral">
@@ -129,9 +141,14 @@ function ReportScreen({
         )}
         {inbox.timeline.length > 0 && <Automatic inbox={inbox} />}
       </main>
-      <ReportChatBox by={report.posted_by} running={inbox.running}>
-        <ApproveAllBar inbox={inbox} request={request} beforeApprove={beforeApprove} inline />
+      <ReportChatBox
+        by={report.posted_by}
+        running={inbox.running}
+        corner={<UpdatedAt at={report.updated_at} stacked />}
+      >
+        <ApproveAllBar inbox={inbox} request={request} beforeApprove={beforeApprove} settleUntil={settle} inline />
       </ReportChatBox>
+      <ReportToasts report={report} presence={inbox.presence} />
     </>
   );
 }

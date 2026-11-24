@@ -8,6 +8,7 @@ use quietdeck_types::card::{ActionRecord, ActionReport, Released};
 use quietdeck_types::decision::ReportReceipt;
 use quietdeck_types::directory::{SessionStart, SessionStarted};
 use quietdeck_types::node::{Delivered, Handoff, NodeRequest};
+use quietdeck_types::reading::{HoldVerdict, ItemFacts};
 use quietdeck_types::relay::{Delivery, DeliveryKind, DeliveryTarget};
 
 use crate::Node;
@@ -31,6 +32,15 @@ pub trait DeckApi: Send + Sync {
         tab: String,
         cwd: String,
     ) -> Result<SessionStarted, String>;
+    /// While the person reads the Inbox: let each new item through now, or hold it? A deck that can't say lets
+    /// everything through, as before reading mattered.
+    async fn hold_check(&self, items: Vec<ItemFacts>) -> Result<Vec<HoldVerdict>, String> {
+        Ok(items.iter().map(|_| HoldVerdict::Let { reason: String::new() }).collect())
+    }
+    /// What the runner holds now, for the Inbox's "waiting" line.
+    async fn held(&self, _summary: Option<String>, _count: u64) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -76,6 +86,12 @@ impl DeckApi for LinkDeck {
         cwd: String,
     ) -> Result<SessionStarted, String> {
         self.ask(NodeRequest::ResumeSession { node, session_id, tab, cwd }, START).await
+    }
+    async fn hold_check(&self, items: Vec<ItemFacts>) -> Result<Vec<HoldVerdict>, String> {
+        self.ask(NodeRequest::HoldCheck { items }, ASK).await
+    }
+    async fn held(&self, summary: Option<String>, count: u64) -> Result<(), String> {
+        self.ask(NodeRequest::RunnerHeld { summary, count }, ASK).await
     }
 }
 

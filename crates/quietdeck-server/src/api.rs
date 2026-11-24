@@ -51,6 +51,11 @@ pub fn router() -> Router<AppState> {
         .route("/api/timeline", post(timeline_add))
         .route("/api/history", get(history))
         .route("/api/messages", get(messages_read))
+        .route("/api/presence", post(presence_beat))
+        .route("/api/presence/release", post(presence_release))
+        .route("/api/reading-rules", get(reading_rules_list).post(reading_rule_create))
+        .route("/api/reading-rules/{id}", axum::routing::put(reading_rule_update).delete(reading_rule_delete))
+        .route("/api/reading-rules/{id}/enabled", post(reading_rule_enabled))
         .route("/api/inbox", get(inbox))
         .route("/api/later", get(later))
         .route("/api/events", get(crate::events::stream))
@@ -92,6 +97,66 @@ pub fn router() -> Router<AppState> {
         .route("/api/push", get(push_config))
         .route("/api/push/devices", get(push_devices).post(push_subscribe))
         .route("/api/push/devices/remove", post(push_remove))
+}
+
+async fn presence_beat(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(b): Json<quietdeck_types::reading::PresenceBeat>,
+) -> AppResult<Json<quietdeck_types::reading::Presence>> {
+    Ok(Json(crate::reading::beat(&state, b).await?))
+}
+
+async fn presence_release(State(state): State<AppState>, _owner: Owner) -> AppResult<Json<serde_json::Value>> {
+    crate::reading::release(&state).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+async fn reading_rules_list(
+    State(state): State<AppState>,
+    Authed(_): Authed,
+) -> AppResult<Json<Vec<quietdeck_types::reading::ReadingRule>>> {
+    Ok(Json(crate::reading::list(&state.db).await?))
+}
+
+async fn reading_rule_create(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(input): Json<quietdeck_types::reading::ReadingRuleInput>,
+) -> AppResult<Json<quietdeck_types::reading::ReadingRule>> {
+    Ok(Json(crate::reading::create(&state, input).await?))
+}
+
+async fn reading_rule_update(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(id): Path<i64>,
+    Json(input): Json<quietdeck_types::reading::ReadingRuleInput>,
+) -> AppResult<Json<quietdeck_types::reading::ReadingRule>> {
+    Ok(Json(crate::reading::update(&state, id, input).await?))
+}
+
+#[derive(Deserialize)]
+pub struct Enabled {
+    pub enabled: bool,
+}
+
+async fn reading_rule_enabled(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(id): Path<i64>,
+    Json(e): Json<Enabled>,
+) -> AppResult<Json<quietdeck_types::reading::ReadingRule>> {
+    Ok(Json(crate::reading::set_enabled(&state, id, e.enabled).await?))
+}
+
+async fn reading_rule_delete(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(id): Path<i64>,
+) -> AppResult<Json<serde_json::Value>> {
+    crate::reading::delete(&state, id).await?;
+    Ok(Json(serde_json::json!({})))
 }
 
 #[derive(Deserialize)]

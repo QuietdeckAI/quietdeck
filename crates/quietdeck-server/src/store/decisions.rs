@@ -23,6 +23,18 @@ fn new_batch_id() -> String {
 /// Record an Approve All (or one card's adjustment, sent the same way). Nothing is released until the undo window
 /// ends; the batch is released then by [`release_due`].
 pub async fn approve_all(db: &Db, req: &ApproveAll, undo_seconds: u32) -> Result<Approving, AppError> {
+    // Tests approve what they just posted; the settle window has a test of its own.
+    let settle_ms = if cfg!(test) { 0 } else { quietdeck_types::reading::SETTLE_SECONDS * 1000 };
+    approve_all_settling(db, req, undo_seconds, settle_ms).await
+}
+
+/// [`approve_all`] with the settle window given: a plain approval leaves out a card that changed within it.
+pub async fn approve_all_settling(
+    db: &Db,
+    req: &ApproveAll,
+    undo_seconds: u32,
+    settle_ms: i64,
+) -> Result<Approving, AppError> {
     for d in &req.cards {
         d.check().map_err(|e| AppError::BadRequest(format!("card {}: {e}", d.card_id)))?;
         if !matches!(d.kind, DecisionKind::Approve | DecisionKind::Edit | DecisionKind::Adjust) {
@@ -53,7 +65,7 @@ pub async fn approve_all(db: &Db, req: &ApproveAll, undo_seconds: u32) -> Result
     let mut decided = Vec::new();
     let mut skipped = Vec::new();
     for d in &req.cards {
-        match why_not(&mut tx, d).await? {
+        match why_not(&mut tx, d, settle_ms).await? {
             Some(reason) => skipped.push(Skipped { card_id: d.card_id, reason }),
             None => {
                 sqlx::query(
@@ -84,15 +96,36 @@ pub async fn approve_all(db: &Db, req: &ApproveAll, undo_seconds: u32) -> Result
 }
 
 /// Why Approve All leaves this card alone, if it does.
-async fn why_not(tx: &mut sqlx::SqliteConnection, d: &CardDecision) -> anyhow::Result<Option<String>> {
-    let row: Option<(i64, String, String, String)> =
-        sqlx::query_as("SELECT version, state, section, input FROM cards WHERE id = ?")
+async fn why_not(tx: &mut sqlx::SqliteConnection, d: &CardDecision, settle: i64) -> anyhow::Result<Option<String>> {
+    let row: Option<(i64, String, String, String, i64)> =
+        sqlx::query_as("SELECT version, state, section, input, updated_at FROM cards WHERE id = ?")
             .bind(d.card_id)
             .fetch_optional(&mut *tx)
             .await?;
-    let Some((version, state, section, input)) = row else { return Ok(Some("no such card".into())) };
+    let Some((version, state, section, input, updated_at)) = row else { return Ok(Some("no such card".into())) };
     if version != d.version {
         return Ok(Some(format!("changed: version {version} is newer than the one on screen")));
+    }
+    // Nobody can have read what changed a moment ago: a plain Approve All leaves it for the next look. An edit or a
+    // typed adjustment is the person acting on that card, so it goes ahead.
+    if d.kind == DecisionKind::Approve && settle > 0 {
+        let now = now_ms();
+        let report_changed: (Option<i64>,) = sqlx::query_as(
+            "SELECT MAX(at) FROM report_changes WHERE at > ? AND EXISTS \
+             (SELECT 1 FROM json_each(report_changes.cards) WHERE json_each.value = ?)",
+        )
+        .bind(now - settle)
+        .bind(d.card_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        let changed_at = [Some(updated_at).filter(|t| *t > now - settle), report_changed.0].into_iter().flatten().max();
+        if let Some(at) = changed_at {
+            let secs = ((now - at) as f64 / 1000.0).round().max(1.0) as i64;
+            return Ok(Some(format!(
+                "changed {secs} second{} before you clicked: read it, then approve it",
+                if secs == 1 { "" } else { "s" }
+            )));
+        }
     }
     let state: CardState = parse_enum(&state)?;
     let section: CardSection = parse_enum(&section)?;
@@ -920,6 +953,40 @@ mod tests {
         undo(&db, &a.batch).await.unwrap();
         assert!(matches!(undo(&db, &a.batch).await, Err(AppError::NotFound(_))));
         assert_eq!(cards::get(&db, c.id).await.unwrap().unwrap().state, CardState::Open);
+    }
+
+    #[tokio::test]
+    async fn approve_all_leaves_out_what_changed_just_before_the_click() {
+        let db = crate::db::memory().await;
+        let c = post(&db, "t1").await;
+        let req = ApproveAll { cards: vec![approve(&c)], timeline: vec![] };
+        let a = approve_all_settling(&db, &req, 60, 10_000).await.unwrap();
+        assert!(a.cards.is_empty());
+        assert!(a.skipped[0].reason.contains("before you clicked: read it, then approve it"), "{:?}", a.skipped);
+        // Seen long enough: approved.
+        sqlx::query("UPDATE cards SET updated_at = updated_at - 60000").execute(&db).await.unwrap();
+        assert_eq!(approve_all_settling(&db, &req, 60, 10_000).await.unwrap().cards, vec![c.id]);
+    }
+
+    #[tokio::test]
+    async fn a_default_that_just_changed_on_the_report_waits_too() {
+        let db = crate::db::memory().await;
+        let c = post(&db, "t1").await;
+        sqlx::query("UPDATE cards SET updated_at = updated_at - 60000").execute(&db).await.unwrap();
+        sqlx::query("INSERT INTO reports (markdown, posted_node, posted_tab, created_at, updated_at) VALUES ('x', 'n', 't', 0, 0)")
+            .execute(&db)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO report_changes (report_id, version, summary, cards, at) VALUES (1, 2, 'Changed', ?, ?)",
+        )
+        .bind(format!("[{}]", c.id))
+        .bind(now_ms())
+        .execute(&db)
+        .await
+        .unwrap();
+        let req = ApproveAll { cards: vec![approve(&c)], timeline: vec![] };
+        assert!(approve_all_settling(&db, &req, 60, 10_000).await.unwrap().cards.is_empty());
     }
 
     #[tokio::test]

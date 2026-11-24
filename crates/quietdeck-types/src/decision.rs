@@ -145,6 +145,9 @@ pub struct Inbox {
     /// The triage agent's current report, which the Inbox shows in place of the cards.
     #[serde(default)]
     pub report: Option<crate::report::Report>,
+    /// Whether the person is reading the Inbox, and what the runner holds meanwhile.
+    #[serde(default)]
+    pub presence: crate::reading::Presence,
 }
 
 #[cfg(test)]

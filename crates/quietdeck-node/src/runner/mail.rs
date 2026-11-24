@@ -1,11 +1,12 @@
-//! The mail watch: Gmail's history for each account, message IDs and labels only, and one wake-up at a time to the
-//! triage agent. Nothing here reads a subject, a header or a body.
+//! The mail watch: Gmail's history for each account (message and thread IDs and labels), and one wake-up at a time to
+//! the triage agent. The runner then reads each new message's From, To, Subject and snippet when node.yaml gives it
+//! the tool, for the "while I'm reading" rules; it never logs them.
 //!
 //! The last history ID per account is kept on this machine, so after sleep the next check picks up where it left
 //! off. After a wake-up, no other goes until the agent says its round is done; new mail meanwhile is counted and goes
 //! in the next one.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use jiff::Timestamp;
@@ -38,6 +39,9 @@ pub struct MailState {
     /// keeps the messages; this is only the count for the wake-up.
     #[serde(default)]
     pub channels: BTreeMap<String, u64>,
+    /// Items the deck let through while the person reads the Inbox, each with why, not yet told to the agent.
+    #[serde(default)]
+    pub urgent: Vec<String>,
 }
 
 impl MailState {
@@ -59,7 +63,7 @@ impl MailState {
         }
     }
 
-    fn add(&mut self, account: &str, n: Option<u64>) {
+    pub fn add(&mut self, account: &str, n: Option<u64>) {
         let entry = self.pending.entry(account.to_string()).or_insert(Some(0));
         *entry = match (*entry, n) {
             (Some(a), Some(b)) => Some(a + b),
@@ -78,6 +82,31 @@ impl MailState {
     pub fn clear_pending(&mut self) {
         self.pending.clear();
         self.channels.clear();
+        self.urgent.clear();
+    }
+
+    /// What waits, in a line ("2 Personal, 1 in Infrastructure Alerts (Matrix)"), and how many items.
+    pub fn held(&self, cfg: &RunnerConfig) -> (Option<String>, u64) {
+        let line: Vec<String> = [self.mail_counts(cfg), self.message_counts()].into_iter().flatten().collect();
+        let count = self.pending.values().map(|n| n.unwrap_or(1)).sum::<u64>() + self.channels.values().sum::<u64>();
+        ((!line.is_empty()).then(|| line.join(", ")), count)
+    }
+
+    /// The wake-up while the person reads the Inbox: only what the deck let through, and what else waits.
+    pub fn urgent_text(&self, cfg: &RunnerConfig) -> Option<String> {
+        if self.urgent.is_empty() {
+            return None;
+        }
+        let (held, _) = self.held(cfg);
+        let wait = held
+            .map(|h| format!(" Everything else new ({h}) waits until they stop reading: leave it alone for now."))
+            .unwrap_or_default();
+        Some(format!(
+            "The person is reading the Inbox, so only these get through now: {}. Handle just those (read the new mail \
+             with your usual tools, and `quietdeck messages --new` for chat messages).{wait} Then `quietdeck round \
+             done`.",
+            self.urgent.join("; ")
+        ))
     }
 
     /// `quietdeck round status`'s answer, accounts in config order.
@@ -169,8 +198,24 @@ fn expired(error: &str) -> bool {
     error.contains("404")
 }
 
-/// One check of every account. Updates the history IDs and pending counts in `state`.
-pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tools, state: &mut MailState) {
+/// A message the history says arrived in the inbox or was sent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewMail {
+    pub account: String,
+    pub id: String,
+    pub thread_id: Option<String>,
+    pub labels: Vec<String>,
+}
+
+/// One check of every account. Updates the history IDs in `state` and returns the new messages, which the caller
+/// counts (or holds). A history too old to follow counts as "some" in `state` itself.
+pub async fn check(
+    cfg: &RunnerConfig,
+    watch: &MailWatchConfig,
+    tools: &dyn Tools,
+    state: &mut MailState,
+) -> Vec<NewMail> {
+    let mut found = vec![];
     state.checked_at = Some(Timestamp::now());
     for (id, account) in &cfg.accounts {
         let acct = json!({"id": id, "address": account.address, "label": cfg.account_label(id)});
@@ -189,7 +234,7 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
             }
             continue;
         };
-        let mut seen: HashSet<String> = HashSet::new();
+        let mut seen: Vec<NewMail> = vec![];
         let mut page: Option<String> = None;
         let mut latest = start.clone();
         let mut failed = false;
@@ -214,9 +259,16 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
                                 .map(|a| a.iter().filter_map(Value::as_str).collect())
                                 .unwrap_or_default();
                             if (labels.contains(&"INBOX") || labels.contains(&"SENT"))
+                                && !labels.contains(&"DRAFT")
                                 && let Some(mid) = msg.get("id").and_then(Value::as_str)
+                                && !seen.iter().any(|m| m.id == mid)
                             {
-                                seen.insert(mid.to_string());
+                                seen.push(NewMail {
+                                    account: id.clone(),
+                                    id: mid.to_string(),
+                                    thread_id: msg.get("threadId").and_then(Value::as_str).map(str::to_string),
+                                    labels: labels.iter().map(|l| l.to_string()).collect(),
+                                });
                             }
                         }
                     }
@@ -254,10 +306,9 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
             tracing::info!(account = %id, from = %start, to = %latest, new = seen.len(), "mail history moved on");
         }
         state.history.insert(id.clone(), latest);
-        if !seen.is_empty() {
-            state.add(id, Some(seen.len() as u64));
-        }
+        found.extend(seen);
     }
+    found
 }
 
 async fn profile(watch: &MailWatchConfig, tools: &dyn Tools, acct: &Value) -> Result<String, String> {
@@ -296,6 +347,7 @@ mod tests {
             source: "matrix".into(),
             channel_name: "Infrastructure Alerts".into(),
             count: 2,
+            let_through: vec![],
         };
         s.add_messages(std::slice::from_ref(&alerts));
         s.add_messages(&[alerts]);

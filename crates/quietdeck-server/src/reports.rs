@@ -9,7 +9,7 @@ use quietdeck_types::node::Delivered;
 use quietdeck_types::relay::{DeliveryError, DeliveryKind};
 use quietdeck_types::report::{
     AnswerKind, Report, ReportAnswer, ReportAnswerAdd, ReportChat, ReportReply, ReportSet, ReportSnapshot,
-    ReportSnapshotSummary, default_cards,
+    ReportSnapshotSummary, default_cards, defaults_changed,
 };
 
 use crate::db::{Db, now_ms, ts};
@@ -108,6 +108,7 @@ pub async fn current(db: &Db) -> AppResult<Option<Report>> {
         updated_at: ts(r.updated_at),
         answers: answers.into_iter().map(ReportAnswer::from).collect(),
         cards_not_in_report,
+        changes: changes(db, r.id).await?,
     }))
 }
 
@@ -132,10 +133,17 @@ pub async fn set(state: &AppState, me: &SessionRef, req: ReportSet) -> AppResult
     }
     let now = now_ms();
     let mut tx = state.db.begin().await?;
-    let open: Option<(i64, i64)> =
-        sqlx::query_as("SELECT id, version FROM reports WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1")
+    let open: Option<(i64, i64, String)> =
+        sqlx::query_as("SELECT id, version, markdown FROM reports WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1")
             .fetch_optional(&mut *tx)
             .await?;
+    // What changed, for the person's toast and Approve All's settle window.
+    let before = match (&open, req.new) {
+        (Some((_, _, md)), false) => md.clone(),
+        _ => String::new(),
+    };
+    let worked_out = defaults_changed(&before, &req.markdown);
+    let open = open.map(|(id, version, _)| (id, version));
     match (open, req.new) {
         (Some((id, _)), true) => {
             sqlx::query("UPDATE reports SET closed_at = ? WHERE id = ?").bind(now).bind(id).execute(&mut *tx).await?;
@@ -164,9 +172,47 @@ pub async fn set(state: &AppState, me: &SessionRef, req: ReportSet) -> AppResult
             .await?;
         }
     }
+    let (report_id, version): (i64, i64) =
+        sqlx::query_as("SELECT id, version FROM reports WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1")
+            .fetch_one(&mut *tx)
+            .await?;
+    let cards = worked_out.as_ref().map(|w| w.0.clone()).unwrap_or_default();
+    let summary = req.change.clone().or_else(|| worked_out.map(|w| w.1));
+    if let Some(summary) = summary {
+        sqlx::query("INSERT INTO report_changes (report_id, version, summary, cards, at) VALUES (?, ?, ?, ?, ?)")
+            .bind(report_id)
+            .bind(version)
+            .bind(&summary)
+            .bind(crate::db::json(&cards))
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+    }
     tx.commit().await?;
     state.changed(Changed::Cards);
     current(&state.db).await?.ok_or_else(|| AppError::Unavailable("the report vanished".into()))
+}
+
+/// The report's latest changes, oldest first.
+async fn changes(db: &Db, report_id: i64) -> AppResult<Vec<quietdeck_types::reading::ReportChange>> {
+    let rows: Vec<(i64, i64, String, String, i64)> = sqlx::query_as(
+        "SELECT id, version, summary, cards, at FROM report_changes WHERE report_id = ? ORDER BY id DESC LIMIT 20",
+    )
+    .bind(report_id)
+    .fetch_all(db)
+    .await?;
+    let mut out: Vec<_> = rows
+        .into_iter()
+        .map(|r| quietdeck_types::reading::ReportChange {
+            id: r.0,
+            version: r.1,
+            summary: r.2,
+            cards: crate::db::from_json(&r.3).unwrap_or_default(),
+            at: ts(r.4),
+        })
+        .collect();
+    out.reverse();
+    Ok(out)
 }
 
 async fn insert(tx: &mut sqlx::SqliteConnection, me: &SessionRef, markdown: &str, now: i64) -> AppResult<()> {
@@ -493,7 +539,12 @@ mod tests {
     #[tokio::test]
     async fn a_report_is_edited_from_the_version_the_agent_saw() {
         let state = AppState::for_tests().await;
-        let set = |markdown: &str, base: Option<i64>, new: bool| ReportSet { markdown: markdown.into(), base, new };
+        let set = |markdown: &str, base: Option<i64>, new: bool| ReportSet {
+            markdown: markdown.into(),
+            base,
+            new,
+            change: None,
+        };
         let r = super::set(&state, &me(), set("# Round", None, false)).await.unwrap();
         assert_eq!((r.version, r.markdown.as_str()), (1, "# Round"));
         let r = super::set(&state, &me(), set("# Round\n- more", Some(1), false)).await.unwrap();
@@ -527,17 +578,22 @@ mod tests {
             ids.push(added.card.id);
         }
         let md = format!("<Default cards=\"c_{}\">archive</Default>", ids[0]);
-        let r = super::set(&state, &me(), ReportSet { markdown: md, base: None, new: false }).await.unwrap();
+        let r =
+            super::set(&state, &me(), ReportSet { markdown: md, base: None, new: false, change: None }).await.unwrap();
         assert_eq!(r.cards_not_in_report, vec![ids[1], ids[2]]);
         let md = format!("<Default cards=\"c_{} c_{} c_{}\">archive</Default>", ids[0], ids[1], ids[2]);
-        let r = super::set(&state, &me(), ReportSet { markdown: md, base: Some(1), new: false }).await.unwrap();
+        let r = super::set(&state, &me(), ReportSet { markdown: md, base: Some(1), new: false, change: None })
+            .await
+            .unwrap();
         assert!(r.cards_not_in_report.is_empty());
     }
 
     #[tokio::test]
     async fn answers_are_kept_and_taken_once_when_the_agent_was_away() {
         let state = AppState::for_tests().await;
-        let r = super::set(&state, &me(), ReportSet { markdown: "x".into(), base: None, new: false }).await.unwrap();
+        let r = super::set(&state, &me(), ReportSet { markdown: "x".into(), base: None, new: false, change: None })
+            .await
+            .unwrap();
         let r = answer(
             &state,
             ReportAnswerAdd {
@@ -569,7 +625,9 @@ mod tests {
         let markdown = "<Ask id=\"invoice\" options=\"DocSpring, Inc.|Me\" cards=\"c_5\">Who should BizSpace \
                         invoice?</Ask>";
         let r =
-            super::set(&state, &me(), ReportSet { markdown: markdown.into(), base: None, new: false }).await.unwrap();
+            super::set(&state, &me(), ReportSet { markdown: markdown.into(), base: None, new: false, change: None })
+                .await
+                .unwrap();
         let pick = |cards: Option<&str>| ReportAnswerAdd {
             report_id: r.id,
             report_version: r.version,
@@ -595,7 +653,9 @@ mod tests {
     async fn approve_all_keeps_the_document_with_this_rounds_answers_and_undo_drops_it() {
         let state = AppState::for_tests().await;
         let r =
-            super::set(&state, &me(), ReportSet { markdown: "# Round".into(), base: None, new: false }).await.unwrap();
+            super::set(&state, &me(), ReportSet { markdown: "# Round".into(), base: None, new: false, change: None })
+                .await
+                .unwrap();
         let change = |value: &str| ReportAnswerAdd {
             report_id: r.id,
             report_version: r.version,

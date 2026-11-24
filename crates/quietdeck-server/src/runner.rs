@@ -110,6 +110,35 @@ pub async fn check_send_as(state: &AppState, me: &SessionRef, actions: &[Action]
     Ok(())
 }
 
+/// Tell every connected runner something. One that's offline or doesn't answer is logged and skipped.
+pub async fn tell_runners(state: &AppState, req: DeckRequest) -> u32 {
+    let rows: Vec<(String,)> =
+        match sqlx::query_as("SELECT name FROM nodes WHERE runner_info IS NOT NULL AND revoked_at IS NULL")
+            .fetch_all(&state.db)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(error = %e, "finding the runners to tell");
+                return 0;
+            }
+        };
+    let mut told = 0;
+    for (node,) in rows {
+        if !state.hub.is_connected(&node).await {
+            continue;
+        }
+        match state.hub.request(&node, req.clone(), ASK_TIMEOUT).await {
+            Ok(reply) => match reply.into_result::<()>() {
+                Ok(()) => told += 1,
+                Err(e) => tracing::warn!(%node, error = %e, "the runner refused"),
+            },
+            Err(e) => tracing::warn!(%node, error = %e, "the runner didn't answer"),
+        }
+    }
+    told
+}
+
 /// A request from a node's runner. Refused unless the node has a runner, which acts for its agent's tab only.
 pub async fn answer(state: &AppState, node: &str, request: NodeRequest) -> Reply {
     match answer_inner(state, node, request).await {
@@ -154,6 +183,11 @@ async fn answer_inner(state: &AppState, node: &str, request: NodeRequest) -> App
             }
         }
         NodeRequest::StartSession { spec } => Reply::ok(&crate::control::start(state, &caller, spec).await?),
+        NodeRequest::HoldCheck { items } => Reply::ok(&crate::reading::hold_check(&state.db, &items).await?),
+        NodeRequest::RunnerHeld { summary, count } => {
+            crate::reading::held(state, node, summary, count).await?;
+            Reply::ok(&())
+        }
         NodeRequest::ResumeSession { node: on, session_id, tab, cwd } => {
             Reply::ok(&crate::control::resume_by_id(state, &caller, &on, &session_id, &tab, &cwd).await?)
         }
