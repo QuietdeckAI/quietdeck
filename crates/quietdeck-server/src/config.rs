@@ -146,9 +146,13 @@ impl DeckConfig {
         Ok(())
     }
 
-    /// Whether `account` is one of the configured labels. With no accounts configured, any label is accepted.
+    /// Whether `account` is one of the configured labels, or a chat source the deck reads (`matrix`: a card about a
+    /// Matrix message names it, with the message's `m_<id>` as its thread). With no accounts configured, any label is
+    /// accepted.
     pub fn knows_account(&self, account: &str) -> bool {
-        self.accounts.is_empty() || self.accounts.iter().any(|a| a.id == account)
+        self.accounts.is_empty()
+            || self.accounts.iter().any(|a| a.id == account)
+            || quietdeck_types::message::SOURCES.contains(&account)
     }
 
     /// The project a working directory belongs to, by the longest matching directory.
@@ -185,6 +189,7 @@ mod tests {
         c.check().unwrap();
         assert!(c.knows_account("personal"));
         assert!(!c.knows_account("nope"));
+        assert!(c.knows_account("matrix"), "a card about a Matrix message names the source");
     }
 
     #[test]
