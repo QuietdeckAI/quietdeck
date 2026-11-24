@@ -7,6 +7,7 @@ mod control;
 mod deliver;
 mod link;
 mod local;
+mod matrix;
 mod orchestrator;
 mod runner;
 mod service;
@@ -53,6 +54,15 @@ enum Command {
     },
     /// Stop the service and remove its file.
     Uninstall,
+    /// Check the Matrix reader: sign in (or reuse its device), sync for a while and print the messages it would hand
+    /// to the deck (they also wait in its outbox for the node). Stop the node first.
+    MatrixCheck {
+        /// A node.yaml with a `matrix:` section. Default: this machine's.
+        #[arg(long)]
+        config: Option<PathBuf>,
+        #[arg(long, default_value_t = 60)]
+        seconds: u64,
+    },
 }
 
 /// Everything the node's tasks share.
@@ -84,6 +94,11 @@ async fn main() -> anyhow::Result<()> {
         Command::Run => run().await,
         Command::Install { no_start } => service::install(&config::home(), !no_start),
         Command::Uninstall => service::uninstall(&config::home()),
+        Command::MatrixCheck { config: path, seconds } => {
+            let c = NodeConfig::load(&path.unwrap_or_else(config::config_path))?;
+            let m = c.matrix.ok_or_else(|| anyhow::anyhow!("node.yaml has no matrix: section"))?;
+            matrix::check(&c.node.name, &m, seconds).await
+        }
         Command::ImportSummaries { dir } => {
             let dir = std::fs::canonicalize(&dir).map_err(|e| anyhow::anyhow!("{}: {e}", dir.display()))?;
             match ask_local(&LocalRequest::ImportSummaries { dir: dir.display().to_string() }).await? {
@@ -183,6 +198,11 @@ async fn run() -> anyhow::Result<()> {
         ));
         let _ = node.runner.set(runner::spawn(r));
         tracing::info!(agent = %cfg.agent.tab, "runner on");
+    }
+
+    if let Some(cfg) = node.config.matrix.clone() {
+        tracing::info!(user = %cfg.user, rooms = cfg.rooms.len(), "Matrix reader on");
+        matrix::spawn(node.clone(), cfg);
     }
 
     // Summaries and usage go to the deck as they come.

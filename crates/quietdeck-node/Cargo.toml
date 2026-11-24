@@ -37,6 +37,7 @@ tokio-tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots"]
 memchr = "2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 toml = "1.2.2"
+matrix-sdk = { version = "0.19.1", default-features = false, features = ["e2e-encryption", "automatic-room-key-forwarding", "sqlite", "bundled-sqlite", "rustls-aws-lc-rs"] }
 rmcp = { version = "3.11.0", default-features = false, features = ["client", "transport-streamable-http-client-reqwest", "reqwest"] }
 
 [dev-dependencies]

@@ -2,10 +2,11 @@
 import type { ActionReport } from "./ActionReport";
 import type { DeliveryKind } from "./DeliveryKind";
 import type { Handoff } from "./Handoff";
+import type { IncomingMessage } from "./IncomingMessage";
 import type { SessionStart } from "./SessionStart";
 import type { TokenSession } from "./TokenSession";
 
 /**
  * What the node asks the deck.
  */
-export type NodeRequest = { "op": "mint_token", session: TokenSession | null, } | { "op": "runner_take" } | { "op": "runner_sort", claims: Array<number>, handoffs: Array<Handoff>, } | { "op": "action_start", action_id: number, } | { "op": "actions_report", reports: Array<ActionReport>, } | { "op": "relay", to: string, kind: DeliveryKind, body: string, } | { "op": "start_session", spec: SessionStart, } | { "op": "resume_session", node: string, session_id: string, tab: string, cwd: string, };
+export type NodeRequest = { "op": "mint_token", session: TokenSession | null, } | { "op": "runner_take" } | { "op": "runner_sort", claims: Array<number>, handoffs: Array<Handoff>, } | { "op": "action_start", action_id: number, } | { "op": "actions_report", reports: Array<ActionReport>, } | { "op": "relay", to: string, kind: DeliveryKind, body: string, } | { "op": "start_session", spec: SessionStart, } | { "op": "resume_session", node: string, session_id: string, tab: string, cwd: string, } | { "op": "messages_ingest", messages: Array<IncomingMessage>, };

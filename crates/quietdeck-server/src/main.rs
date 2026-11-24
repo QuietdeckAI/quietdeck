@@ -12,6 +12,7 @@ mod hooks;
 mod hub;
 mod leases;
 mod mcp;
+mod messages;
 mod ops;
 mod passkeys;
 mod pings;

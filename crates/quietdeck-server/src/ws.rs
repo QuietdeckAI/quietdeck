@@ -166,6 +166,10 @@ async fn answer(state: &AppState, node: &str, request: NodeRequest) -> Reply {
             Ok(t) => Reply::ok(&t),
             Err(e) => Reply::Err { error: e.to_string() },
         },
+        NodeRequest::MessagesIngest { messages } => match crate::messages::ingest(state, node, messages).await {
+            Ok(r) => Reply::ok(&r),
+            Err(e) => Reply::Err { error: e.to_string() },
+        },
         other => crate::runner::answer(state, node, other).await,
     }
 }

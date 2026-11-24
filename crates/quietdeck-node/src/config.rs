@@ -24,6 +24,9 @@ pub struct NodeConfig {
     /// The runner, on the triage agent's machine only.
     #[serde(default)]
     pub runner: Option<crate::runner::RunnerConfig>,
+    /// The Matrix reader, on the machine that holds the Matrix user's password.
+    #[serde(default)]
+    pub matrix: Option<crate::matrix::MatrixConfig>,
 }
 
 /// Sessions the deck starts or resumes on this machine (flow 3.15).
@@ -129,6 +132,9 @@ impl NodeConfig {
             && r.enabled
         {
             r.check().map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
+        }
+        if let Some(m) = &c.matrix {
+            m.check().map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
         }
         Ok(c)
     }

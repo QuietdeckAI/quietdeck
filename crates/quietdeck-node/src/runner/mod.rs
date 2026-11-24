@@ -554,6 +554,15 @@ impl Runner {
         state.save(&self.mail_state_path);
     }
 
+    /// The deck says new chat messages arrived: count them into the next wake-up, and wake the agent now if it's
+    /// between rounds.
+    pub async fn messages_arrived(&self, channels: &[quietdeck_types::message::ChannelCount]) {
+        let mut state = self.mail.lock().await;
+        state.add_messages(channels);
+        self.wake_if_due(&mut state).await;
+        state.save(&self.mail_state_path);
+    }
+
     pub async fn round_status(&self) -> quietdeck_types::api::RoundStatus {
         self.mail.lock().await.status(&self.cfg)
     }
@@ -563,13 +572,14 @@ impl Runner {
             return;
         }
         let Some(text) = state.wakeup_text(&self.cfg) else { return };
-        let counts = text.split('.').next().unwrap_or_default().trim_start_matches("New mail: ").to_string();
+        let mail = state.mail_counts(&self.cfg).unwrap_or_default();
+        let messages = state.message_counts().unwrap_or_default();
         match self.agent.tell(DeliveryKind::Wakeup, text).await {
             Ok(()) => {
-                tracing::info!(%counts, "woke the triage agent for new mail");
+                tracing::info!(%mail, %messages, "woke the triage agent");
                 state.waiting = true;
                 state.woke_at = Some(jiff::Timestamp::now());
-                state.pending.clear();
+                state.clear_pending();
             }
             // Kept: the next check tries again, with anything newer added.
             Err(e) => tracing::info!(error = %e, "the triage agent isn't reachable for its wake-up"),

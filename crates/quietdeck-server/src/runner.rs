@@ -125,7 +125,9 @@ async fn answer_inner(state: &AppState, node: &str, request: NodeRequest) -> App
     let agent = SessionRef { node: node.to_string(), tab: info.agent_tab.clone(), session_id: None };
     let caller = quietdeck_types::api::Caller::Node { node: node.to_string() };
     Ok(match request {
-        NodeRequest::MintToken { .. } => unreachable!("answered by the node connection"),
+        NodeRequest::MintToken { .. } | NodeRequest::MessagesIngest { .. } => {
+            unreachable!("answered by the node connection")
+        }
         NodeRequest::RunnerTake => Reply::ok(&decisions::runner_take(&state.db, &agent).await?),
         NodeRequest::RunnerSort { claims, handoffs } => {
             let held = decisions::runner_sort(&state.db, &agent, &claims, &handoffs).await?;

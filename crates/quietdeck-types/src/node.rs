@@ -127,6 +127,9 @@ pub enum NodeRequest {
     /// The runner: an approved `resume` of one session by its ID, on the machine it ran on. Answers
     /// [`crate::directory::SessionStarted`].
     ResumeSession { node: String, session_id: String, tab: String, cwd: String },
+    /// A node that reads a chat source (Matrix): new messages for the deck to keep. Any node may send it; the deck
+    /// keeps each message once, by room and ID. Answers [`crate::message::MessagesStored`].
+    MessagesIngest { messages: Vec<crate::message::IncomingMessage> },
 }
 
 /// A decision the runner hands to the agent, and why.
@@ -208,6 +211,11 @@ pub enum DeckRequest {
     LeaseStep {
         lease: Box<crate::lease::Lease>,
         step: crate::lease::LeaseStep,
+    },
+    /// To the runner: new messages from a chat source arrived on the deck. It counts them into its agent's next
+    /// wake-up.
+    MessagesArrived {
+        channels: Vec<crate::message::ChannelCount>,
     },
     /// To the runner: its agent finished its round (`quietdeck round done`), so the next wake-up can go.
     RoundDone,

@@ -88,3 +88,14 @@ runner:
     story.create:                               # stories and tasks: one tool per op (story.comment, task.create, task.update, task.done)
       path: tools.shortcut.stories.createStory
       input: { accountId: acc_<shortcut account>, input: { body: { name: "${action.title}", description: "${action.description}", story_type: "${action.story_type}", workflow_state_id: "${board.workflow_state_id}" } } }
+
+# The Matrix reader: only on the machine that holds the Matrix user's password. It syncs these rooms and hands each
+# new message to the deck, which tells the runner; the agent reads them with `quietdeck messages --new` and never
+# holds a Matrix token. The device, its token and its crypto store stay in `store` (mode 700, default
+# ~/.local/state/quietdeck/matrix). The first sign-in starts from now. `quietdeck-node matrix-check` tries it out
+# (stop the node first).
+matrix:
+  homeserver: https://matrix.example.com
+  user: '@quietdeck:example.com'                # already a member of each room
+  password_file: ~/.config/quietdeck/matrix-password   # mode 600, the password only
+  rooms: ['!abc123:example.com']                # room IDs, not aliases

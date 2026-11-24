@@ -263,6 +263,15 @@ async fn answer(node: &Node, request: DeckRequest) -> Reply {
             }
             None => Reply::Err { error: "this node's runner is off".into() },
         },
+        DeckRequest::MessagesArrived { channels } => match node.runner.get() {
+            Some(r) => {
+                // Answered at once: a wake-up can take a while to reach the agent.
+                let runner = r.runner.clone();
+                tokio::spawn(async move { runner.messages_arrived(&channels).await });
+                Reply::ok(&())
+            }
+            None => Reply::Err { error: "this node's runner is off".into() },
+        },
         DeckRequest::RoundStatus => match node.runner.get() {
             Some(r) => Reply::ok(&r.runner.round_status().await),
             None => Reply::Err { error: "this node's runner is off".into() },

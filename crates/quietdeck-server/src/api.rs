@@ -50,6 +50,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/msg", post(msg_send))
         .route("/api/timeline", post(timeline_add))
         .route("/api/history", get(history))
+        .route("/api/messages", get(messages_read))
         .route("/api/inbox", get(inbox))
         .route("/api/later", get(later))
         .route("/api/events", get(crate::events::stream))
@@ -91,6 +92,23 @@ pub fn router() -> Router<AppState> {
         .route("/api/push", get(push_config))
         .route("/api/push/devices", get(push_devices).post(push_subscribe))
         .route("/api/push/devices/remove", post(push_remove))
+}
+
+#[derive(Deserialize)]
+pub struct MessagesQuery {
+    pub source: Option<String>,
+    /// A message ID: read after it without moving the session's mark. Left out: after the session's last read.
+    pub after: Option<i64>,
+    pub limit: Option<u32>,
+}
+
+async fn messages_read(
+    State(state): State<AppState>,
+    Agent(me): Agent,
+    Query(q): Query<MessagesQuery>,
+) -> AppResult<Json<quietdeck_types::message::MessagesPage>> {
+    let limit = q.limit.unwrap_or(50);
+    Ok(Json(crate::messages::read(&state.db, &me, q.source.as_deref(), q.after, limit).await?))
 }
 
 async fn report_show(
