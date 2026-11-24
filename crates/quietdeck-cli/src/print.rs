@@ -352,7 +352,9 @@ fn not_in_report(r: &quietdeck_types::report::Report) -> String {
     }
     let ids: Vec<String> = r.cards_not_in_report.iter().map(|i| format!("c_{i}")).collect();
     format!(
-        "\nOpen cards in no <Default>: {}. Name each in one, or the Inbox only points at them on the Cards screen.",
+        // No tag in the words: `report show`'s output is often saved and edited into the next `report set`.
+        "\nOpen cards that no default names: {}. Name each in one, or the Inbox only points at them on the Cards \
+         screen.",
         ids.join(", ")
     )
 }

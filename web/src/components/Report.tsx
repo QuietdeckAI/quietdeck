@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Markdown as Render } from "markdown-to-jsx/react";
 import { Loader2, MessageSquare, Square, Undo2 } from "lucide-react";
-import { Children, createContext, isValidElement, type ReactNode, use, useEffect, useRef, useState } from "react";
+import { Children, createContext, Fragment, isValidElement, type ReactNode, use, useEffect, useRef, useState } from "react";
 import { useInfo } from "@/components/AccountTabs";
 import { EmailMenu } from "@/components/EmailMenu";
 import { Button } from "@/components/ui/button";
@@ -356,8 +356,58 @@ function ChatParagraph({ children }: { children?: ReactNode }) {
   return <span className="block [&+&]:mt-1.5">{children}</span>;
 }
 
+/** Which default a message was written on: its control, or for a pick, the cards its question names. */
+function originOf(a: ReportAnswer): string {
+  return a.kind === "choice" && a.cards ? `cards:${a.cards}` : a.control;
+}
+
+/** A heading for messages written on another default: the emails it named ("Threshold Brands: Sales pitch"). */
+function originLabel(origin: string, first: ReportAnswer, byId: Map<number, Card>): string {
+  const named = origin.startsWith("cards:") ? namedCards(origin.slice(6), byId) : [];
+  if (named.length > 0) {
+    return named.map((c) => `${c.sender?.name || c.sender?.address || c.subject}: ${c.summary}`).join(" · ");
+  }
+  return first.kind === "choice" ? first.about : first.about.replace(/\s+/g, " ").trim() || origin;
+}
+
+/**
+ * A thread's messages, with a heading above each run written on another default: a card that moved into this
+ * default brings its conversation, and the heading says which email it was about. A thread written only here has no
+ * headings.
+ */
+function ThreadItems({ thread, ownKey, ownLabel }: { thread: ReportAnswer[]; ownKey: string; ownLabel: string }) {
+  const { cards: byId } = useReport();
+  const mixed = thread.some((a) => originOf(a) !== ownKey);
+  return thread.map((a, i) => {
+    const origin = originOf(a);
+    const heading = mixed && (i === 0 || originOf(thread[i - 1]) !== origin);
+    return (
+      <Fragment key={a.id}>
+        {heading && (
+          <span className={cn("flex items-center gap-2 text-xs font-medium text-muted", i > 0 && "mt-1")}>
+            <span className="h-px min-w-4 flex-1 bg-rule" />
+            <span className="max-w-[85%] truncate">{origin === ownKey ? ownLabel : originLabel(origin, a, byId)}</span>
+            <span className="h-px min-w-4 flex-1 bg-rule" />
+          </span>
+        )}
+        <Bubble answer={a} />
+      </Fragment>
+    );
+  });
+}
+
 /** The thread's messages, scrolled to the newest. */
-function ThreadMessages({ thread, pending }: { thread: ReportAnswer[]; pending?: string | null }) {
+function ThreadMessages({
+  thread,
+  ownKey,
+  ownLabel,
+  pending,
+}: {
+  thread: ReportAnswer[];
+  ownKey: string;
+  ownLabel: string;
+  pending?: string | null;
+}) {
   const end = useRef<HTMLSpanElement>(null);
   const [scrolled, setScrolled] = useState(false);
   const count = thread.length + (pending ? 1 : 0);
@@ -374,9 +424,7 @@ function ThreadMessages({ thread, pending }: { thread: ReportAnswer[]; pending?:
           scrolled && "[mask-image:linear-gradient(to_bottom,transparent,black_2rem)]",
         )}
       >
-        {thread.map((a) => (
-          <Bubble key={a.id} answer={a} />
-        ))}
+        <ThreadItems thread={thread} ownKey={ownKey} ownLabel={ownLabel} />
         {pending && <Bubble pending={pending} />}
         <span ref={end} />
       </span>
@@ -469,7 +517,7 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
       </span>
       {open ? (
         <>
-          <ThreadMessages thread={thread} pending={sending} />
+          <ThreadMessages thread={thread} ownKey={key} ownLabel={about} pending={sending} />
           {lastMine && !sending && newest?.kind !== "reply" && <ChatStatus answer={lastMine} />}
           <span className="mt-2 mb-1 flex flex-col gap-2 sm:flex-row sm:items-end">
             <Textarea
@@ -549,9 +597,7 @@ function SnapshotDefault({ id, cards, children }: { id?: string; cards?: string;
       </span>
       {thread.length > 0 && (
         <span className="mt-1.5 mb-1 flex flex-col gap-2 pr-1">
-          {thread.map((a) => (
-            <Bubble key={a.id} answer={a} />
-          ))}
+          <ThreadItems thread={thread} ownKey={defaultKey(id, cards)} ownLabel={text(children).trim()} />
         </span>
       )}
     </span>

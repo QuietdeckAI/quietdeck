@@ -143,6 +143,8 @@ pub fn default_cards(markdown: &str) -> (Vec<i64>, Vec<String>) {
     let mut bad = vec![];
     let mut rest = markdown;
     while let Some(at) = rest.find("<Default") {
+        // The line it's on, so the error points at it.
+        let line = markdown[..markdown.len() - rest.len() + at].matches('\n').count() + 1;
         rest = &rest[at + "<Default".len()..];
         let Some(end) = rest.find('>') else { break };
         let attrs = &rest[..end];
@@ -151,11 +153,11 @@ pub fn default_cards(markdown: &str) -> (Vec<i64>, Vec<String>) {
                 let digits = part.strip_prefix("c_").unwrap_or(part);
                 match digits.parse::<i64>() {
                     Ok(n) => ids.push(n),
-                    Err(_) => bad.push(format!("{part:?} isn't a card ID (c_12)")),
+                    Err(_) => bad.push(format!("line {line}: {part:?} isn't a card ID (c_12)")),
                 }
             }
         } else {
-            bad.push("a <Default> has no cards=\"…\"".into());
+            bad.push(format!("line {line}: a <Default> has no cards=\"…\""));
         }
         rest = &rest[end..];
     }
@@ -214,8 +216,9 @@ mod tests {
                   <Ask id=\"me\" options=\"Yes|No\">Was this you?</Ask>\n<Default cards=\"x9\">a</Default>";
         let (ids, bad) = default_cards(md);
         assert_eq!(ids, vec![1, 2, 3, 7]);
-        assert_eq!(bad, vec!["\"x9\" isn't a card ID (c_12)".to_string()]);
-        assert_eq!(default_cards("<Default>x</Default>").1, vec!["a <Default> has no cards=\"…\"".to_string()]);
+        assert_eq!(bad, vec!["line 5: \"x9\" isn't a card ID (c_12)".to_string()]);
+        assert_eq!(default_cards("<Default>x</Default>").1, vec!["line 1: a <Default> has no cards=\"…\"".to_string()]);
+        assert_eq!(default_cards("# A\n\n<Default>x</Default>").1[0], "line 3: a <Default> has no cards=\"…\"");
     }
 }
 
