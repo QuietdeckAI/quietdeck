@@ -21,6 +21,12 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   approves. Now: build plan (Nathan, 25 November). Not built yet.
 - **Sessions survive a reboot.** herdr resumes Claude Code sessions after a VM restart, with their conversation;
   background processes and the session's temporary scratchpad don't survive. Now: the agents VM restart, 25 November.
+- **Per-machine instructions.** A shared global instructions file for every machine, plus one file per machine
+  (`CLAUDE.this-machine.md`, which the sync leaves out) for what holds only there: no browser, no Touch ID, how to
+  reach the other machines. Now: Nathan's global instructions and the homeserver repo's agents VM role.
+- **Agents propose, the person approves.** Subscriptions, monitoring, rules and new sessions are proposed by agents
+  on cards and approved by the person, never written into a config file the person has to edit. Now: Nathan, 25
+  November (build plan).
 - **Two scratchpads per agent.** A wiped one (`/tmp`, the session scratchpad) and a kept, synced one in the notes
   vault, named after the role. Now: Nathan's global instructions, "Agents' scratchpads: one wiped, one kept".
 - **Builds off the laptop.** Heavy Rust builds and tests on a build server (`scripts/on-dev`), heavy-build leases, why
@@ -68,6 +74,10 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   branch `acl-v1` (local only).
 - **Secrets the person pastes in.** Create the stub 1Password item first, then name it. Now: Nathan's global
   instructions. `docs/secrets-management.md` covers the rest.
+
+- **Proposals under discussion** (nothing decided; don't build from them): one front door for outside text (P1), a
+  coordination log of who asked whom (P3), gates on outward actions (P4). Now: the proposals page,
+  https://rag.docspring.io/artifacts/nathan/2026-11-25-agent-security-architecture, and Notes, "Security and access".
 
 ## Setting up a machine
 
