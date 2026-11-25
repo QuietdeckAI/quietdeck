@@ -99,6 +99,14 @@ struct MessageMeta {
     at: Option<jiff::Timestamp>,
 }
 
+/// "DocSpring: 'Re: Ads' to rep@x.com (thread 1a2b)": a sent message for the next wake-up.
+fn sent_line(account: &str, f: &ItemFacts, meta: Option<&MessageMeta>) -> String {
+    let subject = f.subject.as_deref().map(|s| format!(" '{s}'")).unwrap_or_default();
+    let to = meta.and_then(|m| m.to.as_deref()).map(|t| format!(" to {t}")).unwrap_or_default();
+    let thread = f.thread_key.as_deref().map(|t| format!(" (thread {t})")).unwrap_or_default();
+    format!("{account}:{subject}{to}{thread}")
+}
+
 fn mail_item(
     account: &str,
     kind: quietdeck_types::mail::MailKind,
@@ -647,12 +655,17 @@ impl Runner {
             for m in &new {
                 // A message that's already gone (Gmail took back a follow-up nudge) isn't mail.
                 if let Some((f, meta)) = self.facts(watch, m).await {
-                    if m.labels.iter().any(|l| l == "SENT")
-                        && let Some(meta) = meta
-                    {
+                    let is_sent = m.labels.iter().any(|l| l == "SENT");
+                    let in_inbox = m.labels.iter().any(|l| l == "INBOX");
+                    if is_sent && !in_inbox {
+                        // The person's own mail: not new mail to triage, and no wake-up of its own (Nathan, 25 Nov).
+                        state.sent.push(sent_line(&self.cfg.account_label(&m.account), &f, meta.as_ref()));
+                    } else {
+                        facts.push((m.account.clone(), f));
+                    }
+                    if is_sent && let Some(meta) = meta {
                         sent.push(mail_item(&m.account, quietdeck_types::mail::MailKind::Sent, &m.id, meta));
                     }
-                    facts.push((m.account.clone(), f));
                 }
             }
             if !sent.is_empty()
