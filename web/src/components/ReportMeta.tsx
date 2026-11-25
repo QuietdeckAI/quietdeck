@@ -10,7 +10,7 @@ import type { Report } from "@/types/Report";
 import type { ReportChange } from "@/types/ReportChange";
 
 /** Re-renders every `ms`, for times that count. */
-function useNow(ms: number): number {
+export function useNow(ms: number): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), ms);

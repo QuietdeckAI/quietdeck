@@ -11,11 +11,15 @@ COPY web/ ./
 RUN pnpm build
 
 FROM rust:1.99.1-bookworm AS build
+# The release's commit and build time (Unix seconds), for Settings: scripts/build-images passes both.
+ARG QUIETDECK_COMMIT=
+ARG QUIETDECK_BUILT_AT=
+ENV QUIETDECK_COMMIT=$QUIETDECK_COMMIT QUIETDECK_BUILT_AT=$QUIETDECK_BUILT_AT
 WORKDIR /src
 COPY . .
 COPY --from=web /web/dist web/dist
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/target \
+    --mount=type=cache,id=quietdeck-deck-target,target=/src/target \
     cargo build --release --locked -p quietdeck-server \
     && cp target/release/quietdeck-server /quietdeck-server
 

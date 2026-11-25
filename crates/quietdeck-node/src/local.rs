@@ -76,7 +76,7 @@ async fn respond(node: &Node, req: LocalRequest, peer_pid: Option<u32>) -> Local
             name: node.config.node.name.clone(),
             deck_url: node.config.deck_url(),
             connected: node.link.is_connected(),
-            version: crate::link::VERSION.to_string(),
+            version: crate::link::version(),
             runner: node.runner.get().is_some(),
         }),
         LocalRequest::Usage => match &node.usage {

@@ -14,7 +14,14 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use crate::Node;
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// "0.1.0 9ab8b00": the version and the release's commit (scripts/build-images sets it), as Settings' Machines list
+/// shows it.
+pub fn version() -> String {
+    match option_env!("QUIETDECK_COMMIT").filter(|c| !c.is_empty()) {
+        Some(commit) => format!("{} {commit}", env!("CARGO_PKG_VERSION")),
+        None => env!("CARGO_PKG_VERSION").to_string(),
+    }
+}
 
 /// Summary events wait here while the deck is unreachable (a sleeping laptop, a deck restart), up to this many.
 const OUTBOX_LIMIT: usize = 10_000;
@@ -131,7 +138,7 @@ async fn connect_once(node: &Arc<Node>) -> anyhow::Result<Outcome> {
     let (mut sink, mut stream) = ws.split();
 
     let runner = node.runner.get().map(|r| r.info());
-    let hello = NodeFrame::Hello { protocol: PROTOCOL_VERSION, version: VERSION.to_string(), runner };
+    let hello = NodeFrame::Hello { protocol: PROTOCOL_VERSION, version: version(), runner };
     sink.send(Message::Text(serde_json::to_string(&hello)?.into())).await?;
     match tokio::time::timeout(Duration::from_secs(10), stream.next()).await {
         Ok(Some(Ok(Message::Text(t)))) => match serde_json::from_str::<DeckFrame>(&t)? {

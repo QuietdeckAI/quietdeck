@@ -6,4 +6,16 @@ import type { Settings } from "./Settings";
 /**
  * `GET /api/info`: what agents and the web app need to know about this deck.
  */
-export type DeckInfo = { version: string, caller: Caller, accounts: Array<AccountLabel>, boards: Array<string>, settings: Settings, };
+export type DeckInfo = { version: string, 
+/**
+ * The release running: the commit it was built from (scripts/build-images passes it), or None for a local build.
+ */
+commit: string | null, 
+/**
+ * When that release was built.
+ */
+built_at: string | null, 
+/**
+ * When this deck started: with rolling deploys, when the release went live (or the deck last restarted).
+ */
+started_at: string, caller: Caller, accounts: Array<AccountLabel>, boards: Array<string>, settings: Settings, };

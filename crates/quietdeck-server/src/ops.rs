@@ -19,12 +19,15 @@ use quietdeck_types::timeline::{Comment, CommentAdd, EntrySource, History, Timel
 
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult, bad};
-use crate::state::{AppState, VERSION};
+use crate::state::{AppState, BUILT_AT, COMMIT, STARTED_AT, VERSION};
 use crate::store::{cards, comments, decisions, rules, sessions, timeline};
 
 pub async fn info(state: &AppState, caller: Caller) -> AppResult<DeckInfo> {
     Ok(DeckInfo {
         version: VERSION.to_string(),
+        commit: COMMIT.filter(|c| !c.is_empty()).map(str::to_string),
+        built_at: BUILT_AT.and_then(|s| s.parse::<i64>().ok()).and_then(|s| jiff::Timestamp::from_second(s).ok()),
+        started_at: *STARTED_AT,
         caller,
         accounts: state.config.accounts.clone(),
         boards: state.config.boards.clone(),

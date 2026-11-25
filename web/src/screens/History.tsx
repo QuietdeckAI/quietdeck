@@ -119,6 +119,18 @@ const STATE_WORD: Partial<Record<Card["state"], string>> = {
   automatic: "Automatic",
 };
 
+/** The card's action records, identical ones (same action, status and who ran it, no error) merged with a count. */
+function groupRecords(card: Card): { a: Card["action_records"][number]; n: number }[] {
+  const groups: { key: string; a: Card["action_records"][number]; n: number }[] = [];
+  for (const a of card.action_records) {
+    const key = a.error ? `error:${a.id}` : `${actionLine(a.action).verb}\u0000${a.status}\u0000${a.run_by ?? ""}`;
+    const g = groups.find((x) => x.key === key);
+    if (g) g.n += 1;
+    else groups.push({ key, a, n: 1 });
+  }
+  return groups;
+}
+
 function CardRow({ card }: { card: Card }) {
   return (
     <li className="border-b border-rule py-3 last:border-b-0">
@@ -135,21 +147,14 @@ function CardRow({ card }: { card: Card }) {
             {card.subject}
           </p>
           <ul className="mt-1 flex flex-col gap-0.5 text-sm">
-            {card.action_records.map((a) => (
-              <li
-                key={a.id}
-                className={cn(
-                  a.status === "failed" ? "text-danger" : "text-neutral",
-                )}
-              >
+            {/* One line per kind of action, with how many: a card that archives 12 emails says so once, not 12
+                times. Failures keep a line each, with their error. */}
+            {groupRecords(card).map(({ a, n }) => (
+              <li key={a.id} className={cn(a.status === "failed" ? "text-danger" : "text-neutral")}>
                 {actionLine(a.action).verb}
+                {n > 1 && <span> · {n} emails</span>}
                 <span> · {a.status}</span>
-                {a.run_by && (
-                  <span>
-                    {" "}
-                    by {a.run_by === "runner" ? "runner" : card.posted_by.tab}
-                  </span>
-                )}
+                {a.run_by && <span> by {a.run_by === "runner" ? "runner" : card.posted_by.tab}</span>}
                 {a.error && <span>: {a.error}</span>}
               </li>
             ))}

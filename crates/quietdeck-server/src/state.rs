@@ -5,6 +5,11 @@ use crate::db::Db;
 use crate::hub::Hub;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The commit the release was built from, and when (Unix seconds): scripts/build-images sets both.
+pub const COMMIT: Option<&str> = option_env!("QUIETDECK_COMMIT");
+pub const BUILT_AT: Option<&str> = option_env!("QUIETDECK_BUILT_AT");
+/// When this deck started (`serve` touches it first thing).
+pub static STARTED_AT: std::sync::LazyLock<jiff::Timestamp> = std::sync::LazyLock::new(jiff::Timestamp::now);
 
 #[derive(Clone)]
 pub struct AppState {

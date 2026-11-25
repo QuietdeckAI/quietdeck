@@ -1,16 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, KeyRound, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { useNow } from "@/components/ReportMeta";
 import { Button } from "@/components/ui/button";
 import { fieldClass, Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
 import { appleMobile, currentSubscription, installed, pushPossible, subscribe } from "@/lib/push";
-import { when } from "@/lib/format";
+import { agoShort, stampWithZone, when } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { createPasskey, guessDeviceName } from "@/lib/webauthn";
 import type { AuthState } from "@/types/AuthState";
 import type { Ceremony } from "@/types/Ceremony";
+import type { DeckInfo } from "@/types/DeckInfo";
 import type { EnrolmentCode } from "@/types/EnrolmentCode";
 import type { Lease } from "@/types/Lease";
 import type { LeasesView } from "@/types/LeasesView";
@@ -30,6 +32,7 @@ export function SettingsScreen() {
       <Nodes />
       <Leases />
       <SignOut />
+      <Release />
     </main>
   );
 }
@@ -509,9 +512,51 @@ function SignOut() {
   });
   return (
     <div>
-      <Button variant="quiet" loading={out.isPending} onClick={() => out.mutate()}>
+      <Button loading={out.isPending} onClick={() => out.mutate()}>
         Sign out on this device
       </Button>
     </div>
+  );
+}
+
+/** The release running: its commit (linked to GitHub), when it went live, and when it was built. */
+function Release() {
+  const info = useQuery({ queryKey: ["info"], queryFn: () => api<DeckInfo>("/api/info") });
+  const now = useNow(30_000);
+  if (!info.data) return null;
+  const { commit, built_at, started_at, version } = info.data;
+  return (
+    <Section title="Release">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 rounded-lg border border-rule bg-paper-2 p-4 text-sm">
+        <dt className="text-neutral">Commit</dt>
+        <dd>
+          {commit ? (
+            <a
+              href={`https://github.com/QuietdeckAI/quietdeck/commit/${commit}`}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="font-mono underline-offset-4 hover:underline"
+            >
+              {commit}
+            </a>
+          ) : (
+            <span className="text-neutral">a local build</span>
+          )}
+          <span className="text-neutral"> · version {version}</span>
+        </dd>
+        <dt className="text-neutral">Deployed</dt>
+        <dd>
+          {stampWithZone(started_at)} <span className="text-neutral">({agoShort(started_at, now)})</span>
+        </dd>
+        {built_at && (
+          <>
+            <dt className="text-neutral">Built</dt>
+            <dd>
+              {stampWithZone(built_at)} <span className="text-neutral">({agoShort(built_at, now)})</span>
+            </dd>
+          </>
+        )}
+      </dl>
+    </Section>
   );
 }

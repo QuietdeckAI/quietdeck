@@ -98,6 +98,16 @@ pub enum Caller {
 #[ts(export)]
 pub struct DeckInfo {
     pub version: String,
+    /// The release running: the commit it was built from (scripts/build-images passes it), or None for a local build.
+    pub commit: Option<String>,
+    /// When that release was built.
+    #[ts(type = "string | null")]
+    #[schemars(with = "Option<String>")]
+    pub built_at: Option<jiff::Timestamp>,
+    /// When this deck started: with rolling deploys, when the release went live (or the deck last restarted).
+    #[ts(type = "string")]
+    #[schemars(with = "String")]
+    pub started_at: jiff::Timestamp,
     pub caller: Caller,
     pub accounts: Vec<AccountLabel>,
     pub boards: Vec<String>,

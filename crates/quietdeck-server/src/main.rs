@@ -137,6 +137,7 @@ fn vapid_keys() -> (String, String) {
 }
 
 async fn serve(env: Env) -> anyhow::Result<()> {
+    std::sync::LazyLock::force(&state::STARTED_AT);
     let config = DeckConfig::load(&env.data.config_path())?;
     let webauthn = passkeys::webauthn(&env.public_url)?;
     std::fs::create_dir_all(&env.data.data_dir)
