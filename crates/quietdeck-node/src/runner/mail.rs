@@ -149,8 +149,7 @@ impl MailState {
         }
         if !self.sent.is_empty() {
             text.push_str(&format!(
-                "Sent by the person (not new mail: don't look for it in the inbox): {}. Pass the sent version on to the \
-                 sessions involved, and check whether it settles a card. ",
+                "Sent: {}. ",
                 self.sent.join("; ")
             ));
         }
@@ -386,10 +385,10 @@ mod tests {
         let mut s = MailState::default();
         s.sent.push("DocSpring: 'Re: Ads' to rep@x.example (thread 1a2b)".into());
         let text = s.wakeup_text(&cfg).unwrap();
-        assert!(text.starts_with("Sent by the person (not new mail"), "{text}");
+        assert!(text.starts_with("Sent: DocSpring: 'Re: Ads'"), "{text}");
         assert!(text.contains("'Re: Ads' to rep@x.example (thread 1a2b)") && !text.contains("New mail"), "{text}");
         s.add("work", Some(1));
-        assert!(s.wakeup_text(&cfg).unwrap().starts_with("New mail: 1 DocSpring. Sent by the person"));
+        assert!(s.wakeup_text(&cfg).unwrap().starts_with("New mail: 1 DocSpring. Sent: DocSpring"));
         s.clear_pending();
         assert_eq!(s.wakeup_text(&cfg), None);
     }

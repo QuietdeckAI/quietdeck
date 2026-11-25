@@ -580,7 +580,7 @@ async fn the_mail_watch_wakes_for_each_new_batch_and_resumes_after_a_restart() {
     assert_eq!(wakes, 1);
     // The received message is new mail; the sent one is named as sent, in the same wake-up.
     let first = agent.told.lock().unwrap()[0].1.clone();
-    assert!(first.starts_with("New mail: 1 Personal. Sent by the person (not new mail"), "{first}");
+    assert!(first.starts_with("New mail: 1 Personal. Sent: Personal"), "{first}");
 
     added.lock().unwrap().push((104, "c", "INBOX"));
     *head.lock().unwrap() = 104;
