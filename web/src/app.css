@@ -209,15 +209,12 @@ input[type="file"]:not(:disabled),
 }
 /* A default for a whole list sits under it, lined up with the list's text like a default inside one item. Not in
    the Archive part: Archive all covers every list there. */
-.report ul + .report-default {
-  margin-left: 1.25em;
-}
-.report ol + .report-default {
-  margin-left: 1.5em;
-}
-.report hr ~ ul + .report-default,
-.report hr ~ ol + .report-default {
+/* A default on its own after a list is the group's default (one for several items, like Archive all): flush left,
+   with a gap above, anywhere in the report. A default for one item sits inside its list item instead. */
+.report > ul + .report-default,
+.report > ol + .report-default {
   margin-left: 0;
+  margin-top: 1.5em;
 }
 
 /* The Archive part's one default (Archive all) sits under all its lists, with room above it. */
