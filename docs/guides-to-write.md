@@ -42,6 +42,12 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   only add during a rolling deploy, Argo CD backs up before and checks after. Why not an image updater (build order
   isn't commit order). Now: `deploy/README.md` "Continuous deployment", Talira's `internal-docs/deploying.md`.
 
+- **Agents driving your own browser.** One of the things people do most (Nathan, 25 November): any agent on any
+  machine controls the person's real, signed-in Chrome, reusing its cookies, and asks them to sign in in a tab when
+  needed. Playwright MCP's extension, its server on the Mac per session (tab groups keep sessions apart), reached over
+  SSH or Tailscale SSH; later Quietdeck as the gate (allowlist, approvals, audit, kill switch), never as the pipe. Now:
+  build plan "Your own browser, from any agent", `~/Notes/Agents/browser/chrome-control-research.md`.
+
 ## The triage agent
 
 - **The triage agent on its own Unix user and node.** It reads untrusted mail with permissions skipped, so no
