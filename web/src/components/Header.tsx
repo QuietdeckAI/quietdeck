@@ -82,6 +82,7 @@ export function Header() {
                 key={l.to}
                 to={l.to}
                 aria-label={count ? `${l.label}, ${count} new` : l.label}
+                aria-current={l.match(path) ? "page" : undefined}
                 onClick={() => {
                   // The count goes the moment the tab is opened, not when the deck answers.
                   if (l.to === "/drafts" || l.to === "/sent") clearBadge(l.to === "/drafts" ? "drafts" : "sent");
