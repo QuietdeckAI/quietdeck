@@ -65,6 +65,10 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   cards whose threads have all left, and the agent tidies the report, or marks it done with `quietdeck report done` so the
   Inbox says "All done." The history tool needs `labelRemoved` and `messageDeleted`. Now: `deploy/node.example.yaml`,
   `crates/quietdeck-server/src/mail.rs` (`threads_left`), the email-triage skill (25 November).
+- **A smaller context window for the triage agent.** Triage doesn't need a huge context to do its job well, so
+  Nathan set the `quietdeck triage` session's autocompact window to 300k tokens (25 November): it compacts sooner and
+  each turn costs less. Set it when setting up a triage agent for someone. Now: the triage session's own settings
+  (Nathan set it by hand; record the exact setting here when the setup is scripted).
 - **What plain code may read.** The runner reads headers, labels and snippets but never logs them; plain code is the
   safe place to read untrusted text (no prompt injection), so "never read content" isn't a rule worth keeping.
   Now: this conversation (25 November), `crates/quietdeck-node/src/runner/mail.rs`.
