@@ -349,6 +349,19 @@ async fn a_reading_that_shows_the_same_moves_its_time_on_without_waking_long_pol
 }
 
 #[tokio::test]
+async fn registering_again_unchanged_wakes_no_long_polls() {
+    let w = World::new();
+    let c = started(&w, Some(&three_logins(&w))).await;
+    c.register("s1", Some(7), SLOT2, Some("/code"), true);
+    let before = c.state().version;
+    w.advance(1000).await;
+    c.register("s1", Some(7), SLOT2, Some("/code"), true);
+    assert_eq!(c.state().version, before);
+    c.register("s1", Some(7), SLOT2, Some("/elsewhere"), true);
+    assert_eq!(c.state().version, before + 1);
+}
+
+#[tokio::test]
 async fn an_older_reading_never_replaces_a_newer_one() {
     let w = World::new();
     let c = started(&w, Some(&three_logins(&w))).await;

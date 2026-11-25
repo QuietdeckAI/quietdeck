@@ -847,9 +847,11 @@ impl<D: Deps> Coordinator<D> {
     pub fn register(&self, id: &str, pid: Option<i64>, slot: &str, cwd: Option<&str>, is_interactive: bool) -> String {
         let now = self.deps().now();
         let mut st = self.st();
+        let mut adopted = false;
         let account_id = match st.accounts.iter().find(|a| a.slot == slot) {
             Some(a) => a.id.clone(),
             None => {
+                adopted = true;
                 // Started on a slot nobody registered (set by hand, or by another tool): adopt it.
                 let account = Account { id: free_id(&st.accounts), slot: slot.to_string(), ..Default::default() };
                 let new_id = account.id.clone();
@@ -872,11 +874,19 @@ impl<D: Deps> Coordinator<D> {
             since: before.map_or(now, |i| st.sessions[i].since),
             last_seen: now,
         };
+        // A session registers again and again (each poll it restarts, each hook): only a real change wakes the long
+        // polls, or ~50 sessions on a Mac re-read the whole state on every registration (25 Nov 2026: half a core).
+        let differs = adopted
+            || before.is_none_or(|i| {
+                SessionInfo { last_seen: 0, ..st.sessions[i].clone() } != SessionInfo { last_seen: 0, ..info.clone() }
+            });
         match before {
             Some(i) => st.sessions[i] = info,
             None => st.sessions.push(info),
         }
-        self.changed(&mut st);
+        if differs {
+            self.changed(&mut st);
+        }
         account_id
     }
 
