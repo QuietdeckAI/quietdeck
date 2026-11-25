@@ -817,7 +817,18 @@ pub fn spawn(runner: Arc<Runner>) -> RunnerHandle {
                     Some(Signal::RoundDone) => task.round_done().await,
                     None => return,
                 },
-                _ = tick.tick() => task.check_mail().await,
+                _ = tick.tick() => {
+                    task.check_mail().await;
+                    // Also take what's waiting on every tick: a release nudge the deck couldn't deliver (the node was
+                    // reconnecting, a timeout) then costs at most one tick, never a stranded card.
+                    match task.process().await {
+                        Ok(o) if o != BatchOutcome::default() => tracing::info!(
+                            claimed = o.claimed.len(), handed = o.handed.len(), done = o.done, failed = o.failed,
+                            stopped = o.stopped, "runner batch"),
+                        Ok(_) => {}
+                        Err(e) => tracing::debug!(error = %e, "runner: taking released decisions on the tick"),
+                    }
+                }
             }
         }
     });

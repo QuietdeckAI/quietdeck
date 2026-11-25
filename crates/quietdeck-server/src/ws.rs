@@ -135,7 +135,10 @@ async fn follow_renames(state: &AppState, node: &str, sessions: &[quietdeck_type
             Ok(moved) => {
                 tracing::info!(%node, %tab, moved, "a renamed session's cards moved to its new tab name");
                 state.changed(Changed::Cards);
-                crate::runner::notify(state, node, tab).await;
+                // In its own task: the runner's answer comes back through this node's read loop, which is the one
+                // handling this frame, so waiting for it here would time out.
+                let (state, node, tab) = (state.clone(), node.to_string(), tab.clone());
+                tokio::spawn(async move { crate::runner::notify(&state, &node, &tab).await });
             }
             Err(e) => tracing::warn!(%node, %tab, error = %e, "moving a renamed session's cards"),
         }
