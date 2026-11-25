@@ -127,6 +127,13 @@ pub struct ReportAnswerAdd {
     pub cards: Option<String>,
 }
 
+/// `quietdeck chat reply`: the agent's answer to the person's chat in the Inbox, shown as a toast.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct ChatReply {
+    pub text: String,
+}
+
 /// `quietdeck report reply`: the agent's answer in a default's thread, which the Inbox shows under it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
 #[ts(export)]

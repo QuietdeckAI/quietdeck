@@ -11,4 +11,8 @@ summary: string,
 /**
  * The cards whose defaults this change added or altered.
  */
-cards: Array<number>, at: string, };
+cards: Array<number>, at: string, 
+/**
+ * The agent's answer to the person's chat (`quietdeck chat reply`), not a change: `summary` is its text.
+ */
+reply: boolean, };

@@ -11,6 +11,7 @@ import { clock } from "@/lib/format";
 import { cn, enterSends } from "@/lib/utils";
 import type { Card } from "@/types/Card";
 import type { Delivered } from "@/types/Delivered";
+import { dismissNote, notify, replaceNote } from "@/lib/notes";
 import { sessionKey, sessionPath } from "@/screens/Sessions";
 import type { SessionRow } from "@/types/SessionRow";
 import type { Report } from "@/types/Report";
@@ -949,12 +950,25 @@ export function ReportChatBox({
         });
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["inbox"] }),
+    onError: (e) => void notify(`Couldn't stop: ${e.message}`, { error: true, ms: 60_000 }),
   });
   const [textValue, setText] = useState("");
-  const [sent, setSent] = useState(false);
+  // "Sending to …" as a toast while the undo window runs and the message goes; it goes once delivered, or turns into
+  // the error.
+  const sendingNote = useRef<number | null>(null);
   const send = useMutation({
     mutationFn: (t: string) => api<Delivered>("/api/report/chat", { method: "POST", body: { text: t } }),
-    onSuccess: () => setSent(true),
+    // Delivered: the "Sending" toast just goes (no "Sent" toast).
+    onSuccess: () => {
+      if (sendingNote.current !== null) dismissNote(sendingNote.current);
+      sendingNote.current = null;
+    },
+    onError: (e) => {
+      const text = `Not sent to ${agent}: ${e.message}`;
+      if (sendingNote.current !== null) replaceNote(sendingNote.current, text, { error: true, ms: 60_000 });
+      else notify(text, { error: true, ms: 60_000 });
+      sendingNote.current = null;
+    },
   });
   // Sent after the undo window; Send is Undo meanwhile, which puts the text back.
   const undoWindow = useUndoWindow();
@@ -964,12 +978,15 @@ export function ReportChatBox({
     if (!t) return;
     waiting.current = t;
     setText("");
-    setSent(false);
+    if (sendingNote.current !== null) dismissNote(sendingNote.current);
+    sendingNote.current = notify(`Sending to ${agent}…`, { ms: null });
     undoWindow.start(() => send.mutate(t));
   };
   const undo = () => {
     undoWindow.cancel();
     setText(waiting.current);
+    if (sendingNote.current !== null) dismissNote(sendingNote.current);
+    sendingNote.current = null;
   };
   return (
     <div className="sticky bottom-0 z-10 mt-10 border-t border-rule bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm">
@@ -983,10 +1000,7 @@ export function ReportChatBox({
           maxLength={8000}
           placeholder={`Message ${agent}`}
           aria-label={`Message ${agent}`}
-          onChange={(e) => {
-            setText(e.target.value);
-            setSent(false);
-          }}
+          onChange={(e) => setText(e.target.value)}
           onKeyDown={enterSends(submit)}
           // Padding that centres one line in the 40px box, level with the buttons beside it (its line height
           // isn't a whole number of pixels); more lines grow the box from there.
@@ -1024,14 +1038,6 @@ export function ReportChatBox({
         </Button>
         {children}
       </div>
-      {(send.error || stop.error || sent || undoWindow.pending) && (
-        <p
-          role={send.error || stop.error ? "alert" : "status"}
-          className={cn("mx-auto max-w-3xl px-4 pb-2 text-sm", send.error || stop.error ? "text-danger" : "text-neutral")}
-        >
-          {(send.error ?? stop.error)?.message ?? (undoWindow.pending ? `Sending to ${agent}…` : `Sent to ${agent}.`)}
-        </p>
-      )}
     </div>
   );
 }

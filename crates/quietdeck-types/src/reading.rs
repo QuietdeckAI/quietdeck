@@ -189,6 +189,9 @@ pub struct ReportChange {
     #[ts(type = "string")]
     #[schemars(with = "String")]
     pub at: Timestamp,
+    /// The agent's answer to the person's chat (`quietdeck chat reply`), not a change: `summary` is its text.
+    #[serde(default)]
+    pub reply: bool,
 }
 
 #[cfg(test)]

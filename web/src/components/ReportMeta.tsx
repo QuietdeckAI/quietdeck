@@ -5,6 +5,8 @@ import { Link } from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { agoShort, stampWithZone } from "@/lib/format";
+import { dismissNote, useNotes } from "@/lib/notes";
+import { cn } from "@/lib/utils";
 import type { Presence } from "@/types/Presence";
 import type { Report } from "@/types/Report";
 import type { ReportChange } from "@/types/ReportChange";
@@ -149,6 +151,7 @@ export function ReportToasts({ report, presence }: { report: Report; presence: P
     return () => window.clearTimeout(timer);
   }, [toasts]);
   const dismiss = (id: number) => setToasts((all) => all.filter((t) => Number(t.id) !== id));
+  const notes = useNotes();
   const held = presence.held_count > 0;
   const missing = report.cards_not_in_report.length;
   // How many toasts stay put in the top right; on a phone the change toasts go below them.
@@ -161,7 +164,7 @@ export function ReportToasts({ report, presence }: { report: Report; presence: P
           {missing > 0 && <MissingToast count={missing} />}
         </div>
       )}
-      {toasts.length > 0 && (
+      {(toasts.length > 0 || notes.length > 0) && (
         <ol
           aria-live="polite"
           className={
@@ -183,6 +186,23 @@ export function ReportToasts({ report, presence }: { report: Report; presence: P
               </button>
             </li>
           )}
+          {notes.map((n) => (
+            <li
+              key={`n${n.id}`}
+              role={n.error ? "alert" : "status"}
+              className="toast-in pointer-events-auto flex items-start gap-2 rounded-lg border border-rule-strong bg-paper-3 py-2.5 pr-2 pl-3.5 text-sm shadow-lg shadow-black/30"
+            >
+              <span className={cn("min-w-0 flex-1 py-1", n.error ? "text-danger" : "text-ink")}>{n.text}</span>
+              <button
+                type="button"
+                aria-label="Dismiss"
+                onClick={() => dismissNote(n.id)}
+                className="rounded p-1 text-neutral hover:text-ink"
+              >
+                <X className="size-4" aria-hidden />
+              </button>
+            </li>
+          ))}
           {toasts.map((t) => (
             <li
               key={String(t.id)}
@@ -196,7 +216,10 @@ export function ReportToasts({ report, presence }: { report: Report; presence: P
                   dismiss(Number(t.id));
                 }}
               >
-                <span className="block text-xs text-neutral">Inbox changed · {agoShort(t.at)}</span>
+                {/* A reply to the person's chat is headed by the agent that wrote the report. */}
+                <span className="block text-xs text-neutral">
+                  {t.reply ? report.posted_by.tab : "Inbox changed"} · {agoShort(t.at)}
+                </span>
                 <span className="mt-0.5 block text-ink">{t.summary}</span>
               </button>
               <button

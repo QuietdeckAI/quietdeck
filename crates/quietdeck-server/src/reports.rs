@@ -226,8 +226,8 @@ pub async fn done(state: &AppState) -> AppResult<()> {
 
 /// The report's latest changes, oldest first.
 async fn changes(db: &Db, report_id: i64) -> AppResult<Vec<quietdeck_types::reading::ReportChange>> {
-    let rows: Vec<(i64, i64, String, String, i64)> = sqlx::query_as(
-        "SELECT id, version, summary, cards, at FROM report_changes WHERE report_id = ? ORDER BY id DESC LIMIT 20",
+    let rows: Vec<(i64, i64, String, String, i64, String)> = sqlx::query_as(
+        "SELECT id, version, summary, cards, at, kind FROM report_changes WHERE report_id = ? ORDER BY id DESC LIMIT 20",
     )
     .bind(report_id)
     .fetch_all(db)
@@ -240,10 +240,38 @@ async fn changes(db: &Db, report_id: i64) -> AppResult<Vec<quietdeck_types::read
             summary: r.2,
             cards: crate::db::from_json(&r.3).unwrap_or_default(),
             at: ts(r.4),
+            reply: r.5 == "reply",
         })
         .collect();
     out.reverse();
     Ok(out)
+}
+
+/// `quietdeck chat reply`: the agent answers the person's chat in the Inbox, shown as a toast on the page. For an
+/// answer that isn't a change to the report or a card (those show anyway).
+pub async fn chat_reply(state: &AppState, text: &str) -> AppResult<()> {
+    let text = text.trim();
+    if text.is_empty() || text.chars().count() > 2000 {
+        return Err(AppError::BadRequest("a reply is 1 to 2000 characters".into()));
+    }
+    let Some((report_id, version)): Option<(i64, i64)> =
+        sqlx::query_as("SELECT id, version FROM reports WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1")
+            .fetch_optional(&state.db)
+            .await?
+    else {
+        return Err(AppError::NotFound("there's no report for the reply to show on".into()));
+    };
+    sqlx::query(
+        "INSERT INTO report_changes (report_id, version, summary, cards, at, kind) VALUES (?, ?, ?, '[]', ?, 'reply')",
+    )
+    .bind(report_id)
+    .bind(version)
+    .bind(text)
+    .bind(now_ms())
+    .execute(&state.db)
+    .await?;
+    state.changed(Changed::Cards);
+    Ok(())
 }
 
 async fn insert(tx: &mut sqlx::SqliteConnection, me: &SessionRef, markdown: &str, now: i64) -> AppResult<()> {
@@ -565,6 +593,20 @@ mod tests {
 
     fn me() -> SessionRef {
         SessionRef { node: "n1".into(), tab: "email triage".into(), session_id: Some("s1".into()) }
+    }
+
+    #[tokio::test]
+    async fn a_chat_reply_shows_with_the_reports_changes_as_a_reply() {
+        let state = AppState::for_tests().await;
+        assert!(chat_reply(&state, "Done").await.is_err(), "no report to show it on");
+        let set = ReportSet { markdown: "# Inbox".into(), base: None, new: true, change: None };
+        super::set(&state, &me(), set).await.unwrap();
+        assert!(chat_reply(&state, "  ").await.is_err());
+        chat_reply(&state, "I'll keep the Acme thread in your inbox until Friday.").await.unwrap();
+        let r = current(&state.db).await.unwrap().unwrap();
+        let last = r.changes.last().unwrap();
+        assert!(last.reply && last.cards.is_empty());
+        assert_eq!(last.summary, "I'll keep the Acme thread in your inbox until Friday.");
     }
 
     #[tokio::test]

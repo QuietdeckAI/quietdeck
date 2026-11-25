@@ -78,6 +78,11 @@ enum Command {
         #[arg(required = true)]
         query: Vec<String>,
     },
+    /// Chat with the person in the Inbox: `chat reply` answers what they wrote in the chat box, as a toast on the page.
+    Chat {
+        #[command(subcommand)]
+        command: ChatCommand,
+    },
     /// Messages to sessions on other machines.
     Msg {
         #[command(subcommand)]
@@ -214,6 +219,16 @@ enum ReportCommand {
     /// change, or a question. `to` is the [key] his message carried (`cards:c_12`, `archive-all`) or a card (`c_12`).
     Reply {
         to: String,
+        /// The text (or - for stdin).
+        text: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ChatCommand {
+    /// Answer the person's message from the Inbox's chat box; it shows as a toast on the Inbox page. Only for an
+    /// answer that isn't a change: a change to the report or a card shows anyway.
+    Reply {
         /// The text (or - for stdin).
         text: String,
     },
@@ -745,6 +760,12 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                     all.iter().map(|w| format!("{}:\n{}", w.query, print::who_has(w))).collect::<Vec<_>>().join("\n\n")
                 })
             }
+        }
+        Command::Chat { command: ChatCommand::Reply { text } } => {
+            let c = Client::connect().await?;
+            let r: serde_json::Value =
+                c.post("/api/chat/reply", &quietdeck_types::report::ChatReply { text: read_arg(&text)? }).await?;
+            print::out(json, &r, |_| "Shown on the Inbox page.".to_string())
         }
         Command::Msg { command: MsgCommand::Send { to, text } } => {
             // 5 seconds end to end: the token, the deck, and the deck's delivery to the session (4 seconds).
