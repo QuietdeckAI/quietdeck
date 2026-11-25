@@ -844,6 +844,24 @@ const CHAT_OPTIONS = {
  * Only the report's own two tags are HTML: every other `<` is escaped first, so a tag an email slipped into the
  * agent's text shows as text and never reaches the page as markup.
  */
+/**
+ * Leaves out the part above the report's first `---` when nothing is in it but headings (the agent's "# Inbox" over an
+ * empty Needs-you part), so a report with only an archive part starts at "Archive" rather than "Inbox", a rule, then
+ * "Archive". Any item, question or line of text there keeps it.
+ */
+export function withoutEmptyTop(markdown: string): string {
+  const rule = /^(?:-{3,}|\*{3,}|_{3,})\s*$/m.exec(markdown);
+  if (!rule) return markdown;
+  const top = markdown.slice(0, rule.index);
+  const rest = top
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "" && !l.startsWith("#"));
+  if (rest.length > 0) return markdown;
+  // The rule stays, hidden as the report's first element (app.css): the archive part's spacing keys off it.
+  return markdown.slice(rule.index);
+}
+
 export function onlyReportTags(markdown: string): string {
   return markdown.replace(/<(?!\/?(?:Default|Ask)\b)/g, "&lt;");
 }
@@ -873,7 +891,8 @@ export function ReportBody({
         className={cn("md report", (rolled === "rolling" || rolled === "gone") && "rolled", rolled === "gone" && "gone")}
         options={OPTIONS}
       >
-        {onlyReportTags(report.markdown)}
+        {/* Rolled up, the "Inbox" heading stays over "All done.", so the top part is kept then. */}
+        {onlyReportTags(rolled && rolled !== "no" ? report.markdown : withoutEmptyTop(report.markdown))}
       </Render>
     </ReportCtx>
   );

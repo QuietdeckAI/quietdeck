@@ -224,6 +224,14 @@ input[type="file"]:not(:disabled),
 .report hr ~ .report-default {
   margin-top: 1.5em;
 }
+/* With nothing above it (withoutEmptyTop left out an empty "Inbox" part), the rule is the report's first element:
+   hidden, but still there for the archive part's spacing. */
+.report > hr:first-child {
+  display: none;
+}
+.report > hr:first-child + * {
+  margin-top: 0;
+}
 /* One Archive part at the end: a rule above it, a bigger heading, its groups as smaller headings under it. */
 .report hr {
   border: 0;

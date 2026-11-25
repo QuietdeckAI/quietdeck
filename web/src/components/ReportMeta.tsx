@@ -164,6 +164,17 @@ export function ReportToasts({ report, presence }: { report: Report; presence: P
             "sm:top-auto sm:bottom-24"
           }
         >
+          {toasts.length > 1 && (
+            <li className="pointer-events-auto flex justify-end">
+              <button
+                type="button"
+                onClick={() => setToasts([])}
+                className="rounded px-1 text-xs text-neutral hover:text-ink"
+              >
+                Dismiss All
+              </button>
+            </li>
+          )}
           {toasts.map((t) => (
             <li
               key={String(t.id)}
