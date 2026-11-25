@@ -86,11 +86,12 @@ async fn run(state: AppState, node: String, socket: WebSocket) {
 
     let mut ping = tokio::time::interval(PING_EVERY);
     let mut last_heard = tokio::time::Instant::now();
-    let mut stopping = state.stopping.clone();
+    let stopping = crate::state::until_stopping(state.stopping.clone());
+    tokio::pin!(stopping);
     loop {
         tokio::select! {
             // The deck is stopping (a deploy): close, so the node reconnects to the new deck now.
-            _ = async { let _ = stopping.wait_for(|s| *s).await; } => {
+            _ = &mut stopping => {
                 let _ = sink.send(Message::Close(None)).await;
                 break;
             }

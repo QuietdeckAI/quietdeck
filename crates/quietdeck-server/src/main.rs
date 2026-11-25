@@ -216,11 +216,9 @@ async fn serve(env: Env) -> anyhow::Result<()> {
     let hooks = hooks::router(state.clone());
 
     tracing::info!(listen = %env.listen, hooks = %env.hooks_listen, "deck serving");
-    let stopped = |mut rx: tokio::sync::watch::Receiver<bool>| async move {
-        let _ = rx.wait_for(|s| *s).await;
-    };
-    let app_server = axum::serve(app_listener, app).with_graceful_shutdown(stopped(stop_rx.clone()));
-    let hooks_server = axum::serve(hooks_listener, hooks).with_graceful_shutdown(stopped(stop_rx.clone()));
+    let app_server = axum::serve(app_listener, app).with_graceful_shutdown(state::until_stopping(stop_rx.clone()));
+    let hooks_server =
+        axum::serve(hooks_listener, hooks).with_graceful_shutdown(state::until_stopping(stop_rx.clone()));
     tokio::try_join!(async { app_server.await }, async { hooks_server.await })?;
     Ok(())
 }

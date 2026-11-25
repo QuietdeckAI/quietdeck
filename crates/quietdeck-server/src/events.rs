@@ -27,9 +27,6 @@ pub async fn stream(
         Some((Ok(Event::default().event("changed").data(data)), rx))
     });
     // Ends when the deck stops, so the browser reconnects to the new one (a rolling deploy) at once.
-    let mut stopping = state.stopping.clone();
-    let events = futures::StreamExt::take_until(events, async move {
-        let _ = stopping.wait_for(|s| *s).await;
-    });
+    let events = futures::StreamExt::take_until(events, crate::state::until_stopping(state.stopping.clone()));
     Sse::new(events).keep_alive(KeepAlive::new().interval(Duration::from_secs(20)))
 }

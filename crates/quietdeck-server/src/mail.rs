@@ -223,11 +223,28 @@ pub async fn badges(db: &Db) -> AppResult<MailBadges> {
             .await?;
         AppResult::Ok(n.max(0) as u32)
     };
-    let (inbox,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM cards WHERE state = 'open' AND section IN ('actions', 'suggestion', 'archive_list')",
+    // Emails waiting for approval, as the person counts them: the distinct threads across the open cards (one card
+    // often groups many related emails), each card's own thread included.
+    let open: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT account, thread_key, input FROM cards WHERE state = 'open' \
+         AND section IN ('actions', 'suggestion', 'archive_list')",
     )
-    .fetch_one(db)
+    .fetch_all(db)
     .await?;
+    let mut threads = std::collections::HashSet::new();
+    for (account, thread_key, input) in open {
+        let thread_key = thread_key.rsplit(':').next().unwrap_or(&thread_key).to_string();
+        threads.insert((account.clone(), thread_key));
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) {
+            for a in v.get("actions").and_then(|a| a.as_array()).into_iter().flatten() {
+                if let Some(t) = a.get("thread_id").and_then(|t| t.as_str()) {
+                    let acct = a.get("account").and_then(|x| x.as_str()).unwrap_or(&account);
+                    threads.insert((acct.to_string(), t.to_string()));
+                }
+            }
+        }
+    }
+    let inbox = threads.len() as i64;
     Ok(MailBadges {
         inbox: inbox.max(0) as u32,
         drafts: count(MailKind::Draft).await?,

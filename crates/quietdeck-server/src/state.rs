@@ -28,6 +28,13 @@ pub struct AppState {
     pub stopping: tokio::sync::watch::Receiver<bool>,
 }
 
+/// Resolves once the deck is stopping. A sender that's gone (nothing will ever say stop) never resolves.
+pub async fn until_stopping(mut rx: tokio::sync::watch::Receiver<bool>) {
+    if rx.wait_for(|s| *s).await.is_err() {
+        std::future::pending::<()>().await;
+    }
+}
+
 impl AppState {
     /// Tell the web app something changed. Nobody listening is fine.
     pub fn changed(&self, what: crate::events::Changed) {

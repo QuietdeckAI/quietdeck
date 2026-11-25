@@ -63,7 +63,7 @@ pub struct MailRow {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[ts(export)]
 pub struct MailBadges {
-    /// Cards waiting for the person's approval.
+    /// Emails waiting for the person's approval: the distinct threads across the open cards.
     pub inbox: u32,
     /// Drafts and sent messages new since the person last opened that tab.
     pub drafts: u32,
