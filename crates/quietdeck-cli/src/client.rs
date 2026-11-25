@@ -49,12 +49,24 @@ pub fn socket_path() -> PathBuf {
         home().join("Library/Application Support/quietdeck/node.sock")
     } else if let Some(run) = std::env::var_os("XDG_RUNTIME_DIR") {
         PathBuf::from(run).join("quietdeck/node.sock")
+    } else if let Some(sock) = user_runtime_socket() {
+        // No XDG_RUNTIME_DIR (`sudo -u <user>`, a cron job): the node, a systemd user service, still listens in the
+        // user's runtime directory.
+        sock
     } else {
         std::env::var_os("QUIETDECK_STATE_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| home().join(".local/state/quietdeck"))
             .join("node.sock")
     }
+}
+
+/// `/run/user/<uid>/quietdeck/node.sock`, when it's there. The uid is this process's: /proc/self belongs to it.
+fn user_runtime_socket() -> Option<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+    let uid = std::fs::metadata("/proc/self").ok()?.uid();
+    let sock = PathBuf::from(format!("/run/user/{uid}/quietdeck/node.sock"));
+    sock.exists().then_some(sock)
 }
 
 pub async fn ask_node(req: &LocalRequest) -> anyhow::Result<LocalResponse> {
