@@ -184,6 +184,14 @@ async fn answer_inner(state: &AppState, node: &str, request: NodeRequest) -> App
         }
         NodeRequest::StartSession { spec } => Reply::ok(&crate::control::start(state, &caller, spec).await?),
         NodeRequest::HoldCheck { items } => Reply::ok(&crate::reading::hold_check(&state.db, &items).await?),
+        NodeRequest::MailSent { items } => {
+            crate::mail::sent(state, &items).await?;
+            Reply::ok(&())
+        }
+        NodeRequest::MailDrafts { account, drafts } => {
+            crate::mail::drafts(state, &account, &drafts).await?;
+            Reply::ok(&())
+        }
         NodeRequest::RunnerHeld { summary, count } => {
             crate::reading::held(state, node, summary, count).await?;
             Reply::ok(&())

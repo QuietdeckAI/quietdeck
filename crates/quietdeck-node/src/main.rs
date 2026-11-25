@@ -81,6 +81,27 @@ pub struct Node {
     pub runner: std::sync::OnceLock<runner::RunnerHandle>,
 }
 
+impl Node {
+    /// A message was just put in front of this session: it's working on it. Shown at once (here and on the deck)
+    /// rather than when the orchestrator next reports the session's status, which can be seconds later; that report
+    /// then takes over.
+    pub async fn mark_working(&self, session_id: &str) {
+        let changed = {
+            let mut sessions = self.sessions.lock().await;
+            sessions.iter_mut().find(|s| s.session_id == session_id && s.running).and_then(|s| {
+                (s.status != quietdeck_types::AgentStatus::Working).then(|| {
+                    s.status = quietdeck_types::AgentStatus::Working;
+                    s.status_changed_at = jiff::Timestamp::now();
+                    s.clone()
+                })
+            })
+        };
+        if let Some(session) = changed {
+            self.link.push(NodeFrame::Session { session }).await;
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()

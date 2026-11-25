@@ -84,6 +84,50 @@ pub struct Runner {
     release: std::sync::atomic::AtomicBool,
     /// What the deck was last told the runner holds, so it's told only of changes.
     last_held: std::sync::Mutex<Option<(Option<String>, u64)>>,
+    /// Drafts whose headers were read, by message ID (a draft's message ID changes with every save).
+    draft_cache: std::sync::Mutex<HashMap<String, quietdeck_types::mail::MailItem>>,
+}
+
+/// One message's headers and snippet, as the message tool read them.
+#[derive(Debug, Clone, Default)]
+struct MessageMeta {
+    thread_id: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
+    subject: Option<String>,
+    snippet: Option<String>,
+    at: Option<jiff::Timestamp>,
+}
+
+fn mail_item(
+    account: &str,
+    kind: quietdeck_types::mail::MailKind,
+    message_id: &str,
+    m: MessageMeta,
+) -> quietdeck_types::mail::MailItem {
+    quietdeck_types::mail::MailItem {
+        account: account.to_string(),
+        kind,
+        message_id: message_id.to_string(),
+        thread_id: m.thread_id,
+        draft_id: None,
+        from: m.from,
+        to: m.to,
+        subject: m.subject,
+        snippet: m.snippet,
+        at: m.at.unwrap_or_else(jiff::Timestamp::now),
+    }
+}
+
+trait WithDraftId {
+    fn with_draft_id(self, id: Option<&str>) -> Self;
+}
+
+impl WithDraftId for quietdeck_types::mail::MailItem {
+    fn with_draft_id(mut self, id: Option<&str>) -> Self {
+        self.draft_id = id.map(str::to_string);
+        self
+    }
 }
 
 /// What a batch did, for logs and tests.
@@ -178,6 +222,7 @@ impl Runner {
             reading: Default::default(),
             release: Default::default(),
             last_held: Default::default(),
+            draft_cache: Default::default(),
         }
     }
 
@@ -562,11 +607,22 @@ impl Runner {
         let new = mail::check(&self.cfg, watch, self.tools.as_ref(), &mut state).await;
         if !new.is_empty() {
             let mut facts = Vec::with_capacity(new.len());
+            let mut sent = vec![];
             for m in &new {
                 // A message that's already gone (Gmail took back a follow-up nudge) isn't mail.
-                if let Some(f) = self.facts(watch, m).await {
+                if let Some((f, meta)) = self.facts(watch, m).await {
+                    if m.labels.iter().any(|l| l == "SENT")
+                        && let Some(meta) = meta
+                    {
+                        sent.push(mail_item(&m.account, quietdeck_types::mail::MailKind::Sent, &m.id, meta));
+                    }
                     facts.push((m.account.clone(), f));
                 }
+            }
+            if !sent.is_empty()
+                && let Err(e) = self.deck.mail_sent(sent).await
+            {
+                tracing::debug!(error = %e, "sending the sent messages for the Sent tab");
             }
             self.sort_new(&mut state, facts).await;
         }
@@ -574,24 +630,18 @@ impl Runner {
         state.save(&self.mail_state_path);
     }
 
-    /// What's known about a new message without reading its body. None when it no longer exists.
-    async fn facts(&self, watch: &config::MailWatchConfig, m: &mail::NewMail) -> Option<ItemFacts> {
-        let mut f = ItemFacts {
-            source: "gmail".into(),
-            account: m.account.clone(),
-            thread_key: m.thread_id.clone(),
-            labels: m.labels.clone(),
-            ..ItemFacts::default()
-        };
-        let Some(spec) = &watch.message else { return Some(f) };
-        let acct = self.account_ctx(&m.account)?;
-        let input = match tools::render(&spec.input, &json!({"account": acct, "message_id": m.id})) {
-            Ok(i) => i,
-            Err(e) => {
-                tracing::warn!(error = %e, "runner.mail_watch.message input");
-                return Some(f);
-            }
-        };
+    /// One message's headers, labels and snippet (never its body), through the configured message tool. `Ok(None)`:
+    /// the message no longer exists. `Err`: no tool, or it failed.
+    async fn message_meta(
+        &self,
+        watch: &config::MailWatchConfig,
+        account: &str,
+        message_id: &str,
+    ) -> Result<Option<MessageMeta>, String> {
+        let spec = watch.message.as_ref().ok_or("runner.mail_watch.message isn't set")?;
+        let acct =
+            self.account_ctx(account).ok_or_else(|| format!("account {account} isn't in the runner's config"))?;
+        let input = tools::render(&spec.input, &json!({"account": acct, "message_id": message_id}))?;
         match self.tools.call(spec, input).await {
             Ok(v) => {
                 let header = |name: &str| {
@@ -603,21 +653,110 @@ impl Runner {
                         })
                     })
                 };
-                f.from = header("From");
-                f.subject = header("Subject");
-                f.text = v.get("snippet").and_then(Value::as_str).map(str::to_string);
-                if let Some(t) = v.get("threadId").and_then(Value::as_str) {
-                    f.thread_key = Some(t.to_string());
-                }
-                Some(f)
+                let internal = match v.get("internalDate") {
+                    Some(Value::String(s)) => s.parse::<i64>().ok(),
+                    Some(Value::Number(n)) => n.as_i64(),
+                    _ => None,
+                };
+                Ok(Some(MessageMeta {
+                    thread_id: v.get("threadId").and_then(Value::as_str).map(str::to_string),
+                    from: header("From"),
+                    to: header("To"),
+                    subject: header("Subject"),
+                    snippet: v.get("snippet").and_then(Value::as_str).map(str::to_string),
+                    at: internal.and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok()),
+                }))
             }
-            Err(e) if e.contains("404") => {
+            Err(e) if e.contains("404") => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// What's known about a new message without reading its body. None when it no longer exists.
+    async fn facts(
+        &self,
+        watch: &config::MailWatchConfig,
+        m: &mail::NewMail,
+    ) -> Option<(ItemFacts, Option<MessageMeta>)> {
+        let mut f = ItemFacts {
+            source: "gmail".into(),
+            account: m.account.clone(),
+            thread_key: m.thread_id.clone(),
+            labels: m.labels.clone(),
+            ..ItemFacts::default()
+        };
+        if watch.message.is_none() {
+            return Some((f, None));
+        }
+        match self.message_meta(watch, &m.account, &m.id).await {
+            Ok(Some(meta)) => {
+                f.from = meta.from.clone();
+                f.subject = meta.subject.clone();
+                f.text = meta.snippet.clone();
+                if let Some(t) = &meta.thread_id {
+                    f.thread_key = Some(t.clone());
+                }
+                Some((f, Some(meta)))
+            }
+            Ok(None) => {
                 tracing::info!(account = %m.account, message = %m.id, "a new message was already gone: not waking for it");
                 None
             }
             Err(e) => {
                 tracing::warn!(account = %m.account, error = %e, "reading a new message's headers");
-                Some(f)
+                Some((f, None))
+            }
+        }
+    }
+
+    /// Every draft on each account, for the Drafts tab: listed with the drafts tool, each new one's headers read once
+    /// (a draft gets a new message ID with every save), the whole list sent so drafts that were sent or deleted go.
+    pub async fn sync_drafts(&self) {
+        let Some(watch) = &self.cfg.mail_watch else { return };
+        let Some(spec) = &watch.drafts else { return };
+        for account in self.cfg.accounts.keys() {
+            let Some(acct) = self.account_ctx(account) else { continue };
+            let listed = match tools::render(&spec.input, &json!({"account": acct})) {
+                Ok(input) => self.tools.call(spec, input).await,
+                Err(e) => Err(e),
+            };
+            let listed = match listed {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(%account, error = %e, "listing drafts");
+                    continue;
+                }
+            };
+            let mut drafts = vec![];
+            let mut complete = true;
+            for d in listed.get("drafts").and_then(Value::as_array).into_iter().flatten() {
+                let Some(mid) = d.pointer("/message/id").and_then(Value::as_str) else { continue };
+                let cached = self.draft_cache.lock().expect("draft cache").get(mid).cloned();
+                let item = match cached {
+                    Some(item) => item,
+                    None => match self.message_meta(watch, account, mid).await {
+                        Ok(Some(meta)) => {
+                            let item = mail_item(account, quietdeck_types::mail::MailKind::Draft, mid, meta)
+                                .with_draft_id(d.get("id").and_then(Value::as_str));
+                            self.draft_cache.lock().expect("draft cache").insert(mid.to_string(), item.clone());
+                            item
+                        }
+                        Ok(None) => continue,
+                        Err(e) => {
+                            tracing::warn!(%account, error = %e, "reading a draft's headers");
+                            complete = false;
+                            continue;
+                        }
+                    },
+                };
+                drafts.push(item);
+            }
+            // A partial list would drop drafts that are still there: wait for a complete one.
+            if !complete {
+                continue;
+            }
+            if let Err(e) = self.deck.mail_drafts(account.clone(), drafts).await {
+                tracing::debug!(%account, error = %e, "sending the drafts list");
             }
         }
     }
@@ -802,6 +941,9 @@ pub fn spawn(runner: Arc<Runner>) -> RunnerHandle {
             .unwrap_or(Duration::from_secs(30));
         let mut tick = tokio::time::interval(every);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // The Drafts tab's list, every 5 minutes (and at start).
+        let mut drafts_tick = tokio::time::interval(Duration::from_secs(300));
+        drafts_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tokio::select! {
                 s = rx.recv() => match s {
@@ -815,6 +957,7 @@ pub fn spawn(runner: Arc<Runner>) -> RunnerHandle {
                     Some(Signal::RoundDone) => task.round_done().await,
                     None => return,
                 },
+                _ = drafts_tick.tick() => task.sync_drafts().await,
                 _ = tick.tick() => {
                     task.check_mail().await;
                     // Also take what's waiting on every tick: a release nudge the deck couldn't deliver (the node was

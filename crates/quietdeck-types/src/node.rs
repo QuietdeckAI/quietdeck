@@ -135,6 +135,10 @@ pub enum NodeRequest {
     HoldCheck { items: Vec<crate::reading::ItemFacts> },
     /// The runner: what it holds for the person's idle moment, for the Inbox's "waiting" line. Answers `()`.
     RunnerHeld { summary: Option<String>, count: u64 },
+    /// The runner: messages it saw sent, for the Sent tab. Answers `()`.
+    MailSent { items: Vec<crate::mail::MailItem> },
+    /// The runner: every draft on one account now, replacing what the deck had, for the Drafts tab. Answers `()`.
+    MailDrafts { account: String, drafts: Vec<crate::mail::MailItem> },
 }
 
 /// A decision the runner hands to the agent, and why.

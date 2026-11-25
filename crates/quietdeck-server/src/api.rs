@@ -51,6 +51,9 @@ pub fn router() -> Router<AppState> {
         .route("/api/timeline", post(timeline_add))
         .route("/api/history", get(history))
         .route("/api/messages", get(messages_read))
+        .route("/api/mail", get(mail_list))
+        .route("/api/mail/seen", post(mail_seen))
+        .route("/api/mail/badges", get(mail_badges))
         .route("/api/presence", post(presence_beat))
         .route("/api/presence/release", post(presence_release))
         .route("/api/reading-rules", get(reading_rules_list).post(reading_rule_create))
@@ -97,6 +100,41 @@ pub fn router() -> Router<AppState> {
         .route("/api/push", get(push_config))
         .route("/api/push/devices", get(push_devices).post(push_subscribe))
         .route("/api/push/devices/remove", post(push_remove))
+}
+
+#[derive(Deserialize)]
+pub struct MailQuery {
+    pub kind: quietdeck_types::mail::MailKind,
+    pub account: Option<String>,
+}
+
+async fn mail_list(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Query(q): Query<MailQuery>,
+) -> AppResult<Json<Vec<quietdeck_types::mail::MailRow>>> {
+    Ok(Json(crate::mail::list(&state.db, q.kind, q.account.as_deref()).await?))
+}
+
+#[derive(Deserialize)]
+pub struct MailSeen {
+    pub kind: quietdeck_types::mail::MailKind,
+}
+
+async fn mail_seen(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(m): Json<MailSeen>,
+) -> AppResult<Json<serde_json::Value>> {
+    crate::mail::seen(&state, m.kind).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+async fn mail_badges(
+    State(state): State<AppState>,
+    _owner: Owner,
+) -> AppResult<Json<quietdeck_types::mail::MailBadges>> {
+    Ok(Json(crate::mail::badges(&state.db).await?))
 }
 
 async fn presence_beat(

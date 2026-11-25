@@ -41,6 +41,14 @@ pub trait DeckApi: Send + Sync {
     async fn held(&self, _summary: Option<String>, _count: u64) -> Result<(), String> {
         Ok(())
     }
+    /// Messages seen sent, for the Sent tab.
+    async fn mail_sent(&self, _items: Vec<quietdeck_types::mail::MailItem>) -> Result<(), String> {
+        Ok(())
+    }
+    /// Every draft on one account now, for the Drafts tab.
+    async fn mail_drafts(&self, _account: String, _drafts: Vec<quietdeck_types::mail::MailItem>) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -93,6 +101,12 @@ impl DeckApi for LinkDeck {
     async fn held(&self, summary: Option<String>, count: u64) -> Result<(), String> {
         self.ask(NodeRequest::RunnerHeld { summary, count }, ASK).await
     }
+    async fn mail_sent(&self, items: Vec<quietdeck_types::mail::MailItem>) -> Result<(), String> {
+        self.ask(NodeRequest::MailSent { items }, ASK).await
+    }
+    async fn mail_drafts(&self, account: String, drafts: Vec<quietdeck_types::mail::MailItem>) -> Result<(), String> {
+        self.ask(NodeRequest::MailDrafts { account, drafts }, ASK).await
+    }
 }
 
 /// The agent, by its tab on this machine, through the node's own delivery (its messaging socket, or the orchestrator).
@@ -120,6 +134,11 @@ impl AgentInbox for LocalAgent {
             kind,
             body,
         };
-        self.node.deliverer.deliver(&delivery).await.map(|_| ())
+        let id = delivery.target.session_id.clone();
+        self.node.deliverer.deliver(&delivery).await?;
+        if let Some(id) = id {
+            self.node.mark_working(&id).await;
+        }
+        Ok(())
     }
 }

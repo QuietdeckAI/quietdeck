@@ -8,6 +8,7 @@ pub mod decision;
 pub mod directory;
 pub mod handoff;
 pub mod lease;
+pub mod mail;
 pub mod message;
 pub mod node;
 pub mod reading;

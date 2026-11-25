@@ -100,6 +100,10 @@ pub struct MailWatchConfig {
     /// doesn't wake the agent.
     #[serde(default)]
     pub message: Option<ToolSpec>,
+    /// Lists an account's drafts (Gmail's `users.drafts.list` shape: `drafts[].id`, `drafts[].message.id`), every 5
+    /// minutes, for the Drafts tab; each new draft's headers come from `message`. Optional.
+    #[serde(default)]
+    pub drafts: Option<ToolSpec>,
 }
 
 /// One tool: an Executor app tool by path, or a command that reads the input as JSON on stdin and prints JSON. In

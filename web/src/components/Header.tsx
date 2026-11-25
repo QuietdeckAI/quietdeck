@@ -1,5 +1,8 @@
 import { Settings } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { useMailBadges } from "@/screens/Mail";
+import type { MailBadges } from "@/types/MailBadges";
 import { navigate, usePath } from "@/lib/route";
 
 const LINKS = [
@@ -7,6 +10,16 @@ const LINKS = [
     to: "/",
     label: "Inbox",
     match: (p: string) => p === "/",
+  },
+  {
+    to: "/drafts",
+    label: "Drafts",
+    match: (p: string) => p.startsWith("/drafts"),
+  },
+  {
+    to: "/sent",
+    label: "Sent",
+    match: (p: string) => p.startsWith("/sent"),
   },
   {
     to: "/threads",
@@ -35,9 +48,15 @@ const LINKS = [
   },
 ];
 
+const underline = "underline decoration-accent decoration-2 underline-offset-[6px]";
+
 /** The wordmark at one edge, the screens at the other. */
 export function Header() {
   const path = usePath();
+  const badges = useMailBadges().data;
+  const qc = useQueryClient();
+  const clearBadge = (k: "drafts" | "sent") =>
+    qc.setQueryData<MailBadges>(["mail-badges"], (b) => (b ? { ...b, [k]: 0 } : b));
   return (
     // Stays at the top while the page scrolls.
     <header className="sticky top-0 z-20 border-b border-rule bg-paper/95 backdrop-blur-sm">
@@ -51,30 +70,45 @@ export function Header() {
           <img src="/icon.svg" alt="" className="size-7 rounded-md max-[359px]:hidden sm:hidden" />
           <span className="max-sm:sr-only">Quietdeck</span>
         </Link>
-        <nav className="flex items-center gap-1" aria-label="Screens">
-          {LINKS.map((l) => (
-            <Link
-              key={l.to}
-              to={l.to}
-              aria-current={l.match(path) ? "page" : undefined}
-              aria-label={l.label}
-              className={cn(
-                "rounded-md px-1.5 py-1.5 text-sm whitespace-nowrap text-neutral transition-colors max-[359px]:px-1 sm:px-2.5 " +
-                  "duration-(--dur-quick) hover:text-ink",
-                l.match(path) &&
-                  "text-ink underline decoration-accent decoration-2 underline-offset-[6px]",
-              )}
-            >
-              {l.to === "/settings" ? (
-                <>
-                  <Settings aria-hidden className="size-4 sm:hidden" />
-                  <span className="max-sm:sr-only">{l.label}</span>
-                </>
-              ) : (
-                l.label
-              )}
-            </Link>
-          ))}
+        {/* Eight screens don't fit a phone's width: the row scrolls sideways there, with no scrollbar. */}
+        <nav
+          className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          aria-label="Screens"
+        >
+          {LINKS.map((l) => {
+            const count = l.to === "/" ? badges?.inbox : l.to === "/drafts" ? badges?.drafts : l.to === "/sent" ? badges?.sent : 0;
+            return (
+              <Link
+                key={l.to}
+                to={l.to}
+                aria-label={count ? `${l.label}, ${count} new` : l.label}
+                onClick={() => {
+                  // The count goes the moment the tab is opened, not when the deck answers.
+                  if (l.to === "/drafts" || l.to === "/sent") clearBadge(l.to === "/drafts" ? "drafts" : "sent");
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-md px-1.5 py-1.5 text-sm whitespace-nowrap text-neutral transition-colors max-[359px]:px-1 sm:px-2.5 " +
+                    "duration-(--dur-quick) hover:text-ink",
+                  l.match(path) && "text-ink",
+                )}
+              >
+                {/* The current screen's line is under its name only, not its count. */}
+                {l.to === "/settings" ? (
+                  <>
+                    <Settings aria-hidden className="size-4 sm:hidden" />
+                    <span className={cn("max-sm:sr-only", l.match(path) && underline)}>{l.label}</span>
+                  </>
+                ) : (
+                  <span className={cn(l.match(path) && underline)}>{l.label}</span>
+                )}
+                {!!count && (
+                  <span className="min-w-4 rounded-full bg-paper-3 px-1 text-center text-[11px] leading-4 tabular-nums text-muted">
+                    {count}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
         </nav>
       </div>
     </header>
@@ -85,6 +119,7 @@ export function Link({
   to,
   className,
   children,
+  onClick,
   ...rest
 }: React.ComponentProps<"a"> & { to: string }) {
   return (
@@ -92,6 +127,7 @@ export function Link({
       href={to}
       className={className}
       onClick={(e) => {
+        onClick?.(e);
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
         e.preventDefault();
         navigate(to);

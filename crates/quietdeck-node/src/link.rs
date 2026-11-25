@@ -207,7 +207,12 @@ async fn connect_once(node: &Arc<Node>) -> anyhow::Result<Outcome> {
 async fn answer(node: &Node, request: DeckRequest) -> Reply {
     match request {
         DeckRequest::Deliver { delivery } => match node.deliverer.deliver(&delivery).await {
-            Ok(how) => Reply::ok(&how),
+            Ok(how) => {
+                if let Some(id) = &delivery.target.session_id {
+                    node.mark_working(id).await;
+                }
+                Reply::ok(&how)
+            }
             Err(error) => Reply::Err { error },
         },
         DeckRequest::SearchTranscripts { query, limit } => {

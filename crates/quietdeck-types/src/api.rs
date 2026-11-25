@@ -185,6 +185,8 @@ pub enum Changed {
     Pings,
     /// Devices that take pushes.
     Push,
+    /// The Drafts and Sent tabs.
+    Mail,
     /// The stream fell behind: refetch everything.
     All,
 }

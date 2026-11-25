@@ -63,7 +63,12 @@ runner:
     # that's already gone doesn't wake the agent. Optional.
     message:
       path: tools.google.api.gmail.users.gmailUsersMessagesGet
-      input: { accountId: "${account.executor_account}", input: { path: { userId: me, id: "${message_id}" }, query: { format: metadata, metadataHeaders: [From, To, Subject], fields: "id,threadId,labelIds,snippet,payload(headers)" } } }
+      input: { accountId: "${account.executor_account}", input: { path: { userId: me, id: "${message_id}" }, query: { format: metadata, metadataHeaders: [From, To, Subject], fields: "id,threadId,labelIds,snippet,internalDate,payload(headers)" } } }
+    # Every draft on the account, every 5 minutes, for the Drafts tab (each new one's headers come from `message`).
+    # Optional; sent messages reach the Sent tab from the history above.
+    drafts:
+      path: tools.google.api.gmail.users.gmailUsersDraftsList
+      input: { accountId: "${account.executor_account}", input: { path: { userId: me }, query: { maxResults: 500, fields: "drafts(id,message(id,threadId))" } } }
   thread:
     path: tools.google.api.gmail.users.gmailUsersThreadsGet
     input: { accountId: "${account.executor_account}", input: { path: { userId: me, id: "${action.thread_id}" }, query: { format: minimal, fields: "id,messages(id,labelIds)" } } }

@@ -7,6 +7,7 @@ import { usePath } from "@/lib/route";
 import { ThreadsScreen } from "@/screens/Threads";
 import { HistoryScreen } from "@/screens/History";
 import { InboxScreen } from "@/screens/Inbox";
+import { MailScreen } from "@/screens/Mail";
 import { LaterScreen } from "@/screens/Later";
 import { RulesScreen } from "@/screens/Rules";
 import { SessionScreen } from "@/screens/Session";
@@ -67,6 +68,8 @@ function Screen() {
     if (Number.isInteger(id)) return <SnapshotScreen key={id} id={id} />;
   }
   if (path.startsWith("/history")) return <HistoryScreen />;
+  if (path.startsWith("/drafts")) return <MailScreen key="draft" kind="draft" />;
+  if (path.startsWith("/sent")) return <MailScreen key="sent" kind="sent" />;
   if (path.startsWith("/later")) return <LaterScreen />;
   if (path.startsWith("/rules")) return <RulesScreen />;
   if (path.startsWith("/settings")) return <SettingsScreen />;

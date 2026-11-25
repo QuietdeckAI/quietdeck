@@ -11,6 +11,7 @@ mod handoffs;
 mod hooks;
 mod hub;
 mod leases;
+mod mail;
 mod mcp;
 mod messages;
 mod ops;
