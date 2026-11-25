@@ -723,15 +723,16 @@ impl Runner {
         let n = resolved.len();
         let list: Vec<String> = resolved.iter().map(|c| format!("c_{} '{}'", c.id, c.subject)).collect();
         let body = format!(
-            "The person archived {} in Gmail themselves, so the deck resolved {}: {}. Take {} off the report \
-             (`quietdeck report show --markdown`, then `report set`). If nothing on it waits for them any more, mark \
-             it done with `quietdeck report done` so the Inbox says \"All done.\"",
-            if n == 1 { "an email" } else { "emails" },
+            "{} left the inbox outside Quietdeck (archived or deleted in Gmail, by the person or by an agent working \
+             directly), so the deck resolved {}: {}. Take {} off the report (`quietdeck report show --markdown`, \
+             then `report set`). If nothing on it waits for the person any more, mark it done with \
+             `quietdeck report done` so the Inbox says \"All done.\"",
+            if n == 1 { "An email" } else { "Emails" },
             if n == 1 { "its card" } else { "their cards" },
             list.join(", "),
             if n == 1 { "it" } else { "them" }
         );
-        tracing::info!(cards = n, "the person archived threads in Gmail: telling the agent");
+        tracing::info!(cards = n, "threads left the inbox outside Quietdeck: telling the agent");
         if let Err(e) = self.agent.tell(DeliveryKind::RunnerReport, body).await {
             tracing::info!(error = %e, "the agent will see the resolved cards on the deck");
         }

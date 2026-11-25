@@ -393,8 +393,9 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
         },
         AnswerKind::Change if earlier > 0 => format!(
             "On the report (version {}), in the thread on the default \"{}\" [{}]: {value}\n\nIt continues that \
-             conversation (`quietdeck report show` lists it). Approve All leaves those cards to you. Answer him in \
-             the thread: `quietdeck report reply '{}' \"…\"`.",
+             conversation (`quietdeck report show` lists it). Like every message he writes in the Inbox, it's an \
+             instruction to update this entry, not to carry anything out now. Update the cards and the default to \
+             match, answer him in the thread (`quietdeck report reply '{}' \"…\"`), and wait for his approval.",
             a.report_version,
             a.about.trim(),
             a.control,
@@ -402,9 +403,10 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
         ),
         AnswerKind::Change => format!(
             "On the report (version {}), a change to the default \"{}\" [{}]: {value}\n\nUsually it adjusts the \
-             default or adds to it rather than replacing it. Approve All leaves those cards to you. Do what this \
-             says, or propose it in the report, and answer him in the default's thread: \
-             `quietdeck report reply '{}' \"…\"` (what you did, or a question).",
+             default or adds to it rather than replacing it. Like every message he writes in the Inbox, it's an \
+             instruction to update this entry, not to carry anything out now. Post the cards' new versions with \
+             actions to match, change the default's text in the report, answer him in the default's thread \
+             (`quietdeck report reply '{}' \"…\"`: what you changed, or a question), and wait for his approval.",
             a.report_version,
             a.about.trim(),
             a.control,

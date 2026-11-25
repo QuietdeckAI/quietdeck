@@ -714,7 +714,7 @@ async fn threads_the_person_archived_in_gmail_go_to_the_deck_and_the_agent_hears
     let told = agent.told.lock().unwrap().clone();
     assert_eq!(told.len(), 1, "{told:?}");
     assert!(matches!(told[0].0, DeliveryKind::RunnerReport));
-    assert!(told[0].1.starts_with("The person archived emails in Gmail themselves"), "{}", told[0].1);
+    assert!(told[0].1.starts_with("Emails left the inbox outside Quietdeck"), "{}", told[0].1);
     assert!(told[0].1.contains("c_10 'About ta'") && told[0].1.contains("quietdeck report done"), "{}", told[0].1);
 }
 
