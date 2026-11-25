@@ -487,7 +487,7 @@ fn feed(head: Arc<StdMutex<u64>>, added: Added) -> Script {
 }
 
 #[tokio::test]
-async fn the_mail_watch_wakes_once_per_round_and_resumes_after_a_restart() {
+async fn the_mail_watch_wakes_for_each_new_batch_and_resumes_after_a_restart() {
     let head = Arc::new(StdMutex::new(100u64));
     let added: Added = Arc::default();
     let (url, calls) = executor(feed(head.clone(), added.clone())).await;
@@ -513,11 +513,11 @@ async fn the_mail_watch_wakes_once_per_round_and_resumes_after_a_restart() {
     added.lock().unwrap().push((104, "c", "INBOX"));
     *head.lock().unwrap() = 104;
     runner.check_mail().await;
-    assert_eq!(agent.told.lock().unwrap().len(), 1, "no second wake-up before round done");
-
-    runner.round_done().await;
+    // No waiting for `round done`: new mail wakes the agent again at once (a busy agent reads it on its next turn).
     assert_eq!(agent.told.lock().unwrap().len(), 2);
     assert!(agent.told.lock().unwrap()[1].1.starts_with("New mail: 1 Personal."));
+    runner.round_done().await;
+    assert_eq!(agent.told.lock().unwrap().len(), 2, "round done has nothing left to send");
 
     // A restart picks up from the saved history ID.
     drop(runner);

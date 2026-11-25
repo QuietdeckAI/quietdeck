@@ -23,7 +23,7 @@ const MAX_PAGES: usize = 10;
 pub struct MailState {
     /// The last history ID read, per account.
     pub history: BTreeMap<String, String>,
-    /// A wake-up went and the agent hasn't said `round done` yet.
+    /// Unused since wake-ups stopped waiting for `round done` (25 November); kept so older state files still load.
     pub waiting: bool,
     /// New messages since the last wake-up, per account. `None`: some, but the history ran out, so how many isn't
     /// known.
@@ -103,8 +103,7 @@ impl MailState {
             .unwrap_or_default();
         Some(format!(
             "The person is reading the Inbox, so only these get through now: {}. Handle just those (read the new mail \
-             with your usual tools, and `quietdeck messages --new` for chat messages).{wait} Then `quietdeck round \
-             done`.",
+             with your usual tools, and `quietdeck messages --new` for chat messages).{wait}",
             self.urgent.join("; ")
         ))
     }
@@ -148,7 +147,7 @@ impl MailState {
                  instructions). "
             ));
         }
-        text.push_str("Run your triage round, then `quietdeck round done` so the next wake-up can come.");
+        text.push_str("Run your triage round.");
         Some(text)
     }
 

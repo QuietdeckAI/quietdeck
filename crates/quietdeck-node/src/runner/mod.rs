@@ -714,9 +714,9 @@ impl Runner {
         let reading = self.reading.load(std::sync::atomic::Ordering::SeqCst)
             && !self.release.load(std::sync::atomic::Ordering::SeqCst);
         self.report_held(state, reading).await;
-        if state.waiting {
-            return;
-        }
+        // No waiting for `round done`: an agent that's busy reads the wake-up on its next turn, so every check with
+        // something new wakes it (Nathan, 25 November: "why would anything block a wake up ever? just send the
+        // message!"). Only the person reading the Inbox holds new items back, and only from the Inbox.
         if reading {
             // Only what the deck let through goes now; the rest waits for the person's idle moment.
             let Some(text) = state.urgent_text(&self.cfg) else { return };
@@ -726,7 +726,6 @@ impl Runner {
                         items = state.urgent.len(),
                         "woke the triage agent for what got through while the person reads"
                     );
-                    state.waiting = true;
                     state.woke_at = Some(jiff::Timestamp::now());
                     state.urgent.clear();
                 }
@@ -735,8 +734,7 @@ impl Runner {
             return;
         }
         let Some(mut text) = state.wakeup_text(&self.cfg).or_else(|| {
-            (!state.urgent.is_empty())
-                .then(|| "Run your triage round, then `quietdeck round done` so the next wake-up can come.".to_string())
+            (!state.urgent.is_empty()).then(|| "Run your triage round.".to_string())
         }) else {
             return;
         };
@@ -748,7 +746,6 @@ impl Runner {
         match self.agent.tell(DeliveryKind::Wakeup, text).await {
             Ok(()) => {
                 tracing::info!(%mail, %messages, "woke the triage agent");
-                state.waiting = true;
                 state.woke_at = Some(jiff::Timestamp::now());
                 state.clear_pending();
                 self.release.store(false, std::sync::atomic::Ordering::SeqCst);
