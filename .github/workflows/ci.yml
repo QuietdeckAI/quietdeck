@@ -8,9 +8,11 @@ on:
 permissions:
   contents: read
 
+# Pull requests cancel their older runs; main queues instead (one running, the newest push waiting), so a deploy is
+# never cut off halfway and runs finish in push order.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   rust:
@@ -61,8 +63,141 @@ jobs:
           path: web/test-results
           retention-days: 7
 
+  # The deck's image, with the commit and build time baked in (Settings' Release panel). Pushed to ghcr.io on main;
+  # pull requests only check that it builds.
   image:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    env:
+      IMAGE: ghcr.io/quietdeckai/quietdeck/deck
+      PUSH: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -f deploy/Dockerfile -t quietdeck .
+      - name: Image
+        run: |
+          short=${GITHUB_SHA:0:7}
+          docker build -f deploy/Dockerfile --build-arg QUIETDECK_COMMIT="$short" \
+            --build-arg QUIETDECK_BUILT_AT="$(date +%s)" -t "$IMAGE:$short" .
+      - name: The image names its commit
+        run: |
+          short=${GITHUB_SHA:0:7}
+          docker run -d --name deck --tmpfs /data:uid=65532 -e QUIETDECK_DEV_TRUST_LOCAL=1 \
+            -e QUIETDECK_PUBLIC_URL=http://localhost:18090 -p 127.0.0.1:18090:8080 "$IMAGE:$short"
+          for _ in $(seq 1 30); do curl -sf localhost:18090/healthz >/dev/null && break; sleep 1; done
+          commit=$(curl -sf localhost:18090/api/info | jq -r .commit)
+          docker rm -f deck >/dev/null
+          [ "$commit" = "$short" ] || { echo "The image says commit '$commit', not $short" >&2; exit 1; }
+      - name: Push
+        id: push
+        if: env.PUSH == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          short=${GITHUB_SHA:0:7}
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE:$short"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$short" | cut -d@ -f2)
+          [[ "$digest" == sha256:* ]] || { echo "No digest for $IMAGE:$short" >&2; exit 1; }
+          echo "digest=$digest" >>"$GITHUB_OUTPUT"
+          echo "Pushed $IMAGE:$short@$digest"
+
+  # Deploys the deck: commits the image's digest to the homeserver repo's k3s/apps/quietdeck/values.yaml, which Argo CD
+  # rolls out (a pre-sync Job backs up the database first). Modelled on Talira's deploy job. Production only moves
+  # forward: an older run finishing late, or a re-run of an old commit, never puts an older image back. Roll back by
+  # reverting the deploy commit in the homeserver repo. deploy/README.md, "Continuous deployment".
+  deploy:
+    needs: [rust, web, image]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DIGEST: ${{ needs.image.outputs.digest }}
+      VALUES: infra/k3s/apps/quietdeck/values.yaml
+      SET_UP: ${{ secrets.INFRA_DEPLOY_KEY != '' }}
+    steps:
+      # Until the deploy key is in the repo's secrets, deploys are by hand (scripts/build-images).
+      - name: Continuous deployment is set up
+        if: env.SET_UP != 'true'
+        run: 'echo "::warning::INFRA_DEPLOY_KEY is not set, so the deck was not deployed"'
+      - uses: actions/checkout@v4
+        if: env.SET_UP == 'true'
+        with:
+          fetch-depth: 0
+      # A write deploy key on the homeserver repo, used for this push only; it also signs the commit.
+      - name: The homeserver repo
+        if: env.SET_UP == 'true'
+        env:
+          INFRA_DEPLOY_KEY: ${{ secrets.INFRA_DEPLOY_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$INFRA_DEPLOY_KEY" >~/.ssh/infra
+          chmod 600 ~/.ssh/infra
+          # GitHub's published host key (docs.github.com, "GitHub's SSH key fingerprints").
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' >~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/infra -o IdentitiesOnly=yes"
+          git clone -q --depth 50 git@github.com:ndbroadbent/homeserver-terraform-ansible.git infra
+          git -C infra config user.name 'Quietdeck CI'
+          git -C infra config user.email 'ci@quietdeck.invalid'
+          git -C infra config gpg.format ssh
+          git -C infra config user.signingkey "$HOME/.ssh/infra"
+          git -C infra config commit.gpgsign true
+      - name: Newer than production, and migrations the running deck survives
+        if: env.SET_UP == 'true'
+        id: order
+        run: |
+          deployed=$(sed -n 's/^ *# quietdeck commit: \([0-9a-f]\{40\}\)$/\1/p' "$VALUES")
+          [ -n "$deployed" ] || { echo "$VALUES has no '# quietdeck commit:' line" >&2; exit 1; }
+          git cat-file -e "$deployed^{commit}" || { echo "Production's commit $deployed isn't in this repository" >&2; exit 1; }
+          if [ "$deployed" = "$GITHUB_SHA" ] || ! git merge-base --is-ancestor "$deployed" "$GITHUB_SHA"; then
+            echo "::notice::Not deployed: production runs $deployed, which this commit doesn't come after"
+            echo "newer=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # During a rolling deploy the old deck keeps serving on the migrated database for a few seconds: a migration
+          # may only add. "[allow-destructive-migration]" in the commit message overrides, when the running deck no
+          # longer uses what it removes.
+          destructive=$(git diff --name-only --diff-filter=AM -z "$deployed" "$GITHUB_SHA" -- crates/quietdeck-server/migrations |
+            xargs -0 -r grep -l -i -E '\b(DROP|RENAME)\b' || true)
+          if [ -n "$destructive" ] &&
+            ! git log --format=%B "$deployed..$GITHUB_SHA" | grep -q '\[allow-destructive-migration\]'; then
+            echo "$destructive"
+            echo "::error::A migration drops or renames something the running deck may still use: split it (add now, remove in a later deploy)"
+            exit 1
+          fi
+          echo "newer=true" >>"$GITHUB_OUTPUT"
+      - name: Commit the digest
+        if: steps.order.outputs.newer == 'true'
+        run: |
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/infra -o IdentitiesOnly=yes"
+          [[ "$DIGEST" == sha256:* ]] || { echo "No image to deploy: the image job pushed no digest" >&2; exit 1; }
+          short=${GITHUB_SHA:0:7}
+          subject=$(git log -1 --format=%s "$GITHUB_SHA" | cut -c1-120)
+          for _ in 1 2 3 4 5; do
+            # Again on the repo's latest main: another run may have deployed a newer commit meanwhile.
+            deployed=$(sed -n 's/^ *# quietdeck commit: \([0-9a-f]\{40\}\)$/\1/p' "$VALUES")
+            if [ "$deployed" = "$GITHUB_SHA" ] || ! git merge-base --is-ancestor "$deployed" "$GITHUB_SHA"; then
+              echo "::notice::Not deployed: production moved to $deployed meanwhile"
+              exit 0
+            fi
+            # The marker line, then the tag on the line after it.
+            sed -i -e "/^ *# quietdeck commit: /{s/[0-9a-f]\{40\}$/$GITHUB_SHA/;n;s/^\( *tag: \).*/\1'$short@$DIGEST'/}" "$VALUES"
+            if ! grep -q "# quietdeck commit: $GITHUB_SHA$" "$VALUES" || ! grep -q "tag: '$short@$DIGEST'$" "$VALUES"; then
+              echo "$VALUES doesn't have the lines this job rewrites" >&2
+              exit 1
+            fi
+            git -C infra commit -q -am "Quietdeck $short to production: $subject" \
+              -m "QuietdeckAI/quietdeck@$GITHUB_SHA ($DIGEST), deployed by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. Argo CD backs up the database (PreSync), rolls the deck and checks /healthz (PostSync). Roll back by reverting this commit."
+            if git -C infra push -q origin HEAD:main; then
+              echo "Deployed QuietdeckAI/quietdeck@$GITHUB_SHA as $DIGEST"
+              exit 0
+            fi
+            # Someone pushed to the repo meanwhile: take theirs and rewrite the two lines again.
+            git -C infra fetch -q origin main
+            git -C infra reset -q --hard origin/main
+          done
+          echo "Couldn't push to the homeserver repo after 5 attempts" >&2
+          exit 1

@@ -43,7 +43,11 @@ Mounted at `/data`, ReadWriteOnce, owned by gid 65532 (`fsGroup: 65532`).
 WAL mode, the backup process needs **write** access to `/data` (SQLite readers write to the `-shm` file): mount the
 volume read-write and run as gid 65532. On a ReadWriteOnce volume, the backup pod must land on the deck's node.
 
-**One replica only**, with `strategy: Recreate`: two decks on one SQLite file would fight over it.
+**One replica**, rolled with `RollingUpdate` (`maxSurge: 1`, `maxUnavailable: 0`) and a readiness probe on
+`/healthz`: the new deck starts on the same node (the ReadWriteOnce volume keeps it there), takes traffic once it's
+ready, and the old one then closes its node links and event streams and stops. The two share the SQLite file for a
+few seconds, which SQLite's locking allows, so every migration only adds (CI refuses one that drops or renames,
+below). Never run two replicas.
 
 ### Environment
 
@@ -88,6 +92,35 @@ authenticate with their own tokens, never the cookie.
 ### Resources
 
 A request of 50m CPU and 64 MiB, and a limit of 512 MiB, is plenty for one user.
+
+### Continuous deployment
+
+A push to `main` deploys the deck once CI passes, with no hand-off (`.github/workflows/ci.yml`, modelled on Talira's):
+
+1. The `image` job builds `deploy/Dockerfile` with the commit and build time baked in (`QUIETDECK_COMMIT`,
+   `QUIETDECK_BUILT_AT`: Settings' Release panel), checks the image reports its commit, and pushes
+   `ghcr.io/quietdeckai/quietdeck/deck:<short SHA>`.
+2. The `deploy` job, once `rust`, `web` and `image` pass, commits two lines of the host's values file (for Nathan's
+   cluster, `k3s/apps/quietdeck/values.yaml` in `ndbroadbent/homeserver-terraform-ansible`), with a write deploy key
+   (the Actions secret `INFRA_DEPLOY_KEY`; it signs the commit too):
+
+   ```yaml
+           image:
+             repository: ghcr.io/quietdeckai/quietdeck/deck
+             # quietdeck commit: <full SHA>
+             tag: '<short SHA>@sha256:<digest>'
+   ```
+
+   It only moves production forward: a commit that doesn't come after the deployed one (an older run finishing late,
+   a re-run) is skipped, checked again before each push, and runs on `main` queue rather than overlap. It refuses a
+   migration that drops or renames (the old deck still uses the database during the roll) unless a commit message
+   since the deployed one says `[allow-destructive-migration]`.
+3. Argo CD syncs it: a PreSync Job backs up the database (an online `VACUUM INTO`, as in "Data volume"), the
+   Deployment rolls, and a PostSync Job checks `/healthz`. A failed Job fails the sync and alerts.
+
+Roll back by reverting the deploy commit in the host's repository. Without `INFRA_DEPLOY_KEY` the job only warns, and
+deploys are by hand: `scripts/build-images --wait <commit>` builds the images on docspring-dev for the host to pin.
+The node binaries (`node-bin`) still come from `scripts/build-images`.
 
 ## A node
 

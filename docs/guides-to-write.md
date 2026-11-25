@@ -32,6 +32,11 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
 - **Builds off the laptop.** Heavy Rust builds and tests on a build server (`scripts/on-dev`), heavy-build leases, why
   a laptop's disk fills. Now: `AGENTS.md`, `docs/leases.md`.
 
+- **Continuous deployment without races.** CI builds the image and commits its digest to the infra repo with a
+  deploy key; production only moves forward (an ancestry check before each push), main's runs queue, migrations may
+  only add during a rolling deploy, Argo CD backs up before and checks after. Why not an image updater (build order
+  isn't commit order). Now: `deploy/README.md` "Continuous deployment", Talira's `internal-docs/deploying.md`.
+
 ## The triage agent
 
 - **The triage agent on its own Unix user and node.** It reads untrusted mail with permissions skipped, so no
