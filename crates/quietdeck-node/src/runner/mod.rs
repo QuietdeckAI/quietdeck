@@ -143,16 +143,14 @@ pub struct BatchOutcome {
 /// A thread's message IDs and labels, for the freshness checks.
 #[derive(Debug, Clone, Default)]
 struct ThreadMeta {
-    /// Oldest first, drafts left out.
-    messages: Vec<(String, Vec<String>)>,
+    /// Oldest first, drafts left out: each message's ID, labels, and when Gmail received it (`internalDate`, in
+    /// milliseconds) when the thread tool returns it.
+    messages: Vec<(String, Vec<String>, Option<i64>)>,
 }
 
 impl ThreadMeta {
-    fn newest(&self) -> Option<&str> {
-        self.messages.last().map(|(id, _)| id.as_str())
-    }
     fn any_label(&self, label: &str) -> bool {
-        self.messages.iter().any(|(_, l)| l.iter().any(|x| x == label))
+        self.messages.iter().any(|(_, l, _)| l.iter().any(|x| x == label))
     }
 }
 
@@ -163,6 +161,33 @@ enum Sorted {
 
 fn handoff(reason: impl Into<String>) -> Sorted {
     Sorted::Handoff { reason: reason.into(), no_handler: None }
+}
+
+/// Why a thread has a message the card wasn't prepared on, or None when it hasn't. The card's own thread has the
+/// message it names (`last_message_ref`) as its newest. Any other thread the card acts on (a group of related emails)
+/// is checked by time: its newest message arrived before the card was prepared, or is one the card lists in `refs`.
+fn newer_message(r: &Released, account: &str, thread_id: &str, meta: &ThreadMeta) -> Option<String> {
+    let card = &r.card.input;
+    let when = || r.card.prepared_at.to_zoned_datetime(jiff::tz::TimeZone::system()).strftime("%H:%M").to_string();
+    let newest = meta.messages.last()?;
+    if account == card.account && thread_id == card.thread_key {
+        let Some(prepared_on) = card.last_message_ref.as_deref() else {
+            return Some("the card names no message, so the thread can't be checked for newer ones".into());
+        };
+        return (newest.0 != prepared_on).then(|| format!("newer message in thread since {}", when()));
+    }
+    if card.refs.iter().any(|r| r == &newest.0) {
+        return None;
+    }
+    match newest.2 {
+        Some(ms) if ms > r.card.prepared_at.as_millisecond() => {
+            Some(format!("newer message in thread {thread_id} since {}", when()))
+        }
+        Some(_) => None,
+        None => Some(format!(
+            "couldn't tell whether thread {thread_id} has a newer message: the thread tool returns no internalDate"
+        )),
+    }
 }
 
 fn thread_of(a: &Action) -> Option<(&str, &str)> {
@@ -299,7 +324,12 @@ impl Runner {
                             .and_then(Value::as_array)
                             .map(|l| l.iter().filter_map(Value::as_str).map(str::to_string).collect())
                             .unwrap_or_default();
-                        (!labels.iter().any(|l| l == "DRAFT")).then_some((id, labels))
+                        let received = match m.get("internalDate") {
+                            Some(Value::String(s)) => s.parse::<i64>().ok(),
+                            Some(Value::Number(n)) => n.as_i64(),
+                            _ => None,
+                        };
+                        (!labels.iter().any(|l| l == "DRAFT")).then_some((id, labels, received))
                     })
                     .collect()
             })
@@ -379,15 +409,11 @@ impl Runner {
                     }
                 }
                 let meta = &threads[&key];
-                let Some(prepared_on) = r.card.input.last_message_ref.as_deref() else {
-                    return handoff("the card names no message, so the thread can't be checked for newer ones");
-                };
                 if meta.messages.is_empty() {
                     return handoff("the thread no longer exists");
                 }
-                if meta.newest() != Some(prepared_on) {
-                    let when = r.card.prepared_at.to_zoned_datetime(jiff::tz::TimeZone::system()).strftime("%H:%M");
-                    return handoff(format!("newer message in thread since {when}"));
+                if let Some(reason) = newer_message(r, account, thread_id, meta) {
+                    return handoff(reason);
                 }
             }
             if let Action::Draft(c) = a {

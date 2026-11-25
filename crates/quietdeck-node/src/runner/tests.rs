@@ -81,18 +81,23 @@ const SEND_AS: &str = "tools.google.api.gmail.users.gmailUsersSettingsSendAsList
 const PROFILE: &str = "tools.google.api.gmail.users.gmailUsersGetProfile";
 const HISTORY: &str = "tools.google.api.gmail.users.gmailUsersHistoryList";
 
-/// Threads `t_old` (newest message m2, a newer one than the card's m1) and anything else (newest m1, in the inbox).
+/// Cards are prepared at 09:12 UTC on 23 November (1795425120000 ms). Threads: `t_old` (newest message m2, a newer one
+/// than the card's m1, arrived after it), `t_undated` (Gmail gave no dates), and anything else (newest m1, in the
+/// inbox, from before the card).
+const BEFORE_CARD: i64 = 1795421520000;
+const AFTER_CARD: i64 = 1795425720000;
 fn gmail(path: &str, input: &Value) -> Result<Value, String> {
     match path {
         THREAD => {
             let id = input.pointer("/input/path/id").and_then(Value::as_str).unwrap_or_default();
-            if id == "t_old" {
-                Ok(
-                    json!({"id": id, "messages": [{"id": "m1", "labelIds": ["INBOX"]}, {"id": "m2", "labelIds": ["INBOX"]}]}),
-                )
-            } else {
-                Ok(json!({"id": id, "messages": [{"id": "m1", "labelIds": ["INBOX", "UNREAD"]},
-                    {"id": "d1", "labelIds": ["DRAFT"]}]}))
+            match id {
+                "t_old" => Ok(json!({"id": id, "messages": [
+                    {"id": "m1", "labelIds": ["INBOX"], "internalDate": BEFORE_CARD.to_string()},
+                    {"id": "m2", "labelIds": ["INBOX"], "internalDate": AFTER_CARD.to_string()}]})),
+                "t_undated" => Ok(json!({"id": id, "messages": [{"id": "u1", "labelIds": ["INBOX"]}]})),
+                _ => Ok(json!({"id": id, "messages": [
+                    {"id": "m1", "labelIds": ["INBOX", "UNREAD"], "internalDate": BEFORE_CARD},
+                    {"id": "d1", "labelIds": ["DRAFT"]}]})),
             }
         }
         SEND_AS => Ok(json!({"sendAs": [{"sendAsEmail": "me@example.com"}, {"sendAsEmail": "Alias@Example.com"}]})),
@@ -336,7 +341,7 @@ async fn a_mixed_batch_is_claimed_and_handed_over_with_reasons() {
             released(3, json!([reply]), json!({})),
             released(4, json!([archive("t4")]), json!({"kind": "adjust", "text": "forward it to api instead"})),
             released(5, json!([archive("t5")]), json!({"needs_agent": true})),
-            released(6, json!([archive("t_old")]), json!({})),
+            released(6, json!([archive("t_old")]), json!({"thread_key": "t_old"})),
             released(7, json!([watch]), json!({})),
             released(8, json!([story]), json!({})),
         ],
@@ -414,6 +419,35 @@ async fn forged_unreleased_and_unknown_items_never_reach_executor() {
     let report = h.told(is_report);
     assert_eq!(report.len(), 1);
     assert!(report[0].contains("Archive of 'Forged' (Personal)"), "{}", report[0]);
+}
+
+#[tokio::test]
+async fn a_card_for_several_emails_checks_each_by_when_its_newest_message_arrived() {
+    let when = {
+        let prepared: jiff::Timestamp = "2026-11-23T09:12:00Z".parse().unwrap();
+        prepared.to_zoned_datetime(jiff::tz::TimeZone::system()).strftime("%H:%M").to_string()
+    };
+    let h = harness(
+        vec![
+            // Its own thread (newest m1, as the card says) and two more from before it: carried out.
+            released(1, json!([archive("t1"), archive("t_a"), archive("t_b")]), json!({})),
+            // Another thread got a message after the card was prepared: the agent looks again.
+            released(2, json!([archive("t2"), archive("t_old")]), json!({})),
+            // Gmail gave no dates and the card doesn't list the message: can't tell, so the agent checks.
+            released(3, json!([archive("t3"), archive("t_undated")]), json!({})),
+            // ...unless the card lists that message in its refs.
+            released(4, json!([archive("t4"), archive("t_undated")]), json!({"refs": ["u1"]})),
+        ],
+        "",
+    )
+    .await;
+    let out = h.runner.process().await.unwrap();
+    assert_eq!(out.claimed, vec![101, 104]);
+    assert_eq!(h.reason(102), format!("newer message in thread t_old since {when}"));
+    assert_eq!(
+        h.reason(103),
+        "couldn't tell whether thread t_undated has a newer message: the thread tool returns no internalDate"
+    );
 }
 
 #[tokio::test]

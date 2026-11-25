@@ -72,9 +72,11 @@ runner:
     drafts:
       path: tools.google.api.gmail.users.gmailUsersDraftsList
       input: { accountId: "${account.executor_account}", input: { path: { userId: me }, query: { maxResults: 500, fields: "drafts(id,message(id,threadId))" } } }
+  # Each thread an approved action touches, for the freshness check: its messages' IDs, labels and internalDate (a
+  # card covering several emails checks the others by when their newest message arrived).
   thread:
     path: tools.google.api.gmail.users.gmailUsersThreadsGet
-    input: { accountId: "${account.executor_account}", input: { path: { userId: me, id: "${action.thread_id}" }, query: { format: minimal, fields: "id,messages(id,labelIds)" } } }
+    input: { accountId: "${account.executor_account}", input: { path: { userId: me, id: "${action.thread_id}" }, query: { format: minimal, fields: "id,messages(id,labelIds,internalDate)" } } }
   send_as:
     path: tools.google.api.gmail.users.gmailUsersSettingsSendAsList
     input: { accountId: "${account.executor_account}", input: { path: { userId: me }, query: { fields: "sendAs(sendAsEmail)" } } }
