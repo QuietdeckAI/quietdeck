@@ -224,7 +224,10 @@ function ReportScreen({
   };
   // Nothing left to act on: every card the defaults name is finished, or there are no defaults or questions at all
   // (whatever text the agent left).
-  const allDone = named.every(finished) && !/<Ask\b/.test(report.markdown) && report.cards_not_in_report.length === 0;
+  // Or the agent said so (`quietdeck report done`), whatever text it left.
+  const allDone =
+    report.finished ||
+    (named.every(finished) && !/<Ask\b/.test(report.markdown) && report.cards_not_in_report.length === 0);
   // "rolling" slides and fades the parts away; "gone" then removes them, so the space closes. A report that's already
   // done when the page opens (or when a new one arrives done) shows "All done." at once, without the roll.
   const [rolled, setRolled] = useState<"no" | "rolling" | "gone">(() => (allDone ? "gone" : "no"));

@@ -52,13 +52,16 @@ runner:
   mail_watch:
     every: 30s
     profile: { path: tools.google.api.gmail.users.gmailUsersGetProfile, input: { accountId: "${account.executor_account}", input: { path: { userId: me } } } }
+    # New mail, and mail the person archives or deletes in Gmail themselves (labelRemoved, messageDeleted): the
+    # runner checks each such thread with `thread` below, and the deck resolves the cards whose threads have all left
+    # the inbox.
     history:
       path: tools.google.api.gmail.users.gmailUsersHistoryList
       input:
         accountId: "${account.executor_account}"
         input:
           path: { userId: me }
-          query: { startHistoryId: "${history_id}", pageToken: "${page_token}", historyTypes: [messageAdded], fields: "history(messagesAdded(message(id,threadId,labelIds))),historyId,nextPageToken" }
+          query: { startHistoryId: "${history_id}", pageToken: "${page_token}", historyTypes: [messageAdded, labelRemoved, messageDeleted], fields: "history(messagesAdded(message(id,threadId,labelIds)),labelsRemoved(message(id,threadId),labelIds),messagesDeleted(message(id,threadId))),historyId,nextPageToken" }
     # Each new message's From, To, Subject and snippet (never its body), for "while I'm reading" rules; a message
     # that's already gone doesn't wake the agent. Optional.
     message:

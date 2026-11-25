@@ -192,6 +192,9 @@ async fn answer_inner(state: &AppState, node: &str, request: NodeRequest) -> App
             crate::mail::drafts(state, &account, &drafts).await?;
             Reply::ok(&())
         }
+        NodeRequest::ThreadsLeftInbox { left, back } => {
+            Reply::ok(&crate::mail::threads_left(state, &left, &back).await?)
+        }
         NodeRequest::RunnerHeld { summary, count } => {
             crate::reading::held(state, node, summary, count).await?;
             Reply::ok(&())

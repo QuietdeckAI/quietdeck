@@ -139,6 +139,14 @@ pub enum NodeRequest {
     MailSent { items: Vec<crate::mail::MailItem> },
     /// The runner: every draft on one account now, replacing what the deck had, for the Drafts tab. Answers `()`.
     MailDrafts { account: String, drafts: Vec<crate::mail::MailItem> },
+    /// The runner: threads that left the inbox (the person archived or deleted them in Gmail, every message checked)
+    /// and threads that came back (new mail). The deck resolves each open card whose threads have all left. Answers
+    /// `Vec<LeftCard>`, the cards it resolved.
+    ThreadsLeftInbox {
+        left: Vec<crate::mail::LeftThread>,
+        #[serde(default)]
+        back: Vec<crate::mail::LeftThread>,
+    },
 }
 
 /// A decision the runner hands to the agent, and why.

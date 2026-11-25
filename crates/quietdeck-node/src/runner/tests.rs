@@ -142,6 +142,8 @@ struct FakeDeck {
     /// While the person reads: subjects the deck lets through, with why. Everything else is held.
     lets: StdMutex<HashMap<String, String>>,
     held: StdMutex<Vec<(Option<String>, u64)>>,
+    /// Threads the runner said left the inbox; the deck "resolves" a card for each.
+    left: StdMutex<Vec<quietdeck_types::mail::LeftThread>>,
 }
 
 #[async_trait]
@@ -159,6 +161,21 @@ impl DeckApi for FakeDeck {
     async fn held(&self, summary: Option<String>, count: u64) -> Result<(), String> {
         self.held.lock().unwrap().push((summary, count));
         Ok(())
+    }
+    async fn threads_left(
+        &self,
+        left: Vec<quietdeck_types::mail::LeftThread>,
+        _back: Vec<quietdeck_types::mail::LeftThread>,
+    ) -> Result<Vec<quietdeck_types::mail::LeftCard>, String> {
+        self.left.lock().unwrap().extend(left.clone());
+        Ok(left
+            .iter()
+            .enumerate()
+            .map(|(i, t)| quietdeck_types::mail::LeftCard {
+                id: 10 + i as i64,
+                subject: format!("About {}", t.thread_id),
+            })
+            .collect())
     }
     async fn take(&self) -> Result<Vec<Released>, String> {
         Ok(self.released.lock().unwrap().clone())
@@ -606,6 +623,44 @@ async fn a_wakeup_for_an_agent_thats_offline_waits_for_the_next_check() {
     let told = agent.told.lock().unwrap().clone();
     assert_eq!(told.len(), 1);
     assert!(told[0].1.starts_with("New mail: 1 Personal."));
+}
+
+#[tokio::test]
+async fn threads_the_person_archived_in_gmail_go_to_the_deck_and_the_agent_hears() {
+    // Since history 100: the Inbox label came off a message in ta (its whole thread is out now) and one in tb (another
+    // tb message is still in the inbox), and tc was deleted.
+    let script: Script = Arc::new(|path: &str, input: &Value| match path {
+        PROFILE => Ok(json!({"historyId": "100"})),
+        HISTORY => Ok(json!({"historyId": "101", "history": [
+            {"labelsRemoved": [{"message": {"id": "a1", "threadId": "ta", "labelIds": []}, "labelIds": ["INBOX"]}]},
+            {"labelsRemoved": [{"message": {"id": "b1", "threadId": "tb", "labelIds": []}, "labelIds": ["INBOX"]}]},
+            {"labelsRemoved": [{"message": {"id": "x1", "threadId": "tx", "labelIds": ["INBOX"]}, "labelIds": ["UNREAD"]}]},
+            {"messagesDeleted": [{"message": {"id": "c1", "threadId": "tc"}}]}
+        ]})),
+        THREAD => match input.pointer("/input/path/id").and_then(Value::as_str).unwrap_or_default() {
+            "ta" => Ok(json!({"messages": [{"id": "a0", "labelIds": ["SENT"]}, {"id": "a1", "labelIds": []}]})),
+            "tb" => Ok(json!({"messages": [{"id": "b0", "labelIds": ["INBOX"]}, {"id": "b1", "labelIds": []}]})),
+            "tc" => Err("HTTP 404 Not Found".into()),
+            other => panic!("the runner checked thread {other}: only threads that lost the Inbox label"),
+        },
+        other => panic!("unexpected tool {other}"),
+    });
+    let (url, _) = executor(script).await;
+    let dir = tempfile::tempdir().unwrap();
+    let agent = Arc::new(FakeAgent::default());
+    let deck = Arc::new(FakeDeck::default());
+    let cfg = config(&url, "");
+    let tools = ConfiguredTools::new(Some((cfg.executor.clone().unwrap(), "t".into())));
+    let runner = Runner::new(cfg, deck.clone(), Arc::new(tools), agent.clone(), dir.path().into());
+    runner.check_mail().await; // the first check starts the watch at 100
+    runner.check_mail().await;
+    let left: Vec<String> = deck.left.lock().unwrap().iter().map(|t| t.thread_id.clone()).collect();
+    assert_eq!(left, ["ta", "tc"]);
+    let told = agent.told.lock().unwrap().clone();
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert!(matches!(told[0].0, DeliveryKind::RunnerReport));
+    assert!(told[0].1.starts_with("The person archived emails in Gmail themselves"), "{}", told[0].1);
+    assert!(told[0].1.contains("c_10 'About ta'") && told[0].1.contains("quietdeck report done"), "{}", told[0].1);
 }
 
 /// Against a real Executor: `QD_EXECUTOR_URL`, `QD_EXECUTOR_TOKEN` and `QD_EXECUTOR_ACCOUNT` (an Executor Google

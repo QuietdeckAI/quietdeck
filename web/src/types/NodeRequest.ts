@@ -4,6 +4,7 @@ import type { DeliveryKind } from "./DeliveryKind";
 import type { Handoff } from "./Handoff";
 import type { IncomingMessage } from "./IncomingMessage";
 import type { ItemFacts } from "./ItemFacts";
+import type { LeftThread } from "./LeftThread";
 import type { MailItem } from "./MailItem";
 import type { SessionStart } from "./SessionStart";
 import type { TokenSession } from "./TokenSession";
@@ -11,4 +12,4 @@ import type { TokenSession } from "./TokenSession";
 /**
  * What the node asks the deck.
  */
-export type NodeRequest = { "op": "mint_token", session: TokenSession | null, } | { "op": "runner_take" } | { "op": "runner_sort", claims: Array<number>, handoffs: Array<Handoff>, } | { "op": "action_start", action_id: number, } | { "op": "actions_report", reports: Array<ActionReport>, } | { "op": "relay", to: string, kind: DeliveryKind, body: string, } | { "op": "start_session", spec: SessionStart, } | { "op": "resume_session", node: string, session_id: string, tab: string, cwd: string, } | { "op": "messages_ingest", messages: Array<IncomingMessage>, } | { "op": "hold_check", items: Array<ItemFacts>, } | { "op": "runner_held", summary: string | null, count: number, } | { "op": "mail_sent", items: Array<MailItem>, } | { "op": "mail_drafts", account: string, drafts: Array<MailItem>, };
+export type NodeRequest = { "op": "mint_token", session: TokenSession | null, } | { "op": "runner_take" } | { "op": "runner_sort", claims: Array<number>, handoffs: Array<Handoff>, } | { "op": "action_start", action_id: number, } | { "op": "actions_report", reports: Array<ActionReport>, } | { "op": "relay", to: string, kind: DeliveryKind, body: string, } | { "op": "start_session", spec: SessionStart, } | { "op": "resume_session", node: string, session_id: string, tab: string, cwd: string, } | { "op": "messages_ingest", messages: Array<IncomingMessage>, } | { "op": "hold_check", items: Array<ItemFacts>, } | { "op": "runner_held", summary: string | null, count: number, } | { "op": "mail_sent", items: Array<MailItem>, } | { "op": "mail_drafts", account: string, drafts: Array<MailItem>, } | { "op": "threads_left_inbox", left: Array<LeftThread>, back: Array<LeftThread>, };

@@ -49,6 +49,14 @@ pub trait DeckApi: Send + Sync {
     async fn mail_drafts(&self, _account: String, _drafts: Vec<quietdeck_types::mail::MailItem>) -> Result<(), String> {
         Ok(())
     }
+    /// Threads that left the inbox and threads that came back; the deck answers with the cards it resolved.
+    async fn threads_left(
+        &self,
+        _left: Vec<quietdeck_types::mail::LeftThread>,
+        _back: Vec<quietdeck_types::mail::LeftThread>,
+    ) -> Result<Vec<quietdeck_types::mail::LeftCard>, String> {
+        Ok(vec![])
+    }
 }
 
 #[async_trait]
@@ -106,6 +114,13 @@ impl DeckApi for LinkDeck {
     }
     async fn mail_drafts(&self, account: String, drafts: Vec<quietdeck_types::mail::MailItem>) -> Result<(), String> {
         self.ask(NodeRequest::MailDrafts { account, drafts }, ASK).await
+    }
+    async fn threads_left(
+        &self,
+        left: Vec<quietdeck_types::mail::LeftThread>,
+        back: Vec<quietdeck_types::mail::LeftThread>,
+    ) -> Result<Vec<quietdeck_types::mail::LeftCard>, String> {
+        self.ask(NodeRequest::ThreadsLeftInbox { left, back }, ASK).await
     }
 }
 

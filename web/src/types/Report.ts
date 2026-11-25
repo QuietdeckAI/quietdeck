@@ -20,4 +20,9 @@ cards_not_in_report: Array<number>,
 /**
  * The latest changes, newest last (at most 20): the Inbox toasts new ones.
  */
-changes: Array<ReportChange>, };
+changes: Array<ReportChange>, 
+/**
+ * The agent said nothing on it waits for the person any more (`quietdeck report done`): the Inbox shows "All
+ * done." until the agent edits it or starts the next one.
+ */
+finished: boolean, };

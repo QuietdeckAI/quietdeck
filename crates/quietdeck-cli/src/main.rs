@@ -184,6 +184,10 @@ enum ReportCommand {
         #[arg(long)]
         markdown: bool,
     },
+    /// Mark the report done: nothing on it waits for the person any more (they archived the last emails themselves,
+    /// or everything is handled), so the Inbox says "All done." until you edit it or start the next report. Refused
+    /// while a card still waits.
+    Done,
     /// Replace the report's text with a file's (`-` reads stdin). Edit the text `report show --markdown` printed and
     /// pass its version as --base, so you never overwrite an edit you didn't see. It lists any open card that no <Default>
     /// names.
@@ -777,6 +781,10 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                         return Ok(());
                     }
                     print::out(json, &r, |r| print::report(r.as_ref()))
+                }
+                ReportCommand::Done => {
+                    let r: serde_json::Value = c.post("/api/report/done", &serde_json::json!({})).await?;
+                    print::out(json, &r, |_| "Report done: the Inbox says \"All done.\"".to_string())
                 }
                 ReportCommand::Set { file, base, new, change } => {
                     let req = quietdeck_types::report::ReportSet { markdown: read_file_arg(&file)?, base, new, change };

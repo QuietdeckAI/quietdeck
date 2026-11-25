@@ -206,15 +206,21 @@ pub struct NewMail {
     pub labels: Vec<String>,
 }
 
+/// What one check found.
+#[derive(Debug, Default)]
+pub struct Checked {
+    pub new: Vec<NewMail>,
+    /// Threads with a message that left the inbox (archived) or was deleted, as (account, thread ID): candidates only,
+    /// since the rest of the thread may still be there.
+    pub left: Vec<(String, String)>,
+}
+
 /// One check of every account. Updates the history IDs in `state` and returns the new messages, which the caller
-/// counts (or holds). A history too old to follow counts as "some" in `state` itself.
-pub async fn check(
-    cfg: &RunnerConfig,
-    watch: &MailWatchConfig,
-    tools: &dyn Tools,
-    state: &mut MailState,
-) -> Vec<NewMail> {
+/// counts (or holds), and the threads that may have left the inbox. A history too old to follow counts as "some" in
+/// `state` itself.
+pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tools, state: &mut MailState) -> Checked {
     let mut found = vec![];
+    let mut left_found: Vec<(String, String)> = vec![];
     state.checked_at = Some(Timestamp::now());
     for (id, account) in &cfg.accounts {
         let acct = json!({"id": id, "address": account.address, "label": cfg.account_label(id)});
@@ -234,6 +240,7 @@ pub async fn check(
             continue;
         };
         let mut seen: Vec<NewMail> = vec![];
+        let mut left: Vec<(String, String)> = vec![];
         let mut page: Option<String> = None;
         let mut latest = start.clone();
         let mut failed = false;
@@ -250,6 +257,23 @@ pub async fn check(
             match tools.call(&watch.history, input).await {
                 Ok(v) => {
                     for h in v.get("history").and_then(Value::as_array).into_iter().flatten() {
+                        // Archived (the Inbox label taken off) or deleted: the thread may have left the inbox. Needs
+                        // `labelRemoved` and `messageDeleted` in the history tool's historyTypes.
+                        let removed =
+                            h.get("labelsRemoved").and_then(Value::as_array).into_iter().flatten().filter(|r| {
+                                r.get("labelIds")
+                                    .and_then(Value::as_array)
+                                    .is_some_and(|l| l.iter().any(|x| x.as_str() == Some("INBOX")))
+                            });
+                        let deleted = h.get("messagesDeleted").and_then(Value::as_array).into_iter().flatten();
+                        for r in removed.chain(deleted) {
+                            if let Some(t) = r.pointer("/message/threadId").and_then(Value::as_str) {
+                                let pair = (id.clone(), t.to_string());
+                                if !left.contains(&pair) {
+                                    left.push(pair);
+                                }
+                            }
+                        }
                         for added in h.get("messagesAdded").and_then(Value::as_array).into_iter().flatten() {
                             let msg = &added["message"];
                             let labels: Vec<&str> = msg
@@ -306,8 +330,9 @@ pub async fn check(
         }
         state.history.insert(id.clone(), latest);
         found.extend(seen);
+        left_found.extend(left);
     }
-    found
+    Checked { new: found, left: left_found }
 }
 
 async fn profile(watch: &MailWatchConfig, tools: &dyn Tools, acct: &Value) -> Result<String, String> {

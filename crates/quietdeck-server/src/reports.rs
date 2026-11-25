@@ -26,6 +26,7 @@ struct ReportRow {
     posted_session_id: Option<String>,
     created_at: i64,
     updated_at: i64,
+    finished_at: Option<i64>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -75,8 +76,8 @@ fn kind_str(k: AnswerKind) -> &'static str {
 
 async fn open_row(db: &Db) -> AppResult<Option<ReportRow>> {
     Ok(sqlx::query_as(
-        "SELECT id, version, markdown, posted_node, posted_tab, posted_session_id, created_at, updated_at \
-         FROM reports WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1",
+        "SELECT id, version, markdown, posted_node, posted_tab, posted_session_id, created_at, updated_at, \
+         finished_at FROM reports WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1",
     )
     .fetch_optional(db)
     .await?)
@@ -109,6 +110,7 @@ pub async fn current(db: &Db) -> AppResult<Option<Report>> {
         answers: answers.into_iter().map(ReportAnswer::from).collect(),
         cards_not_in_report,
         changes: changes(db, r.id).await?,
+        finished: r.finished_at.is_some(),
     }))
 }
 
@@ -160,7 +162,7 @@ pub async fn set(state: &AppState, me: &SessionRef, req: ReportSet) -> AppResult
             }
             sqlx::query(
                 "UPDATE reports SET markdown = ?, version = version + 1, updated_at = ?, posted_node = ?, \
-                 posted_tab = ?, posted_session_id = ? WHERE id = ?",
+                 posted_tab = ?, posted_session_id = ?, finished_at = NULL WHERE id = ?",
             )
             .bind(&req.markdown)
             .bind(now)
@@ -191,6 +193,35 @@ pub async fn set(state: &AppState, me: &SessionRef, req: ReportSet) -> AppResult
     tx.commit().await?;
     state.changed(Changed::Cards);
     current(&state.db).await?.ok_or_else(|| AppError::Unavailable("the report vanished".into()))
+}
+
+/// `quietdeck report done`: nothing on the report waits for the person any more, so the Inbox shows "All done." (its
+/// bar and chat stay) until the agent edits it or starts the next report. Refused while a card still waits: "All
+/// done." would hide it.
+pub async fn done(state: &AppState) -> AppResult<()> {
+    let waiting: Vec<(i64,)> = sqlx::query_as(
+        "SELECT id FROM cards WHERE state IN ('open', 'handed_off', 'failed', 'approved', 'executing', 'revising') \
+         AND section != 'sent' ORDER BY id",
+    )
+    .fetch_all(&state.db)
+    .await?;
+    if !waiting.is_empty() {
+        let ids = waiting.iter().map(|(id,)| format!("c_{id}")).collect::<Vec<_>>().join(", ");
+        return Err(AppError::Conflict(format!(
+            "cards still wait: {ids}. Resolve them (or name them on the report) before marking it done"
+        )));
+    }
+    let now = now_ms();
+    let r = sqlx::query("UPDATE reports SET finished_at = ?, updated_at = ? WHERE closed_at IS NULL")
+        .bind(now)
+        .bind(now)
+        .execute(&state.db)
+        .await?;
+    if r.rows_affected() == 0 {
+        return Err(AppError::NotFound("there's no report: start one with `quietdeck report set --new`".into()));
+    }
+    state.changed(Changed::Cards);
+    Ok(())
 }
 
 /// The report's latest changes, oldest first.

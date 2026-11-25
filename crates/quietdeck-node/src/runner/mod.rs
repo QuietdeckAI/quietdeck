@@ -606,7 +606,9 @@ impl Runner {
     pub async fn check_mail(&self) {
         let Some(watch) = &self.cfg.mail_watch else { return };
         let mut state = self.mail.lock().await;
-        let new = mail::check(&self.cfg, watch, self.tools.as_ref(), &mut state).await;
+        let checked = mail::check(&self.cfg, watch, self.tools.as_ref(), &mut state).await;
+        let new = checked.new;
+        self.threads_moved(&new, checked.left).await;
         if !new.is_empty() {
             let mut facts = Vec::with_capacity(new.len());
             let mut sent = vec![];
@@ -630,6 +632,64 @@ impl Runner {
         }
         self.wake_if_due(&mut state).await;
         state.save(&self.mail_state_path);
+    }
+
+    /// Threads the person archived or deleted in Gmail themselves, and threads that came back with new mail: each
+    /// candidate is checked (every message gone from the inbox, or the thread deleted) before the deck hears of it.
+    /// The deck resolves the cards whose threads have all gone, and the agent is told, so it takes them off the
+    /// report (or closes it when nothing's left).
+    async fn threads_moved(&self, new: &[mail::NewMail], candidates: Vec<(String, String)>) {
+        use quietdeck_types::mail::LeftThread;
+        let back: Vec<LeftThread> = new
+            .iter()
+            .filter(|m| m.labels.iter().any(|l| l == "INBOX"))
+            .filter_map(|m| Some(LeftThread { account: m.account.clone(), thread_id: m.thread_id.clone()? }))
+            .collect();
+        let mut left = vec![];
+        for (account, thread_id) in candidates {
+            if back.iter().any(|b| b.account == account && b.thread_id == thread_id) {
+                continue;
+            }
+            let gone = match self.thread_meta(&account, &thread_id).await {
+                Ok(t) => !t.any_label("INBOX"),
+                Err(e) if e.contains("404") => true,
+                Err(e) => {
+                    tracing::debug!(%account, error = %e, "checking whether a thread left the inbox");
+                    false
+                }
+            };
+            if gone {
+                left.push(LeftThread { account, thread_id });
+            }
+        }
+        if left.is_empty() && back.is_empty() {
+            return;
+        }
+        let resolved = match self.deck.threads_left(left, back).await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(error = %e, "telling the deck which threads left the inbox");
+                return;
+            }
+        };
+        if resolved.is_empty() {
+            return;
+        }
+        let n = resolved.len();
+        let list: Vec<String> = resolved.iter().map(|c| format!("c_{} '{}'", c.id, c.subject)).collect();
+        let body = format!(
+            "The person archived {} in Gmail themselves, so the deck resolved {}: {}. Take {} off the report \
+             (`quietdeck report show --markdown`, then `report set`). If nothing on it waits for them any more, mark \
+             it done with `quietdeck report done` so the Inbox says \"All done.\"",
+            if n == 1 { "an email" } else { "emails" },
+            if n == 1 { "its card" } else { "their cards" },
+            list.join(", "),
+            if n == 1 { "it" } else { "them" }
+        );
+        tracing::info!(cards = n, "the person archived threads in Gmail: telling the agent");
+        if let Err(e) = self.agent.tell(DeliveryKind::RunnerReport, body).await {
+            tracing::info!(error = %e, "the agent will see the resolved cards on the deck");
+        }
     }
 
     /// One message's headers, labels and snippet (never its body), through the configured message tool. `Ok(None)`:

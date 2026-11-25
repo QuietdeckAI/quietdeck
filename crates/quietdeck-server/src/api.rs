@@ -87,6 +87,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/lease-patterns/{id}/revoke", post(lease_pattern_revoke))
         .route("/api/comments", post(comment_add))
         .route("/api/report", get(report_show).post(report_set))
+        .route("/api/report/done", post(report_done))
         .route("/api/report/answers", post(report_answer))
         .route("/api/report/answers/take", post(report_answers_take))
         .route("/api/report/chat", post(report_chat))
@@ -219,6 +220,11 @@ async fn report_show(
     Authed(_): Authed,
 ) -> AppResult<Json<Option<quietdeck_types::report::Report>>> {
     Ok(Json(crate::reports::current(&state.db).await?))
+}
+
+async fn report_done(State(state): State<AppState>, Agent(_): Agent) -> AppResult<Json<serde_json::Value>> {
+    crate::reports::done(&state).await?;
+    Ok(Json(serde_json::json!({})))
 }
 
 async fn report_set(

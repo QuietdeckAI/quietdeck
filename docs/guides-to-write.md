@@ -40,6 +40,11 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
 - **While you read the Inbox, nothing new lands.** Presence, held wake-ups, "while I'm reading" rules (RE2), toasts,
   Approve All's ten-second settle window. Now: `docs/getting-started.md` (a paragraph), commit 3b8de63. Needs a full
   guide with the reasoning: a page that changes under the person is how a wrong approval happens.
+- **Archiving in Gmail yourself keeps the report in step.** Mail archived or deleted on a phone or in the browser
+  leaves the inbox, the runner confirms each thread has really gone (every message, not one), the deck resolves the
+  cards whose threads have all left, and the agent tidies the report, or marks it done with `quietdeck report done` so the
+  Inbox says "All done." The history tool needs `labelRemoved` and `messageDeleted`. Now: `deploy/node.example.yaml`,
+  `crates/quietdeck-server/src/mail.rs` (`threads_left`), the email-triage skill (25 November).
 - **What plain code may read.** The runner reads headers, labels and snippets but never logs them; plain code is the
   safe place to read untrusted text (no prompt injection), so "never read content" isn't a rule worth keeping.
   Now: this conversation (25 November), `crates/quietdeck-node/src/runner/mail.rs`.

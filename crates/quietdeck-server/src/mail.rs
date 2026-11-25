@@ -251,6 +251,101 @@ pub async fn badges(db: &Db) -> AppResult<MailBadges> {
     Ok(MailBadges { inbox: inbox as u32, drafts: drafts.max(0) as u32, sent: count(MailKind::Sent).await? })
 }
 
+/// The threads of a card: its own thread and every thread its actions name, per account.
+fn card_threads(account: &str, thread_key: &str, input: &str) -> Vec<(String, String)> {
+    let mut out = vec![(account.to_string(), thread_key.rsplit(':').next().unwrap_or(thread_key).to_string())];
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(input) {
+        for a in v.get("actions").and_then(|a| a.as_array()).into_iter().flatten() {
+            if let Some(t) = a.get("thread_id").and_then(|t| t.as_str()) {
+                let acct = a.get("account").and_then(|x| x.as_str()).unwrap_or(account);
+                let pair = (acct.to_string(), t.to_string());
+                if !out.contains(&pair) {
+                    out.push(pair);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Threads the person archived or deleted in Gmail themselves (the runner checked every message has left the inbox),
+/// and threads that came back with new mail. Each card still waiting for the person (open, or failed) whose threads
+/// have all left is resolved as archived in Gmail; the runner tells the agent, which tidies the report. Cards the
+/// runner or the agent are carrying out aren't touched: their own archiving shows up here too.
+pub async fn threads_left(
+    state: &AppState,
+    left: &[quietdeck_types::mail::LeftThread],
+    back: &[quietdeck_types::mail::LeftThread],
+) -> AppResult<Vec<quietdeck_types::mail::LeftCard>> {
+    let now = now_ms();
+    for t in back {
+        sqlx::query("DELETE FROM left_inbox WHERE account = ? AND thread_id = ?")
+            .bind(&t.account)
+            .bind(&t.thread_id)
+            .execute(&state.db)
+            .await?;
+    }
+    for t in left {
+        sqlx::query("INSERT OR REPLACE INTO left_inbox (account, thread_id, at) VALUES (?, ?, ?)")
+            .bind(&t.account)
+            .bind(&t.thread_id)
+            .bind(now)
+            .execute(&state.db)
+            .await?;
+    }
+    // A month is plenty: a card older than that is long gone.
+    sqlx::query("DELETE FROM left_inbox WHERE at < ?").bind(now - 30 * 86_400_000).execute(&state.db).await?;
+    if left.is_empty() {
+        return Ok(vec![]);
+    }
+    let gone: std::collections::HashSet<(String, String)> =
+        sqlx::query_as::<_, (String, String)>("SELECT account, thread_id FROM left_inbox")
+            .fetch_all(&state.db)
+            .await?
+            .into_iter()
+            .collect();
+    let waiting: Vec<(i64, String, String, String, String)> = sqlx::query_as(
+        "SELECT id, account, thread_key, input, COALESCE(json_extract(input, '$.subject'), '') FROM cards \
+         WHERE state IN ('open', 'failed') AND section != 'sent' ORDER BY id",
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let mut resolved = vec![];
+    for (id, account, thread_key, input, subject) in waiting {
+        let threads = card_threads(&account, &thread_key, &input);
+        // Only a card one of these threads belongs to, and only once all of its threads have gone.
+        let touched = threads.iter().any(|(a, t)| left.iter().any(|l| &l.account == a && &l.thread_id == t));
+        if !touched || !threads.iter().all(|p| gone.contains(p)) {
+            continue;
+        }
+        // Only while it still waits for the person: one the runner picked up meanwhile is left to it.
+        let changed = sqlx::query(
+            "UPDATE cards SET state = 'done', rechecked_at = ?, recheck_note = 'you archived it in Gmail', \
+             updated_at = ? WHERE id = ? AND state IN ('open', 'failed')",
+        )
+        .bind(now)
+        .bind(now)
+        .bind(id)
+        .execute(&state.db)
+        .await?
+        .rows_affected();
+        if changed == 1 {
+            sqlx::query(
+                "UPDATE actions SET status = 'stopped' WHERE card_id = ? AND status IN ('pending', 'released')",
+            )
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+            resolved.push(quietdeck_types::mail::LeftCard { id, subject });
+        }
+    }
+    if !resolved.is_empty() {
+        tracing::info!(cards = resolved.len(), "cards resolved: the person archived their threads in Gmail");
+        state.changed(Changed::Cards);
+    }
+    Ok(resolved)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,5 +394,75 @@ mod tests {
         seen(&state, MailKind::Sent).await.unwrap();
         assert_eq!(badges(&state.db).await.unwrap().sent, 0);
         assert!(list(&state.db, MailKind::Sent, None).await.unwrap().iter().all(|r| !r.new));
+    }
+
+    fn left(t: &str) -> quietdeck_types::mail::LeftThread {
+        quietdeck_types::mail::LeftThread { account: "work".into(), thread_id: t.into() }
+    }
+
+    async fn card(state: &AppState, thread: &str, extra: &[&str], card_state: &str) -> i64 {
+        let actions: Vec<serde_json::Value> = std::iter::once(thread)
+            .chain(extra.iter().copied())
+            .map(|t| serde_json::json!({"type": "archive", "thread_id": t}))
+            .collect();
+        let input = serde_json::json!({"subject": format!("About {thread}"), "actions": actions}).to_string();
+        sqlx::query_scalar(
+            "INSERT INTO cards (posted_node, posted_tab, account, thread_key, section, state, input, prepared_at, \
+             created_at, updated_at) VALUES ('n', 't', 'work', ?, 'archive_list', ?, ?, 0, 0, 0) RETURNING id",
+        )
+        .bind(thread)
+        .bind(card_state)
+        .bind(input)
+        .fetch_one(&state.db)
+        .await
+        .unwrap()
+    }
+
+    async fn state_of(state: &AppState, id: i64) -> String {
+        sqlx::query_scalar("SELECT state FROM cards WHERE id = ?").bind(id).fetch_one(&state.db).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_card_resolves_once_the_person_archived_all_its_threads() {
+        let state = AppState::for_tests().await;
+        let single = card(&state, "t1", &[], "open").await;
+        let group = card(&state, "t2", &["t3"], "open").await;
+        let running = card(&state, "t4", &[], "executing").await;
+
+        // One thread of the group, the single card's thread and the running card's: the single card goes, the group
+        // waits for its other thread, and the card being carried out is left alone (its own archiving shows up too).
+        let r = threads_left(&state, &[left("t1"), left("t2"), left("t4")], &[]).await.unwrap();
+        assert_eq!(r, vec![quietdeck_types::mail::LeftCard { id: single, subject: "About t1".into() }]);
+        assert_eq!(state_of(&state, single).await, "done");
+        assert_eq!(state_of(&state, group).await, "open");
+        assert_eq!(state_of(&state, running).await, "executing");
+
+        // t2 came back with new mail before t3 was archived: the group stays.
+        assert!(threads_left(&state, &[], &[left("t2")]).await.unwrap().is_empty());
+        assert!(threads_left(&state, &[left("t3")], &[]).await.unwrap().is_empty());
+        assert_eq!(state_of(&state, group).await, "open");
+
+        // Archived again: now every thread has gone.
+        let r = threads_left(&state, &[left("t2")], &[]).await.unwrap();
+        assert_eq!(r.iter().map(|c| c.id).collect::<Vec<_>>(), [group]);
+        assert_eq!(state_of(&state, group).await, "done");
+    }
+
+    #[tokio::test]
+    async fn the_report_is_done_only_when_nothing_waits() {
+        let state = AppState::for_tests().await;
+        let me = SessionRef { node: "n".into(), tab: "t".into(), session_id: None };
+        let c = card(&state, "t1", &[], "open").await;
+        crate::reports::set(
+            &state,
+            &me,
+            quietdeck_types::report::ReportSet { markdown: "# Inbox\n".into(), base: None, new: true, change: None },
+        )
+        .await
+        .unwrap();
+        assert!(crate::reports::done(&state).await.is_err(), "c_{c} still waits");
+        threads_left(&state, &[left("t1")], &[]).await.unwrap();
+        crate::reports::done(&state).await.unwrap();
+        assert!(crate::reports::current(&state.db).await.unwrap().unwrap().finished);
     }
 }

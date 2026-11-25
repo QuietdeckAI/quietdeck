@@ -59,6 +59,22 @@ pub struct MailRow {
     pub new: bool,
 }
 
+/// A thread that left the inbox (archived or deleted in Gmail).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct LeftThread {
+    pub account: String,
+    pub thread_id: String,
+}
+
+/// A card the deck resolved because its threads all left the inbox.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct LeftCard {
+    pub id: i64,
+    pub subject: String,
+}
+
 /// The counts on the Inbox page's tabs.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[ts(export)]

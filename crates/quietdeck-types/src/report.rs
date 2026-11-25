@@ -39,6 +39,10 @@ pub struct Report {
     /// The latest changes, newest last (at most 20): the Inbox toasts new ones.
     #[serde(default)]
     pub changes: Vec<crate::reading::ReportChange>,
+    /// The agent said nothing on it waits for the person any more (`quietdeck report done`): the Inbox shows "All
+    /// done." until the agent edits it or starts the next one.
+    #[serde(default)]
+    pub finished: bool,
 }
 
 /// `quietdeck report set`: the whole report, as the agent wants it now.
