@@ -162,9 +162,16 @@ function ReportScreen({
   const byId = cardsById(inbox);
   // From the click until the approved actions have run: the report shows it's being dealt with.
   const [sending, setSending] = useState(false);
-  // The runner carrying out approved cards. Not the deck's "running" flag: that stays on while a card handed to the
-  // agent waits for it, which can be hours, and the Inbox mustn't stay darkened that long.
-  const executing = [...byId.values()].some((c) => c.state === "approved" || c.state === "executing");
+  // The runner's part of an Approve All: cards waiting to be picked up, or being carried out by the runner. Cards handed
+  // to the agent aren't in it: they keep their own spinner until the agent finishes them, without darkening the whole
+  // page (or bringing the darkening back when the agent starts on them). Not the deck's "running" flag either, which
+  // stays on while a handed-off card waits, possibly for hours.
+  const executing = [...byId.values()].some(
+    (c) =>
+      c.state === "approved" ||
+      (c.state === "executing" &&
+        c.action_records.some((a) => a.run_by === "runner" && (a.status === "released" || a.status === "started"))),
+  );
   const busy = sending || inbox.approving !== null || executing;
   // Carrying out the approved actions (the undo window is over): the sheen moves.
   const working = executing && inbox.approving === null && !sending;

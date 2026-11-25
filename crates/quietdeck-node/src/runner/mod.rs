@@ -521,6 +521,28 @@ impl Runner {
         }
         let held = self.deck.sort(claims, handoffs.clone()).await?;
         out.handed = handoffs.iter().map(|h| (h.decision_id, h.reason.clone())).collect();
+        // Hand-offs go to the agent first, so it works on them while the runner carries out the rest (a batch of
+        // archives can take a minute), instead of waiting for the whole batch.
+        if !handoffs.is_empty() {
+            let n = handoffs.len();
+            let reasons: Vec<String> = handoffs
+                .iter()
+                .filter_map(|h| {
+                    let r = taken.iter().find(|r| r.decision.id == h.decision_id)?;
+                    Some(format!("'{}' ({})", r.card.input.subject, h.reason))
+                })
+                .collect();
+            let body = format!(
+                "{n} card{} handed to you: {}. Take {} with `quietdeck decisions take`.",
+                if n == 1 { "" } else { "s" },
+                reasons.join("; "),
+                if n == 1 { "it" } else { "them" }
+            );
+            match self.agent.tell(DeliveryKind::Handoff, body).await {
+                Ok(()) => tracing::info!(cards = n, "handed cards to the triage agent"),
+                Err(e) => tracing::info!(error = %e, "the agent will find its hand-offs with `decisions take`"),
+            }
+        }
         let mut failures: Vec<String> = Vec::new();
         let mut attempted = 0usize;
         for r in taken.iter().filter(|r| held.contains(&r.decision.id)) {
@@ -567,26 +589,6 @@ impl Runner {
                 && let Err(e) = self.deck.report(reports).await
             {
                 tracing::warn!(error = %e, card = r.card.id, "reporting results to the deck");
-            }
-        }
-        if !handoffs.is_empty() {
-            let n = handoffs.len();
-            let reasons: Vec<String> = handoffs
-                .iter()
-                .filter_map(|h| {
-                    let r = taken.iter().find(|r| r.decision.id == h.decision_id)?;
-                    Some(format!("'{}' ({})", r.card.input.subject, h.reason))
-                })
-                .collect();
-            let body = format!(
-                "{n} card{} handed to you: {}. Take {} with `quietdeck decisions take`.",
-                if n == 1 { "" } else { "s" },
-                reasons.join("; "),
-                if n == 1 { "it" } else { "them" }
-            );
-            match self.agent.tell(DeliveryKind::Handoff, body).await {
-                Ok(()) => tracing::info!(cards = n, "handed cards to the triage agent"),
-                Err(e) => tracing::info!(error = %e, "the agent will find its hand-offs with `decisions take`"),
             }
         }
         if !failures.is_empty() {

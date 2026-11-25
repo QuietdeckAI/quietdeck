@@ -891,8 +891,7 @@ export function ReportBody({
         className={cn("md report", (rolled === "rolling" || rolled === "gone") && "rolled", rolled === "gone" && "gone")}
         options={OPTIONS}
       >
-        {/* Rolled up, the "Inbox" heading stays over "All done.", so the top part is kept then. */}
-        {onlyReportTags(rolled && rolled !== "no" ? report.markdown : withoutEmptyTop(report.markdown))}
+        {onlyReportTags(withoutEmptyTop(report.markdown))}
       </Render>
     </ReportCtx>
   );
