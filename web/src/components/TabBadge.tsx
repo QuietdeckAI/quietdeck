@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { api } from "@/lib/api";
 import type { AuthState } from "@/types/AuthState";
-import type { Inbox } from "@/types/Inbox";
+import type { MailBadges } from "@/types/MailBadges";
 import type { Settings } from "@/types/Settings";
 
 const BASE_ICON = "/icon.svg";
@@ -102,8 +102,9 @@ function appBadge(count: number) {
   done.catch(() => undefined);
 }
 
-/** How many cards wait in the Inbox, on the tab's icon, the installed app's icon and in its title, while "Show the pending count on the tab
- * icon" is on (Settings). Nothing at zero. The Inbox's own live updates keep it current. */
+/** How many emails wait for the person in the Inbox (the Inbox tab's own count: open cards' threads, so nothing once
+ * it says "All done."), on the tab's icon, the installed app's icon and in its title, while "Show the pending count on
+ * the tab icon" is on (Settings). Nothing at zero. The live updates keep it current. */
 export function TabBadge() {
   const auth = useQuery({ queryKey: ["auth"], queryFn: () => api<AuthState>("/api/auth/state") });
   const signedIn = auth.data?.signed_in === true;
@@ -113,13 +114,12 @@ export function TabBadge() {
     enabled: signedIn,
   });
   const on = signedIn && settings.data?.show_pending_count === true;
-  const inbox = useQuery({
-    queryKey: ["inbox", null],
-    queryFn: () => api<Inbox>("/api/inbox"),
+  const badges = useQuery({
+    queryKey: ["mail-badges"],
+    queryFn: () => api<MailBadges>("/api/mail/badges"),
     enabled: on,
   });
-  const d = inbox.data;
-  const count = on && d ? d.actions.length + d.suggestions.length + d.archive_list.length + d.sent.length : 0;
+  const count = on ? (badges.data?.inbox ?? 0) : 0;
 
   useEffect(() => {
     appBadge(count);

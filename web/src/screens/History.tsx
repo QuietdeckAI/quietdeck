@@ -38,23 +38,58 @@ function Comments({ on }: { on: CommentTarget }) {
   );
 }
 
-/** By day: finished cards with each action's outcome and who ran it, and the automatic actions he's seen. */
+/** History's two views: what was done (cards and automatic actions), and the Inbox as it was at each Approve All. */
+function ViewTabs({ view }: { view: "actions" | "inbox" }) {
+  const tabs = [
+    { id: "actions", label: "Actions" },
+    { id: "inbox", label: "Inbox" },
+  ] as const;
+  return (
+    <div role="tablist" aria-label="History" className="mb-4 flex gap-6 border-b border-rule">
+      {tabs.map((t) => {
+        const selected = t.id === view;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => setParam("view", t.id === "actions" ? undefined : t.id)}
+            className={cn(
+              "-mb-px border-b-2 pb-2 text-base transition-colors duration-(--dur-quick)",
+              selected ? "border-accent text-ink" : "border-transparent text-neutral hover:text-ink",
+            )}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** By day: finished cards with each action's outcome and who ran it, and the automatic actions he's seen; or, on the
+ * Inbox tab, the Inbox document as it was at each Approve All. */
 export function HistoryScreen() {
-  const account = useAccount();
-  const until = useSearch().get("until") ?? undefined;
+  const search = useSearch();
+  const view = search.get("view") === "inbox" ? "inbox" : "actions";
+  // The Inbox document spans every account, so its tab has no account filter.
+  const accountParam = useAccount();
+  const account = view === "inbox" ? undefined : accountParam;
+  const until = search.get("until") ?? undefined;
   const history = useQuery({
     queryKey: ["history", account ?? null, until ?? null],
     queryFn: () => api<History>(`/api/history${query({ account, until })}`),
   });
 
-  const rows: Row[] = [
-    ...(history.data?.cards ?? []).map((c) => ({ at: c.updated_at, card: c })),
-    ...(history.data?.entries ?? []).map((e) => ({
-      at: e.created_at,
-      entry: e,
-    })),
-    ...(history.data?.snapshots ?? []).map((s) => ({ at: s.taken_at, snapshot: s })),
-  ].sort((a, b) => b.at.localeCompare(a.at));
+  const rows: Row[] = (
+    view === "inbox"
+      ? (history.data?.snapshots ?? []).map((s) => ({ at: s.taken_at, snapshot: s }))
+      : [
+          ...(history.data?.cards ?? []).map((c) => ({ at: c.updated_at, card: c })),
+          ...(history.data?.entries ?? []).map((e) => ({ at: e.created_at, entry: e })),
+        ]
+  ).sort((a, b) => b.at.localeCompare(a.at));
   const days: { key: string; heading: string; rows: Row[] }[] = [];
   for (const r of rows) {
     const k = dayKey(r.at);
@@ -66,12 +101,15 @@ export function HistoryScreen() {
   return (
     <CommentsContext.Provider value={history.data?.comments ?? []}>
       <main className="mx-auto max-w-3xl px-4 py-6">
-        <AccountTabs />
+        <ViewTabs view={view} />
+        {view === "actions" && <AccountTabs />}
         {history.isError && (
           <p className="mt-6 text-danger">{history.error.message}</p>
         )}
         {history.data && days.length === 0 && (
-          <p className="mt-10 text-neutral">Nothing happened in this week.</p>
+          <p className="mt-10 text-neutral">
+            {view === "inbox" ? "No Approve All this week." : "Nothing happened in this week."}
+          </p>
         )}
         {days.map((d) => (
           <section key={d.key} className="mt-8">
@@ -187,7 +225,7 @@ function SnapshotRow({ snapshot }: { snapshot: ReportSnapshotSummary }) {
       <time className="w-16 shrink-0 font-mono text-xs text-neutral">{clock(snapshot.taken_at)}</time>
       <span className="min-w-0 flex-1">
         <Link to={`/history/inbox/${snapshot.id}`} className="text-ink underline underline-offset-4 hover:text-accent">
-          Approve All: the Inbox as it was
+          The Inbox at Approve All
         </Link>
         <span className="text-neutral">
           {" "}

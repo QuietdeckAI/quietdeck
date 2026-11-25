@@ -981,7 +981,9 @@ export function ReportChatBox({
             setSent(false);
           }}
           onKeyDown={enterSends(submit)}
-          className="order-first min-h-10 basis-full text-sm sm:order-none sm:basis-auto"
+          // Padding that centres one line in the 40px box, level with the buttons beside it (its line height
+          // isn't a whole number of pixels); more lines grow the box from there.
+          className="order-first min-h-10 basis-full py-[calc((2.5rem-2px-1lh)/2)] text-sm sm:order-none sm:basis-auto"
         />
         {/* Pushes the buttons to the right on a phone's second row. */}
         <span className="flex-1 sm:hidden" aria-hidden />

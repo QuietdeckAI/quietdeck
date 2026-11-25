@@ -17,7 +17,7 @@ export function SnapshotScreen({ id }: { id: number }) {
   const cards = new Map<number, Card>((s?.cards ?? []).map((c) => [Number(c.id), c]));
   return (
     <main className="mx-auto max-w-3xl px-4 py-6">
-      <Link to="/history" className="text-sm text-neutral hover:text-ink">
+      <Link to="/history?view=inbox" className="text-sm text-neutral hover:text-ink">
         ← History
       </Link>
       {snap.isError && <p className="mt-4 text-danger">{snap.error.message}</p>}
