@@ -26,5 +26,10 @@ pub async fn stream(
         let data = serde_json::to_string(&what).unwrap_or_else(|_| "\"all\"".into());
         Some((Ok(Event::default().event("changed").data(data)), rx))
     });
+    // Ends when the deck stops, so the browser reconnects to the new one (a rolling deploy) at once.
+    let mut stopping = state.stopping.clone();
+    let events = futures::StreamExt::take_until(events, async move {
+        let _ = stopping.wait_for(|s| *s).await;
+    });
     Sse::new(events).keep_alive(KeepAlive::new().interval(Duration::from_secs(20)))
 }

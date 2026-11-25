@@ -24,6 +24,8 @@ pub struct AppState {
     pub pusher: Option<Arc<crate::push::Pusher>>,
     #[expect(dead_code, reason = "webhook endpoints' URLs use it (build step 11)")]
     pub hooks_public_url: Option<String>,
+    /// True once the deck is stopping (SIGTERM): long-lived connections close.
+    pub stopping: tokio::sync::watch::Receiver<bool>,
 }
 
 impl AppState {
@@ -49,6 +51,7 @@ impl AppState {
             release: Arc::default(),
             pusher: None,
             hooks_public_url: Some("https://hooks.example.com".into()),
+            stopping: tokio::sync::watch::channel(false).1,
         }
     }
 }

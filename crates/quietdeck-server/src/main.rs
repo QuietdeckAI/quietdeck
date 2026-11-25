@@ -159,6 +159,15 @@ async fn serve(env: Env) -> anyhow::Result<()> {
             None
         }
     };
+    // Told once SIGTERM or Ctrl-C arrives: the servers stop taking connections, and the long-lived ones (nodes' links,
+    // the web app's event streams) close at once, so a rolling deploy's new deck takes over in about a second instead
+    // of after Kubernetes' grace period.
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    tokio::spawn(async move {
+        shutdown().await;
+        tracing::info!("stopping: closing node links and event streams");
+        let _ = stop_tx.send(true);
+    });
     let state = AppState {
         db,
         config: Arc::new(config),
@@ -172,6 +181,7 @@ async fn serve(env: Env) -> anyhow::Result<()> {
         release: Arc::default(),
         pusher,
         hooks_public_url: env.hooks_public_url.clone(),
+        stopping: stop_rx.clone(),
     };
     if env.dev_trust_local {
         tracing::warn!("QUIETDECK_DEV_TRUST_LOCAL is on: every browser request counts as the signed-in owner");
@@ -206,8 +216,11 @@ async fn serve(env: Env) -> anyhow::Result<()> {
     let hooks = hooks::router(state.clone());
 
     tracing::info!(listen = %env.listen, hooks = %env.hooks_listen, "deck serving");
-    let app_server = axum::serve(app_listener, app).with_graceful_shutdown(shutdown());
-    let hooks_server = axum::serve(hooks_listener, hooks).with_graceful_shutdown(shutdown());
+    let stopped = |mut rx: tokio::sync::watch::Receiver<bool>| async move {
+        let _ = rx.wait_for(|s| *s).await;
+    };
+    let app_server = axum::serve(app_listener, app).with_graceful_shutdown(stopped(stop_rx.clone()));
+    let hooks_server = axum::serve(hooks_listener, hooks).with_graceful_shutdown(stopped(stop_rx.clone()));
     tokio::try_join!(async { app_server.await }, async { hooks_server.await })?;
     Ok(())
 }
