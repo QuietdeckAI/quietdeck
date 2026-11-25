@@ -82,6 +82,9 @@ pub fn home() -> PathBuf {
 }
 
 pub fn expand(p: &str) -> PathBuf {
+    if p == "~" {
+        return home();
+    }
     match p.strip_prefix("~/") {
         Some(rest) => home().join(rest),
         None => PathBuf::from(p),

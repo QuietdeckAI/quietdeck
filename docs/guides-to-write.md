@@ -19,6 +19,11 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   a queue worker) are marked monitored, and the node pings a heartbeat URL while each runs, so Gatus, Healthchecks or
   Cronitor alerts when one stops; the rest can be closed any time. Agents propose it on a card and the person
   approves. Now: build plan (Nathan, 25 November). Not built yet.
+- **No trust prompts for agent sessions.** Claude Code keeps folder trust in `~/.claude.json`
+  (`projects.<path>.hasTrustDialogAccepted`); a trusted folder covers the ones inside it, so trusting `~/code` and
+  `~/Notes` covers nearly everything. It never remembers the home folder, so sessions shouldn't start there: the node
+  marks a new session's folder trusted and moves a home-folder start to `~/Notes/Agents/<tab>`. Now:
+  `crates/quietdeck-node/src/control.rs` (25 November).
 - **Sessions survive a reboot.** herdr resumes Claude Code sessions after a VM restart, with their conversation;
   background processes and the session's temporary scratchpad don't survive. Now: the agents VM restart, 25 November.
 - **Per-machine instructions.** A shared global instructions file for every machine, plus one file per machine
