@@ -76,7 +76,8 @@ function HeldToast({ presence }: { presence: Presence }) {
 
 type Toast = ReportChange & { shownAt: number };
 
-const TOAST_MS = 12_000;
+// Long enough to notice and read while working elsewhere on the page; the ✕ dismisses one sooner.
+const TOAST_MS = 60_000;
 
 /** Scroll to the first default naming one of these cards, and ring it briefly. */
 function pointAt(cards: number[]) {
