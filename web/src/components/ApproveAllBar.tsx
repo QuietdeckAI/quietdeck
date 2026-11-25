@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Square, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { SETTLE_MS } from "@/components/ReportMeta";
 import { api } from "@/lib/api";
 import type { ApproveAll } from "@/types/ApproveAll";
 import type { Approving } from "@/types/Approving";
@@ -17,6 +18,7 @@ export function ApproveAllBar({
   top,
   inline,
   settleUntil = 0,
+  onPending,
 }: {
   inbox: Inbox;
   request: ApproveAll;
@@ -28,6 +30,8 @@ export function ApproveAllBar({
   inline?: boolean;
   /** Until this time (ms), something Approve All would approve changed too recently to have been read. */
   settleUntil?: number;
+  /** Told when an Approve All starts and finishes being sent, so the page can show it's busy from the click. */
+  onPending?: (pending: boolean) => void;
 }) {
   // Counts down while something changed too recently: "Approve All in 4s". The deck refuses it too.
   const [now, setNow] = useState(() => Date.now());
@@ -42,6 +46,11 @@ export function ApproveAllBar({
   }, [settleUntil]);
   const wait = Math.ceil((settleUntil - now) / 1000);
   const fresh = wait > 0;
+  // Not a countdown on the button, which reads like an approval about to happen: nothing is pending, so there's
+  // nothing to cancel. The button only unlocks.
+  const settleNote = fresh
+    ? `Inbox changed ${Math.max(1, SETTLE_MS / 1000 - wait)}s ago: read it first. Approve All unlocks in ${wait}s.`
+    : null;
   const qc = useQueryClient();
   const [skipped, setSkipped] = useState<Skipped[]>([]);
   // Awaited in onSuccess, so a button stays busy until the Inbox it changed is back: otherwise Approve All shows
@@ -58,6 +67,7 @@ export function ApproveAllBar({
       await refresh();
     },
   });
+  useEffect(() => onPending?.(approve.isPending), [approve.isPending, onPending]);
   const undo = useMutation({
     mutationFn: (batch: string) => api("/api/decisions/undo", { method: "POST", body: { batch } }),
     onSuccess: refresh,
@@ -91,7 +101,9 @@ export function ApproveAllBar({
   if (inline) {
     const status = approving
       ? `Approving ${approving.cards.length === 1 ? "1 card" : `${approving.cards.length} cards`}`
-      : skipped.length > 0
+      : settleNote
+        ? settleNote
+        : skipped.length > 0
         ? `Left alone: ${skipped.map((s) => s.reason).filter((r, i, all) => all.indexOf(r) === i).join("; ")}`
         : null;
     return (
@@ -135,10 +147,9 @@ export function ApproveAllBar({
             className="h-10 min-w-32"
             loading={approve.isPending}
             disabled={settling || nothing || fresh}
-            title={fresh ? "Something just changed: read it first" : undefined}
             onClick={() => approve.mutate()}
           >
-            {fresh ? `Approve All in ${wait}s` : "Approve All"}
+            Approve All
           </Button>
         )}
       </>
@@ -174,7 +185,8 @@ export function ApproveAllBar({
         ) : (
           <>
             <div className="min-w-0 flex-1 text-sm text-neutral" role="status">
-              {skipped.length > 0 && (
+              {settleNote && <p className="truncate">{settleNote}</p>}
+              {!settleNote && skipped.length > 0 && (
                 <p className="truncate">
                   Left alone: {skipped.map((s) => s.reason).filter((r, i, all) => all.indexOf(r) === i).join("; ")}
                 </p>
@@ -192,7 +204,7 @@ export function ApproveAllBar({
                 disabled={settling || fresh}
                 onClick={() => approve.mutate()}
               >
-                {fresh ? `Approve All in ${wait}s` : "Approve All"}
+                Approve All
               </Button>
             )}
           </>

@@ -347,3 +347,61 @@ input[type="file"]:not(:disabled),
     animation: arrive-fade 150ms linear;
   }
 }
+
+/* The report while an Approve All is pending or its actions run: darkened, with a slow sheen moving across, so it's
+   plain that the whole Inbox is being dealt with. Fades in and out. It animates even with reduced motion on: Nathan
+   asked for this sheen, and an animation he asks for (a sheen, a spinner) always runs. */
+.report-busy-wrap {
+  position: relative;
+}
+.report-busy-wrap::after {
+  content: "";
+  position: absolute;
+  inset: -0.5rem -0.75rem;
+  border-radius: 0.75rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 400ms var(--ease-out);
+  /* One layer: the darkening lifts inside a diagonal band, so the text there brightens. The layer is three times the
+     width and doesn't tile; moving it from 100% to 0% keeps the whole report covered while the band starts just past
+     the left edge and ends just past the right, slant included, so the next pass follows soon after. */
+  background: linear-gradient(
+      100deg,
+      oklch(16% 0.012 250 / 0.5) 40%,
+      oklch(30% 0.03 240 / 0.32) 50%,
+      oklch(16% 0.012 250 / 0.5) 60%
+    )
+    no-repeat;
+  background-size: 300% 100%;
+  background-position: 100% 0;
+}
+.report-busy-wrap.busy::after {
+  opacity: 1;
+  animation: sheen 3.2s linear infinite;
+}
+@keyframes sheen {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+/* A default's check pops in when its cards are done. */
+@keyframes check-in {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.check-in {
+  animation: check-in 320ms var(--ease-out);
+}

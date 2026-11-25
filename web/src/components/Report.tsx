@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Markdown as Render } from "markdown-to-jsx/react";
-import { Loader2, MessageSquare, Square, Undo2 } from "lucide-react";
+import { Check, Loader2, MessageSquare, Square, Undo2 } from "lucide-react";
 import { Children, createContext, Fragment, isValidElement, type ReactNode, use, useEffect, useRef, useState } from "react";
 import { useInfo } from "@/components/AccountTabs";
 import { EmailMenu } from "@/components/EmailMenu";
@@ -195,6 +195,8 @@ type Ctx = {
    * cursor where it was.
    */
   kept: KeptFields;
+  /** The cards the last Approve All sent: their defaults show a spinner, then a check (or a failure). */
+  approved?: Set<number>;
 };
 
 type Caret = { key: string; start: number; end: number };
@@ -428,6 +430,46 @@ function ThreadMessages({
  * messages on the right, the agent's replies on the left, and a box to say more. Closed, the box shows the newest
  * message. The item's headline stays the only bold text in it.
  */
+/**
+ * Left of a default's text, for the cards the last Approve All sent: a spinner while they're carried out, a green
+ * check once all are done, red if one failed. Above the busy darkening, so it stays bright.
+ */
+function ApprovedMark({ cards }: { cards: string | undefined }) {
+  const { cards: byId, approved } = useReport();
+  const ids = cardIds(cards);
+  const base = "relative z-10 mt-1 mr-1.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full";
+  // A failed action stays marked, whether or not it came from the last Approve All, until it's retried or handled.
+  if (ids.some((id) => byId.get(id)?.state === "failed"))
+    return (
+      <span
+        className={cn(base, "bg-[oklch(48%_0.12_28)] text-[10px] leading-none font-bold text-white")}
+        title="An action failed: open the card to retry it"
+        role="img"
+        aria-label="Failed"
+      >
+        !
+      </span>
+    );
+  const mine = ids.filter((id) => approved?.has(id));
+  if (mine.length === 0) return null;
+  // A finished card leaves the Inbox's list, so one that's gone is done.
+  const done = mine.every((id) => {
+    const state = byId.get(id)?.state ?? "done";
+    return state === "done" || state === "automatic" || state === "handled_elsewhere";
+  });
+  if (done)
+    return (
+      <span className={cn(base, "check-in bg-[oklch(52%_0.1_150)] text-white")} title="Done" role="img" aria-label="Done">
+        <Check className="size-2.5" strokeWidth={4} aria-hidden />
+      </span>
+    );
+  return (
+    <span className={cn(base, "text-accent")} title="Being carried out" role="img" aria-label="Being carried out">
+      <Loader2 className="size-3.5 animate-spin" aria-hidden />
+    </span>
+  );
+}
+
 function Default({ id, cards, children }: { id?: string; cards?: string; children?: ReactNode }) {
   const { report, cards: byId, drafts, setDraft, kept } = useReport();
   const key = defaultKey(id, cards);
@@ -493,6 +535,7 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
     >
       <WorkingSpinner answer={working ? newest : undefined} />
       <span className="-my-0.5 flex items-start gap-0.5">
+        <ApprovedMark cards={cards} />
         <span className="min-w-0 flex-1 py-0.5 text-ink">{children}</span>
         {chatButton}
         <EmailMenu about={about} cards={namedCards(cards, byId)} />
@@ -796,16 +839,18 @@ export function ReportBody({
   cards,
   drafts,
   setDraft,
+  approved,
 }: {
   report: Report;
   cards: Map<number, Card>;
   drafts: Record<string, string>;
   setDraft: (key: string, text: string) => void;
+  approved?: Set<number>;
 }) {
   const running = useRunningSessions();
   const kept = useKeptFields();
   return (
-    <ReportCtx value={{ report, cards, sessions: running.data ?? [], drafts, setDraft, kept }}>
+    <ReportCtx value={{ report, cards, sessions: running.data ?? [], drafts, setDraft, kept, approved }}>
       <Render className="md report" options={OPTIONS}>
         {onlyReportTags(report.markdown)}
       </Render>

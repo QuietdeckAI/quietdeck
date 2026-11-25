@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAccount } from "@/components/AccountTabs";
 import { ApproveAllBar } from "@/components/ApproveAllBar";
 import { Link } from "@/components/Header";
@@ -42,6 +42,32 @@ function reportApproveRequest(inbox: Inbox, report: Report, changed: Set<string>
     }
   }
   return { cards, timeline: inbox.timeline.map((e) => e.id) };
+}
+
+const APPROVED_KEY = "quietdeck.inbox.approved";
+
+/** The cards being carried out, as saved for this report: none for another report. */
+function loadApproved(reportId: number): { cards: Set<number>; version: number } | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(APPROVED_KEY) ?? "null") as {
+      report: number;
+      version: number;
+      cards: number[];
+    } | null;
+    if (!saved || saved.report !== Number(reportId)) return null;
+    return { cards: new Set(saved.cards), version: saved.version };
+  } catch {
+    return null;
+  }
+}
+
+function saveApproved(reportId: number, value: { cards: Set<number>; version: number } | null) {
+  if (value === null) localStorage.removeItem(APPROVED_KEY);
+  else
+    localStorage.setItem(
+      APPROVED_KEY,
+      JSON.stringify({ report: Number(reportId), version: value.version, cards: [...value.cards] }),
+    );
 }
 
 export function InboxScreen() {
@@ -92,6 +118,46 @@ function ReportScreen({
   setChanges: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
   usePresence();
+  // From the click until the approved actions have run: the report shows it's being dealt with.
+  const [sending, setSending] = useState(false);
+  const busy = sending || inbox.approving !== null || inbox.running;
+  // The cards being carried out: the last Approve All's, and any card approved or running now (so a reload mid-run
+  // still shows them). Kept as they finish, so each default shows a spinner, then a check. Cleared when the report
+  // next changes after the work is over (the agent rewrites it for the next round).
+  // Kept in this browser's storage, for this report, so the checks survive a reload until the reset.
+  const [approved, setApprovedState] = useState<{ cards: Set<number>; version: number } | null>(() =>
+    loadApproved(report.id),
+  );
+  const setApproved = (
+    next:
+      | { cards: Set<number>; version: number }
+      | null
+      | ((prev: { cards: Set<number>; version: number } | null) => { cards: Set<number>; version: number } | null),
+  ) =>
+    setApprovedState((prev) => {
+      const value = typeof next === "function" ? next(prev) : next;
+      saveApproved(report.id, value);
+      return value;
+    });
+  const inFlight = [
+    ...(inbox.approving?.cards.map(Number) ?? []),
+    ...[...cardsById(inbox).values()]
+      .filter((c) => c.state === "approved" || c.state === "executing")
+      .map((c) => Number(c.id)),
+  ]
+    .sort((a, b) => a - b)
+    .join(",");
+  useEffect(() => {
+    if (!inFlight) return;
+    setApproved((prev) => {
+      const cards = new Set(prev?.cards);
+      for (const id of inFlight.split(",")) cards.add(Number(id));
+      return { cards, version: report.version };
+    });
+  }, [inFlight, report.version]);
+  useEffect(() => {
+    if (!busy && !inFlight && approved && report.version !== approved.version) setApproved(null);
+  }, [busy, inFlight, approved, report.version]);
   const setChange = (k: string, t: string) => setChanges((all) => ({ ...all, [k]: t }));
   const others = report.cards_not_in_report.length > 0;
   // A change typed but not sent goes to the agent before Approve All, so its cards stay out of the approval.
@@ -128,8 +194,8 @@ function ReportScreen({
     <>
       <main className="mx-auto max-w-3xl px-4 pt-6 pb-4">
         <ReportMeta report={report} />
-        <div className="mt-4">
-          <ReportBody report={report} cards={byId} drafts={changes} setDraft={setChange} />
+        <div className={`report-busy-wrap mt-4${busy ? " busy" : ""}`} aria-busy={busy}>
+          <ReportBody report={report} cards={byId} drafts={changes} setDraft={setChange} approved={approved?.cards} />
         </div>
         {others && (
           <p className="mt-10 text-sm text-neutral">
@@ -146,7 +212,7 @@ function ReportScreen({
         running={inbox.running}
         corner={<UpdatedAt at={report.updated_at} stacked />}
       >
-        <ApproveAllBar inbox={inbox} request={request} beforeApprove={beforeApprove} settleUntil={settle} inline />
+        <ApproveAllBar inbox={inbox} request={request} beforeApprove={beforeApprove} settleUntil={settle} onPending={setSending} inline />
       </ReportChatBox>
       <ReportToasts report={report} presence={inbox.presence} />
     </>
