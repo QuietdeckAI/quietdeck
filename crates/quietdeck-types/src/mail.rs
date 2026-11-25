@@ -65,7 +65,8 @@ pub struct MailRow {
 pub struct MailBadges {
     /// Emails waiting for the person's approval: the distinct threads across the open cards.
     pub inbox: u32,
-    /// Drafts and sent messages new since the person last opened that tab.
+    /// How many drafts there are now.
     pub drafts: u32,
+    /// Sent messages new since the person last opened the Sent tab.
     pub sent: u32,
 }

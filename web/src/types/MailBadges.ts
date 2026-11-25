@@ -5,10 +5,14 @@
  */
 export type MailBadges = { 
 /**
- * Cards waiting for the person's approval.
+ * Emails waiting for the person's approval: the distinct threads across the open cards.
  */
 inbox: number, 
 /**
- * Drafts and sent messages new since the person last opened that tab.
+ * How many drafts there are now.
  */
-drafts: number, sent: number, };
+drafts: number, 
+/**
+ * Sent messages new since the person last opened the Sent tab.
+ */
+sent: number, };

@@ -55,7 +55,7 @@ export function Header() {
   const path = usePath();
   const badges = useMailBadges().data;
   const qc = useQueryClient();
-  const clearBadge = (k: "drafts" | "sent") =>
+  const clearBadge = (k: "sent") =>
     qc.setQueryData<MailBadges>(["mail-badges"], (b) => (b ? { ...b, [k]: 0 } : b));
   return (
     // Stays at the top while the page scrolls.
@@ -84,8 +84,9 @@ export function Header() {
                 aria-label={count ? `${l.label}, ${count} new` : l.label}
                 aria-current={l.match(path) ? "page" : undefined}
                 onClick={() => {
-                  // The count goes the moment the tab is opened, not when the deck answers.
-                  if (l.to === "/drafts" || l.to === "/sent") clearBadge(l.to === "/drafts" ? "drafts" : "sent");
+                  // Sent's count of new mail goes the moment it's opened, not when the deck answers. (Drafts counts
+                  // the drafts there are, so it stays.)
+                  if (l.to === "/sent") clearBadge("sent");
                 }}
                 className={cn(
                   "inline-flex items-center gap-1 rounded-md px-1.5 py-1.5 text-sm whitespace-nowrap text-neutral transition-colors max-[359px]:px-1 sm:px-2.5 " +

@@ -245,11 +245,10 @@ pub async fn badges(db: &Db) -> AppResult<MailBadges> {
         }
     }
     let inbox = threads.len() as i64;
-    Ok(MailBadges {
-        inbox: inbox.max(0) as u32,
-        drafts: count(MailKind::Draft).await?,
-        sent: count(MailKind::Sent).await?,
-    })
+    // Drafts: how many there are now. Sent: what's new since the person last opened it.
+    let (drafts,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM mail_items WHERE kind = 'draft'").fetch_one(db).await?;
+    Ok(MailBadges { inbox: inbox as u32, drafts: drafts.max(0) as u32, sent: count(MailKind::Sent).await? })
 }
 
 #[cfg(test)]

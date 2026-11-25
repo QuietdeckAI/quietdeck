@@ -23,6 +23,15 @@ function gmailLink(row: MailRow, accounts: AccountLabel[]): string | null {
   return row.thread_id ? `${base}#all/${encodeURIComponent(row.thread_id)}` : `${base}#sent`;
 }
 
+/**
+ * Gmail's snippets come HTML-escaped ("don&#39;t", "&amp;"): the text as it reads. DOMParser builds an inert
+ * document, so nothing in the snippet runs.
+ */
+function unescapeHtml(text: string): string {
+  if (!text.includes("&")) return text;
+  return new DOMParser().parseFromString(text, "text/html").documentElement.textContent ?? text;
+}
+
 /** The address part of "Name <address>", or the whole header. */
 function who(header: string | null): string {
   if (!header) return "";
@@ -32,7 +41,8 @@ function who(header: string | null): string {
   return (name ?? first.replace(/[<>]/g, "")) + more;
 }
 
-/** Every draft (or every sent email) on the person's accounts, newest first. Opening it clears its badge. */
+/** Every draft (or every sent email) on the person's accounts, newest first. Opening Sent clears its count of new mail
+ * and dots what was new; Drafts just lists the drafts there are. */
 export function MailScreen({ kind }: { kind: MailKind }) {
   const qc = useQueryClient();
   const rows = useQuery({ queryKey: ["mail", kind], queryFn: () => api<MailRow[]>(`/api/mail?kind=${kind}`) });
@@ -44,6 +54,7 @@ export function MailScreen({ kind }: { kind: MailKind }) {
   // Seen on opening, and again on leaving, so what arrived while it was open doesn't count as new.
   // biome-ignore lint/correctness/useExhaustiveDependencies: once per tab
   useEffect(() => {
+    if (kind !== "sent") return;
     seen.mutate();
     return () => {
       void api("/api/mail/seen", { method: "POST", body: { kind } }).then(() =>
@@ -76,18 +87,34 @@ export function MailScreen({ kind }: { kind: MailKind }) {
           const href = gmailLink(r, accounts);
           return (
             <li key={String(r.id)} className="group flex items-start gap-3 border-b border-rule py-3 last:border-b-0">
-              <span
-                className={cn(
-                  "mt-2 size-1.5 shrink-0 rounded-full",
-                  newIds.current.has(Number(r.id)) ? "bg-accent" : "bg-transparent",
-                )}
-                aria-label={newIds.current.has(Number(r.id)) ? "New" : undefined}
-              />
+              {/* Sent only: a dot on what's new since the last visit. Drafts have none. */}
+              {kind === "sent" && (
+                <span
+                  className={cn(
+                    "mt-2 size-1.5 shrink-0 rounded-full",
+                    newIds.current.has(Number(r.id)) ? "bg-accent" : "bg-transparent",
+                  )}
+                  aria-label={newIds.current.has(Number(r.id)) ? "New" : undefined}
+                />
+              )}
               <div className="min-w-0 flex-1">
-                <p className="flex items-baseline gap-2">
-                  <span className="truncate text-ink">{r.subject || "(no subject)"}</span>
-                  <span className="ml-auto shrink-0 text-xs tabular-nums text-neutral">{when(r.at)}</span>
-                </p>
+                {/* The whole first line opens it in Gmail: a draft to finish and send, a sent email's thread. */}
+                {href ? (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="flex items-baseline gap-2 hover:[&>span:first-child]:underline hover:[&>span:first-child]:underline-offset-4"
+                  >
+                    <span className="truncate text-ink">{r.subject || "(no subject)"}</span>
+                    <span className="ml-auto shrink-0 text-xs tabular-nums text-neutral">{when(r.at)}</span>
+                  </a>
+                ) : (
+                  <p className="flex items-baseline gap-2">
+                    <span className="truncate text-ink">{r.subject || "(no subject)"}</span>
+                    <span className="ml-auto shrink-0 text-xs tabular-nums text-neutral">{when(r.at)}</span>
+                  </p>
+                )}
                 <p className="mt-0.5 truncate text-sm text-muted">
                   To {who(r.to)}
                   <span className="text-neutral"> · {label(r.account)}</span>
@@ -99,7 +126,7 @@ export function MailScreen({ kind }: { kind: MailKind }) {
                     </span>
                   )}
                 </p>
-                {r.snippet && <p className="mt-0.5 line-clamp-1 text-sm text-neutral">{r.snippet}</p>}
+                {r.snippet && <p className="mt-0.5 line-clamp-1 text-sm text-neutral">{unescapeHtml(r.snippet)}</p>}
               </div>
               {href && (
                 <a
