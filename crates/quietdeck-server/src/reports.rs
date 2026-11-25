@@ -9,7 +9,7 @@ use quietdeck_types::node::Delivered;
 use quietdeck_types::relay::{DeliveryError, DeliveryKind};
 use quietdeck_types::report::{
     AnswerKind, Report, ReportAnswer, ReportAnswerAdd, ReportChat, ReportReply, ReportSet, ReportSnapshot,
-    ReportSnapshotSummary, default_cards, defaults_changed,
+    ReportSnapshotSummary, default_cards, default_keys, defaults_changed,
 };
 
 use crate::db::{Db, now_ms, ts};
@@ -130,6 +130,7 @@ pub async fn set(state: &AppState, me: &SessionRef, req: ReportSet) -> AppResult
             }
         }
     }
+    problems.extend(archive_all_problems(&state.db, &req.markdown).await?);
     if !problems.is_empty() {
         return Err(AppError::BadRequest(format!("the report's <Default> tags: {}", problems.join("; "))));
     }
@@ -193,6 +194,43 @@ pub async fn set(state: &AppState, me: &SessionRef, req: ReportSet) -> AppResult
     tx.commit().await?;
     state.changed(Changed::Cards);
     current(&state.db).await?.ok_or_else(|| AppError::Unavailable("the report vanished".into()))
+}
+
+/// The archive part's `archive-all` Default may name only cards whose sole action is an archive (or marking read):
+/// anything more, a forward or a reply included, goes in the Inbox part with its own Default (Nathan, 25 Nov 2026:
+/// "if there is any other action at all (e.g. forwarding) it should go to inbox. forward + archive is still inbox.").
+async fn archive_all_problems(db: &Db, markdown: &str) -> AppResult<Vec<String>> {
+    let ids: Vec<i64> =
+        default_keys(markdown).into_iter().filter(|(key, _)| key == "archive-all").flat_map(|(_, ids)| ids).collect();
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let list = ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+    let rows: Vec<(i64, String)> =
+        sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT id, input FROM cards WHERE id IN ({list}) ORDER BY id")))
+            .fetch_all(db)
+            .await?;
+    let mut problems = vec![];
+    for (id, input) in rows {
+        let input: serde_json::Value = serde_json::from_str(&input).unwrap_or_default();
+        let mut others: Vec<String> = input["actions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|a| a["type"].as_str())
+            .filter(|t| !matches!(*t, "archive" | "mark_read"))
+            .map(str::to_string)
+            .collect();
+        others.dedup();
+        if !others.is_empty() {
+            problems.push(format!(
+                "c_{id} has {}: \"Archive all\" takes only cards whose sole action is archive, so give it its own \
+                 Default in the Inbox part",
+                others.join(", ")
+            ));
+        }
+    }
+    Ok(problems)
 }
 
 /// `quietdeck report done`: nothing on the report waits for the person any more, so the Inbox shows "All done." (its
@@ -659,6 +697,30 @@ mod tests {
             .await
             .unwrap();
         assert!(r.cards_not_in_report.is_empty());
+
+        let mut forward = card("t4");
+        forward.actions.insert(
+            0,
+            serde_json::from_value(serde_json::json!({"type": "forward", "to": {"node": "n", "tab": "ci"},
+                "text": "see thread t4"}))
+            .unwrap(),
+        );
+        let fwd = crate::store::cards::add(&state.db, &me(), &forward, quietdeck_types::card::CardState::Open, None)
+            .await
+            .unwrap()
+            .card
+            .id;
+        let md = format!("<Default id=\"archive-all\" cards=\"c_{} c_{fwd}\">Archive all</Default>", ids[0]);
+        let refused = super::set(&state, &me(), ReportSet { markdown: md, base: Some(2), new: false, change: None })
+            .await
+            .unwrap_err();
+        assert!(refused.to_string().contains(&format!("c_{fwd} has forward")), "{refused}");
+        let md = format!(
+            "<Default cards=\"c_{fwd}\">Forward to `ci`, then archive</Default>\n\
+             <Default id=\"archive-all\" cards=\"c_{} c_{} c_{}\">Archive all</Default>",
+            ids[0], ids[1], ids[2]
+        );
+        super::set(&state, &me(), ReportSet { markdown: md, base: Some(2), new: false, change: None }).await.unwrap();
     }
 
     #[tokio::test]
