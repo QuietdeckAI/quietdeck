@@ -367,6 +367,9 @@ input[type="file"]:not(:disabled),
 .report-busy-wrap::after {
   content: "";
   position: absolute;
+  /* Above the report's positioned parts (the default boxes, "Archive all"), which would otherwise paint over the
+     ::before layer; a default's check or spinner (z-10) stays above both. */
+  z-index: 1;
   inset: -0.5rem -0.75rem;
   border-radius: 0.75rem;
   pointer-events: none;

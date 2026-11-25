@@ -64,7 +64,14 @@ function MissingToast({ count }: { count: number }) {
 }
 
 function HeldToast({ presence }: { presence: Presence }) {
-  const release = useMutation({ mutationFn: () => api("/api/presence/release", { method: "POST" }) });
+  // Triage now hides the toast at once, as the deck will once the held items go: no "Triaging" in between. It comes
+  // back only if more arrive while it's still holding, or if the deck refused.
+  const [hiddenAt, setHiddenAt] = useState<number | null>(null);
+  const release = useMutation({
+    mutationFn: () => api("/api/presence/release", { method: "POST" }),
+    onError: () => setHiddenAt(null),
+  });
+  if (hiddenAt !== null && presence.held_count <= hiddenAt) return null;
   return (
     <div
       role="status"
@@ -81,11 +88,12 @@ function HeldToast({ presence }: { presence: Presence }) {
           size="sm"
           variant="secondary"
           className="shrink-0"
-          loading={release.isPending}
-          disabled={release.isSuccess}
-          onClick={() => release.mutate()}
+          onClick={() => {
+            setHiddenAt(presence.held_count);
+            release.mutate();
+          }}
         >
-          {release.isSuccess ? "Triaging" : "Triage now"}
+          Triage now
         </Button>
       </div>
     </div>

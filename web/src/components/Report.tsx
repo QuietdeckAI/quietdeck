@@ -468,6 +468,13 @@ function ApprovedMark({ cards }: { cards: string | undefined }) {
         <Check className="size-2.5" strokeWidth={4} aria-hidden />
       </span>
     );
+  // A spinner only while something is still being carried out. Stopped partway (Stop after the undo window), the
+  // cards that didn't run are open again: no mark, and the next Approve All takes them.
+  const inProgress = mine.some((id) => {
+    const state = byId.get(id)?.state;
+    return state === "approved" || state === "executing" || state === "handed_off" || state === "revising";
+  });
+  if (!inProgress) return null;
   return (
     <span className={cn(base, "text-accent")} title="Being carried out" role="img" aria-label="Being carried out">
       <Loader2 className="size-3.5 animate-spin" aria-hidden />
