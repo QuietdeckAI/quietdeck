@@ -26,6 +26,15 @@ Release images build on docspring-dev too: `scripts/build-images --wait <commit>
 
 ## Guides to write
 
-When you solve a problem or settle a decision that other people running agents would need too (a setup step, a
-footgun, a safety rule, a design reason), add an entry to `docs/guides-to-write.md` in the same change, saying where the
-knowledge lives now. Nathan wants nothing from fast sessions to fall through the cracks before the guides are written.
+Every time you run into something others will hit too, document it for the people who follow in our footsteps: a
+setup step, a footgun (a prompt that blocks unattended sessions, a config that silently does nothing), a safety rule, a
+design reason. This is a rule, not a nicety (Nathan, 25 November 2026).
+
+1. Add an entry to `docs/guides-to-write.md` in the same change, saying what it is, how it was solved and where the
+   knowledge lives now (a file, a commit, a runbook).
+2. Send it to the planning session (`quietdeck msg send --to "planning@nathans-mac"`): the problem, the fix, how it
+   was tested, and what's still open. Planning gathers it for Quietdeck's docs and for MailExec's, whose users run
+   agents on their own machines too.
+
+Do it when the problem is solved, not later: fast sessions move on, and nothing may fall through the cracks before the
+guides are written.
