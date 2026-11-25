@@ -323,7 +323,11 @@ fn decode_component(s: &str) -> Option<String> {
 
 impl<D: Deps> Coordinator<D> {
     pub fn new(deps: D, info: Info, persisted: Option<&Value>) -> Self {
-        let mut st = St { version: 1, next_notice_id: 1, ..Default::default() };
+        // The version starts at the clock, in ms, so it's higher than any version an earlier run reached: sessions keep
+        // the highest version they've seen across a restart, and polled with it forever when a fresh run counted from 1
+        // (25 Nov 2026: all ~50 sessions on a Mac stuck at 2567 while the node was at 80, every poll answered at once).
+        let start = u64::try_from(deps.now()).unwrap_or(0).max(1);
+        let mut st = St { version: start, next_notice_id: 1, ..Default::default() };
         if let Some(p) = persisted {
             load(&mut st, p);
         }

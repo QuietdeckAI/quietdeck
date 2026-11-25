@@ -642,6 +642,14 @@ async fn long_polls_answer_at_once_when_the_state_moved_on_the_next_change_or_af
 }
 
 #[tokio::test]
+async fn the_version_starts_above_any_earlier_run() {
+    let w = World::new();
+    let c = started(&w, Some(&three_logins(&w))).await;
+    // A run's changes can't outpace the clock, so the next run, started later, begins higher.
+    assert!(c.state().version >= u64::try_from(now0()).unwrap(), "{}", c.state().version);
+}
+
+#[tokio::test]
 async fn a_session_that_repeats_a_stale_since_waits_instead_of_spinning() {
     let w = World::new();
     let c = started(&w, Some(&three_logins(&w))).await;
