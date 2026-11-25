@@ -169,6 +169,10 @@ impl Engine {
     }
 
     pub fn save(&self) {
+        // Several tasks save; one at a time, or two writes share the temporary file and the second rename finds it
+        // gone ("can't save …: No such file or directory"), and an older snapshot could land last.
+        static SAVING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _saving = SAVING.lock().unwrap_or_else(|e| e.into_inner());
         let state = self.state.lock().expect("state lock").clone();
         if let Err(e) = state.save(&self.config.state_file) {
             tracing::error!("summaries: can't save {}: {e}", self.config.state_file.display());

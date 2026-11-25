@@ -131,6 +131,11 @@ pub fn choose(state: &Value, now: Timestamp) -> Option<Account> {
             pct = 0.0;
             resets = None; // reset already; its next reset is a week out, which we don't know
         }
+        // Spent by its reading, even when the coordinator hasn't flagged it yet (or never will: a full account ran
+        // every summary on the Mac, 25 Nov 2026).
+        if pct >= crate::usage::model::LEAVE_SEVEN_DAY {
+            continue;
+        }
         usable.push(Account {
             id: match a.get("id") {
                 Some(Value::String(s)) => s.clone(),
@@ -212,6 +217,8 @@ mod tests {
         let mut spent = acct("1", 99.0, "2030-01-01T00:00:00Z");
         spent["isSpent"] = json!(true);
         assert_eq!(choose(&json!({"accounts": [spent]}), now), None);
+        let full = acct("9", 100.0, "2099-01-01T00:00:00Z");
+        assert_eq!(choose(&json!({"accounts": [full]}), now), None);
         assert_eq!(choose(&json!({}), now), None);
         let env = Account::default_login().env();
         assert_eq!(env.get("CLAUDE_SECURESTORAGE_CONFIG_DIR").map(String::as_str), Some(""));
