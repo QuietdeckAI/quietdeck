@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Link } from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { agoShort, stampWithZone } from "@/lib/format";
@@ -43,6 +44,25 @@ export function ReportMeta({ report }: { report: Report }) {
  * While the person reads: a toast that stays in the top right until what's held comes in, saying what waits, with
  * Show now.
  */
+/** While open cards are missing from the report: a toast that stays until the agent adds them, with Threads. */
+function MissingToast({ count }: { count: number }) {
+  return (
+    <div
+      role="status"
+      className="toast-in pointer-events-auto rounded-lg border border-rule-strong bg-paper-3 py-2.5 pr-2.5 pl-3.5 text-sm shadow-lg shadow-black/30"
+    >
+      <div className="flex items-center gap-3">
+        <p className="min-w-0 flex-1 text-ink">
+          {count === 1 ? "1 thread isn't in the report yet" : `${count} threads aren't in the report yet`}
+        </p>
+        <Button size="sm" variant="secondary" className="shrink-0" asChild>
+          <Link to="/threads">Threads</Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function HeldToast({ presence }: { presence: Presence }) {
   const release = useMutation({ mutationFn: () => api("/api/presence/release", { method: "POST" }) });
   return (
@@ -55,9 +75,7 @@ function HeldToast({ presence }: { presence: Presence }) {
           <p className="text-ink">
             {presence.held_count === 1 ? "1 new item is waiting" : `${presence.held_count} new items are waiting`}
           </p>
-          <p className="mt-0.5 text-xs text-neutral">
-            {presence.held ? `${presence.held}. ` : ""}They come in when you stop reading.
-          </p>
+          {presence.held && <p className="mt-0.5 text-xs text-neutral">{presence.held}</p>}
         </div>
         <Button
           size="sm"
@@ -97,6 +115,7 @@ function pointAt(cards: number[]) {
  * Every change to the report while the page is open, as a toast in the bottom right saying what changed. Pressing
  * one scrolls to the default it's about. Changes from before the page opened aren't toasted.
  */
+// The toasts sit 16px below the 57px header, the same as their 16px right margin (right-4): top-[73px].
 export function ReportToasts({ report, presence }: { report: Report; presence: Presence }) {
   const seen = useRef<Set<number> | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -123,11 +142,15 @@ export function ReportToasts({ report, presence }: { report: Report; presence: P
   }, [toasts]);
   const dismiss = (id: number) => setToasts((all) => all.filter((t) => Number(t.id) !== id));
   const held = presence.held_count > 0;
+  const missing = report.cards_not_in_report.length;
+  // How many toasts stay put in the top right; on a phone the change toasts go below them.
+  const sticky = (held ? 1 : 0) + (missing > 0 ? 1 : 0);
   return (
     <>
-      {held && (
-        <div className="pointer-events-none fixed top-16 right-4 z-30 w-[min(24rem,calc(100vw-2rem))]">
-          <HeldToast presence={presence} />
+      {(held || missing > 0) && (
+        <div className="pointer-events-none fixed top-[73px] right-4 z-30 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2">
+          {held && <HeldToast presence={presence} />}
+          {missing > 0 && <MissingToast count={missing} />}
         </div>
       )}
       {toasts.length > 0 && (
@@ -137,7 +160,7 @@ export function ReportToasts({ report, presence }: { report: Report; presence: P
             // Above the chat bar on a wide screen; under the header on a phone (below the waiting toast), where the bar is
             // taller.
             "pointer-events-none fixed right-4 z-30 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 " +
-            (held ? "top-40 " : "top-16 ") +
+            (sticky === 0 ? "top-[73px] " : sticky === 1 ? "top-[169px] " : "top-[265px] ") +
             "sm:top-auto sm:bottom-24"
           }
         >

@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useAccount } from "@/components/AccountTabs";
 import { ApproveAllBar } from "@/components/ApproveAllBar";
-import { Link } from "@/components/Header";
 import { changedKeys, ReportBody, ReportChatBox, reportDefaults } from "@/components/Report";
 import { ReportMeta, ReportToasts, UpdatedAt } from "@/components/ReportMeta";
 import { TimelineRow } from "@/components/TimelineRow";
@@ -129,8 +128,8 @@ export function InboxScreen() {
     return <ReportScreen inbox={inbox.data} report={report} changes={changes} setChanges={setChanges} />;
   }
   return (
-    // A screen tall below the header, so the empty state sits in the middle of the screen.
-    <main className="mx-auto flex min-h-[calc(100dvh-57px)] max-w-3xl flex-col px-4 pt-6 pb-4">
+    // Fills the screen below the header, so the empty state sits in the middle of the screen.
+    <main className="mx-auto flex max-w-3xl flex-1 flex-col px-4 pt-6 pb-4">
       {inbox.isError && (
         <p role="alert" className="mt-8 text-danger">
           {inbox.error.message}
@@ -207,7 +206,6 @@ function ReportScreen({
     if (!busy && !inFlight && approved && report.version !== approved.version) setApproved(null);
   }, [busy, inFlight, approved, report.version]);
   const setChange = (k: string, t: string) => setChanges((all) => ({ ...all, [k]: t }));
-  const others = report.cards_not_in_report.length > 0;
   // A change typed but not sent goes to the agent before Approve All, so its cards stay out of the approval.
   const pending = Object.entries(changes).filter(([, t]) => t.trim());
   const changed = changedKeys(report);
@@ -253,11 +251,13 @@ function ReportScreen({
     setChanges({});
   };
   return (
-    // Everything under the header (57px) is at least the rest of the screen, and the report's part grows to fill it:
-    // with little on the page (the empty state) the bar still sits exactly at the bottom, as it does when the report
-    // is long and scrolls.
-    <div className="flex min-h-[calc(100dvh-57px)] flex-col">
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pt-6 pb-4">
+    // Fills the rest of the screen under the header (App's column), and the report's part grows to fill it: with
+    // little on the page (the empty state) the bar still sits exactly at the bottom, as it does when the report is
+    // long and scrolls.
+    <div className="flex flex-1 flex-col">
+      {/* overflow-clip: the busy darkening reaches a little past the report, inside this padding, and mustn't add
+          scroll to the page. */}
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-clip px-4 pt-6 pb-4">
         <ReportMeta report={report} />
         <div
           className={`report-busy-wrap mt-4${busy ? " busy" : ""}${working ? " running" : ""}`}
@@ -277,14 +277,6 @@ function ReportScreen({
           <div className="arrive flex flex-1 items-center justify-center">
             <NoReport cleared />
           </div>
-        )}
-        {others && (
-          <p className="mt-10 text-sm text-neutral">
-            Some threads aren't in the report yet:{" "}
-            <Link to="/threads" className="text-ink underline underline-offset-4 hover:text-accent">
-              Threads
-            </Link>
-          </p>
         )}
         {inbox.timeline.length > 0 && <Automatic inbox={inbox} />}
       </main>

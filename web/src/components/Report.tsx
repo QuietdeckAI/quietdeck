@@ -288,7 +288,8 @@ function useAnswer() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (a: ReportAnswerAdd) => api<Report>("/api/report/answers", { method: "POST", body: a }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["inbox"] }),
+    // Returned, so the send counts as finished only once the refreshed report (with the message in it) is back.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inbox"] }),
   });
 }
 
@@ -402,6 +403,8 @@ function ThreadMessages({
 }) {
   const end = useRef<HTMLSpanElement>(null);
   const [scrolled, setScrolled] = useState(false);
+  // Once the deck's copy of the pending message is in the thread, the pending copy goes, so it never shows twice.
+  if (pending && thread.some((a) => a.kind !== "reply" && a.value === pending)) pending = null;
   const count = thread.length + (pending ? 1 : 0);
   useEffect(() => {
     end.current?.scrollIntoView({ block: "nearest" });
@@ -496,12 +499,22 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
     const value = draft.trim();
     setSending(value);
     undoWindow.start(() => {
-      setSending(null);
       // Approve All sent it already (and cleared the draft), or it was edited since.
-      if (latestDraft.current.trim() !== value) return;
+      if (latestDraft.current.trim() !== value) {
+        setSending(null);
+        return;
+      }
+      // The pending message stays in the conversation, and the box stays empty, until the deck's copy is on screen:
+      // clearing it earlier puts the text back in the box for a moment.
       send.mutate(
         { report_id: report.id, report_version: report.version, control: key, kind: "change", about, value },
-        { onSuccess: () => latestDraft.current.trim() === value && setDraft(key, "") },
+        {
+          onSuccess: () => {
+            if (latestDraft.current.trim() === value) setDraft(key, "");
+            setSending(null);
+          },
+          onError: () => setSending(null),
+        },
       );
     });
   };

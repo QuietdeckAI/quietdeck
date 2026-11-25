@@ -45,10 +45,16 @@ export function App() {
   }
   if (!signedIn) return <SignInScreen setupNeeded={auth.data.setup_needed} />;
   return (
-    <>
+    // One column at least the screen's height: the header, then the screen, which can fill the rest (the Inbox does,
+    // so its bar sits at the bottom with no scroll), without adding up pixel heights that rounding can upset.
+    <div className="flex min-h-dvh flex-col">
       <Header />
-      <Screen />
-    </>
+      {/* The rest of the screen, as a column: the Inbox grows to fill it (flex-1). Every screen's root is full width
+          here (w-full), so a centred `mx-auto max-w-*` root lays out as it would in a plain block. */}
+      <div className="flex flex-1 flex-col [&>*]:w-full">
+        <Screen />
+      </div>
+    </div>
   );
 }
 

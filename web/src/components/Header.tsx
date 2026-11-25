@@ -39,7 +39,8 @@ const LINKS = [
 export function Header() {
   const path = usePath();
   return (
-    <header className="border-b border-rule">
+    // Stays at the top while the page scrolls.
+    <header className="sticky top-0 z-20 border-b border-rule bg-paper/95 backdrop-blur-sm">
       <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-2 px-4 sm:gap-4">
         <Link
           to="/"
