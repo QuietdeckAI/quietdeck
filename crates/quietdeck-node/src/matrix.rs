@@ -52,7 +52,24 @@ pub struct MatrixConfig {
     /// The device's name, which other members see. Default: "Quietdeck (<node name>)".
     #[serde(default)]
     pub device_name: Option<String>,
+    /// Dead man's switch rooms: a message in one (Alertmanager's Watchdog, every 30 minutes) is a heartbeat, passed on
+    /// as an HTTP GET to a ping URL (Healthchecks.io), so a silent alert path alerts by its silence. Nothing about it
+    /// reaches the deck or an agent.
+    #[serde(default)]
+    pub heartbeats: Vec<HeartbeatRoom>,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeartbeatRoom {
+    /// The room, by ID.
+    pub room: String,
+    /// A file only this user can read, holding the ping URL and nothing else.
+    pub ping_url_file: String,
+}
+
+/// At most one ping per this many seconds per room, whatever the room carries.
+const PING_EVERY_SECS: u64 = 60;
 
 impl MatrixConfig {
     pub fn check(&self) -> Result<(), String> {
@@ -67,6 +84,16 @@ impl MatrixConfig {
         }
         for r in &self.rooms {
             OwnedRoomId::try_from(r.as_str()).map_err(|e| format!("matrix.rooms: {r:?} isn't a room ID: {e}"))?;
+        }
+        for h in &self.heartbeats {
+            OwnedRoomId::try_from(h.room.as_str())
+                .map_err(|e| format!("matrix.heartbeats: {:?} isn't a room ID: {e}", h.room))?;
+            if self.rooms.contains(&h.room) {
+                return Err(format!(
+                    "matrix.heartbeats: {} is also in matrix.rooms; a heartbeat room is only pinged",
+                    h.room
+                ));
+            }
         }
         Ok(())
     }
@@ -308,16 +335,25 @@ async fn read(node_name: &str, cfg: &MatrixConfig, dir: &Path, outbox: Arc<Outbo
         }
     }
     let rooms = Arc::new(rooms);
+    let beats = Arc::new(Heartbeats::new(&cfg.heartbeats));
     {
         let rooms = rooms.clone();
         let outbox = outbox.clone();
         let me = client.user_id().map(|u| u.to_owned());
+        let beats = beats.clone();
         client.add_event_handler(move |ev: OriginalSyncRoomMessageEvent, room: Room| {
             let rooms = rooms.clone();
             let outbox = outbox.clone();
+            let beats = beats.clone();
             let mine = me.as_deref() == Some(&*ev.sender);
             async move {
-                if mine || !rooms.iter().any(|r| r == room.room_id()) {
+                if mine {
+                    return;
+                }
+                if beats.beat(room.room_id().as_str()).await {
+                    return;
+                }
+                if !rooms.iter().any(|r| r == room.room_id()) {
                     return;
                 }
                 outbox.push(incoming(&room, &ev)).await;
@@ -326,9 +362,15 @@ async fn read(node_name: &str, cfg: &MatrixConfig, dir: &Path, outbox: Arc<Outbo
     }
     {
         let rooms = rooms.clone();
+        let beats = beats.clone();
         client.add_event_handler(move |ev: OriginalSyncRoomEncryptedEvent, room: Room| {
             let rooms = rooms.clone();
+            let beats = beats.clone();
             async move {
+                // A message this device can't read still shows the alert path is alive.
+                if beats.beat(room.room_id().as_str()).await {
+                    return;
+                }
                 if rooms.iter().any(|r| r == room.room_id()) {
                     // The sender didn't share the key with this device (yet). The message isn't handed over.
                     tracing::warn!(room = %room.room_id(), event = %ev.event_id, sender = %ev.sender,
@@ -342,6 +384,48 @@ async fn read(node_name: &str, cfg: &MatrixConfig, dir: &Path, outbox: Arc<Outbo
         Ok(()) => Ok(()),
         Err(e) if invalid_token(&e) => Err(Restart::Fresh(e.to_string())),
         Err(e) => Err(later(e)),
+    }
+}
+
+/// The dead man's switch: pings each heartbeat room's URL when the room speaks, at most once a minute.
+struct Heartbeats {
+    rooms: Vec<(String, PathBuf)>,
+    last: Mutex<std::collections::HashMap<String, std::time::Instant>>,
+    http: reqwest::Client,
+}
+
+impl Heartbeats {
+    fn new(cfg: &[HeartbeatRoom]) -> Heartbeats {
+        Heartbeats {
+            rooms: cfg.iter().map(|h| (h.room.clone(), expand(&h.ping_url_file))).collect(),
+            last: Mutex::default(),
+            http: reqwest::Client::builder().timeout(Duration::from_secs(15)).build().expect("an HTTP client"),
+        }
+    }
+
+    /// Whether `room` is a heartbeat room (then the message is only a heartbeat). Pings unless it pinged recently.
+    async fn beat(&self, room: &str) -> bool {
+        let Some((_, file)) = self.rooms.iter().find(|(r, _)| r == room) else { return false };
+        {
+            let mut last = self.last.lock().await;
+            if last.get(room).is_some_and(|t| t.elapsed().as_secs() < PING_EVERY_SECS) {
+                return true;
+            }
+            last.insert(room.to_string(), std::time::Instant::now());
+        }
+        let url = match read_secret_file(file) {
+            Ok(u) => u,
+            Err(e) => {
+                tracing::error!(error = %e, "the heartbeat ping URL can't be read: the dead man's switch will fire");
+                return true;
+            }
+        };
+        match self.http.get(url.trim()).send().await {
+            Ok(r) if r.status().is_success() => tracing::debug!(%room, "heartbeat pinged"),
+            Ok(r) => tracing::warn!(%room, status = %r.status(), "the heartbeat ping was refused"),
+            Err(e) => tracing::warn!(%room, error = %e, "the heartbeat ping failed"),
+        }
+        true
     }
 }
 
@@ -425,8 +509,13 @@ mod tests {
         let mut bad = cfg.clone();
         bad.rooms = vec!["#alias:example.com".into()];
         assert!(bad.check().unwrap_err().contains("isn't a room ID"));
-        let mut bad = cfg;
+        let mut bad = cfg.clone();
         bad.user = "quietdeck".into();
         assert!(bad.check().is_err());
+        let mut beats = cfg.clone();
+        beats.heartbeats = vec![HeartbeatRoom { room: "!watchdog:example.com".into(), ping_url_file: "/f".into() }];
+        assert_eq!(beats.check(), Ok(()));
+        beats.heartbeats[0].room = cfg.rooms[0].clone();
+        assert!(beats.check().unwrap_err().contains("is also in matrix.rooms"));
     }
 }

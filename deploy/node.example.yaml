@@ -104,3 +104,6 @@ matrix:
   user: '@quietdeck:example.com'                # already a member of each room
   password_file: ~/.config/quietdeck/matrix-password   # mode 600, the password only
   rooms: ['!abc123:example.com']                # room IDs, not aliases
+  heartbeats:                                   # a dead man's switch: a message here (Alertmanager's Watchdog) pings
+    - room: '!watchdog:example.com'             # the URL, plain code only; silence lets the pinged service alert you
+      ping_url_file: ~/.config/quietdeck/watchdog-ping-url   # mode 600, the URL only (e.g. Healthchecks.io)

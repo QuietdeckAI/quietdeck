@@ -58,6 +58,10 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
 - **Every background thing has a check that alerts, and an agent listens.** Heartbeats for scheduled jobs, health
   checks for daemons, checks that catch "running but not working", alerts to a Matrix room, and the owning agent
   fixing it. Now: Nathan's global instructions, "Everything in the background is watched, and an agent fixes it".
+- **A dead man's switch for the alert path.** Alertmanager's Watchdog posts to its own Matrix room every 30 minutes;
+  the node's Matrix reader turns each post into a ping to Healthchecks.io (plain code, no card, no agent, no tokens),
+  so if Prometheus, Alertmanager, the bridge, Synapse or the reader dies, the silence emails the person. Now:
+  `deploy/node.example.yaml` (`matrix.heartbeats`), Nathan's approval on 25 November.
 - **Health endpoints for Quietdeck's own parts.** Each node, the runner and the Matrix reader, for Gatus; alerting
   that doesn't depend on Quietdeck when Quietdeck is the thing that's down. Now: the design sent to planning (25
   November). Not built yet.
