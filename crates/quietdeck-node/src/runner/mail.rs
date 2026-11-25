@@ -148,10 +148,7 @@ impl MailState {
             text.push_str(&format!("New mail: {m}. "));
         }
         if !self.sent.is_empty() {
-            text.push_str(&format!(
-                "Sent: {}. ",
-                self.sent.join("; ")
-            ));
+            text.push_str(&format!("Sent: {}. ", self.sent.join("; ")));
         }
         if let Some(c) = &chat {
             text.push_str(&format!(
