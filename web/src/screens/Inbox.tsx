@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAccount } from "@/components/AccountTabs";
 import { ApproveAllBar } from "@/components/ApproveAllBar";
 import { changedKeys, ReportBody, ReportChatBox, reportDefaults } from "@/components/Report";
@@ -217,14 +217,30 @@ function ReportScreen({
     const state = byId.get(id)?.state ?? "done";
     return state === "done" || state === "automatic" || state === "handled_elsewhere";
   };
-  const allDone = named.length > 0 && named.every(finished) && approved !== null;
-  // "rolling" slides and fades the parts away; "gone" then removes them, so the space closes.
-  const [rolled, setRolled] = useState<"no" | "rolling" | "gone">("no");
+  // Nothing left to act on: every card the defaults name is finished, or there are no defaults or questions at all
+  // (whatever text the agent left).
+  const allDone = named.every(finished) && !/<Ask\b/.test(report.markdown) && report.cards_not_in_report.length === 0;
+  // "rolling" slides and fades the parts away; "gone" then removes them, so the space closes. A report that's already
+  // done when the page opens (or when a new one arrives done) shows "All done." at once, without the roll.
+  const [rolled, setRolled] = useState<"no" | "rolling" | "gone">(() => (allDone ? "gone" : "no"));
+  const firstReport = useRef(true);
   useEffect(() => {
-    setRolled("no");
+    if (firstReport.current) {
+      firstReport.current = false;
+      return;
+    }
+    setRolled(allDone ? "gone" : "no");
+    // Only when another report arrives; allDone changing on this one is the roll below.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the report alone
   }, [report.id]);
+  const rolledNow = useRef(rolled);
+  rolledNow.current = rolled;
   useEffect(() => {
-    if (!allDone || busy) return;
+    if (!allDone) {
+      setRolled("no");
+      return;
+    }
+    if (busy || rolledNow.current !== "no") return;
     const roll = window.setTimeout(() => setRolled("rolling"), 1200);
     const gone = window.setTimeout(() => setRolled("gone"), 1200 + 600);
     return () => {
