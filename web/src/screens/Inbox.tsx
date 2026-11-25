@@ -243,17 +243,35 @@ function ReportScreen({
   }, [report.id]);
   const rolledNow = useRef(rolled);
   rolledNow.current = rolled;
+  // After an Approve All the page stays dark through the end: the sheen fades, the report rolls up under the
+  // darkening, then the darkening fades and "All done." comes in. A report that finishes any other way (the person
+  // archived the last emails in Gmail) just rolls up.
+  const ranApproveAll = useRef(false);
+  if (busy) ranApproveAll.current = true;
+  const [holdingDark, setHoldingDark] = useState(false);
   useEffect(() => {
     if (!allDone) {
       setRolled("no");
+      setHoldingDark(false);
+      if (!busy) ranApproveAll.current = false;
       return;
     }
     if (busy || rolledNow.current !== "no") return;
-    const roll = window.setTimeout(() => setRolled("rolling"), 1200);
-    const gone = window.setTimeout(() => setRolled("gone"), 1200 + 600);
+    const timers: number[] = [];
+    const at = (ms: number, f: () => void) => timers.push(window.setTimeout(f, ms));
+    if (ranApproveAll.current) {
+      ranApproveAll.current = false;
+      setHoldingDark(true);
+      // The sheen's fade (400ms), the roll (its last part starts 320ms in and takes 450ms), the darkening's fade.
+      at(500, () => setRolled("rolling"));
+      at(500 + 800, () => setHoldingDark(false));
+      at(500 + 800 + 400, () => setRolled("gone"));
+    } else {
+      at(1200, () => setRolled("rolling"));
+      at(1200 + 800, () => setRolled("gone"));
+    }
     return () => {
-      window.clearTimeout(roll);
-      window.clearTimeout(gone);
+      for (const t of timers) window.clearTimeout(t);
     };
   }, [allDone, busy]);
   const request = reportApproveRequest(inbox, report, changed);
@@ -284,8 +302,8 @@ function ReportScreen({
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-clip px-4 pt-6 pb-4">
         <ReportMeta report={report} />
         <div
-          className={`report-busy-wrap mt-4${busy ? " busy" : ""}${working ? " running" : ""}`}
-          aria-busy={busy}
+          className={`report-busy-wrap mt-4${busy || holdingDark ? " busy" : ""}${working ? " running" : ""}`}
+          aria-busy={busy || holdingDark}
         >
           <ReportBody
             report={report}

@@ -193,12 +193,13 @@ input[type="file"]:not(:disabled),
   margin-top: 1.4em;
   color: var(--color-ink);
 }
-/* An item with a bold headline: the headline and its default in the page's ink, the description between them
-   secondary. Lists without headlines (the Archive part) stay in ink. */
-.report li:has(> strong:first-child) {
+/* An item to act on (a bold headline, a description, then its default): the headline and the default in the page's
+   ink, the description between them secondary. Only items with a default: a plain item that starts with a bold label
+   ("**Critical:** the host nearly ran out of memory") reads as one sentence, all in ink. */
+.report li:has(> strong:first-child):has(.report-default) {
   color: var(--color-muted);
 }
-.report li > strong:first-child {
+.report li:has(.report-default) > strong:first-child {
   color: var(--color-ink);
 }
 
@@ -359,6 +360,10 @@ input[type="file"]:not(:disabled),
 .report-busy-wrap {
   position: relative;
 }
+/* Two layers over the report while an Approve All runs: the flat darkening (::before) and the sheen (::after), a
+   darkening that lifts inside a diagonal band, so the text there brightens. They cross-fade, so when the work is done
+   the band fades out and the report stays dark while it rolls up underneath, then the darkening fades. */
+.report-busy-wrap::before,
 .report-busy-wrap::after {
   content: "";
   position: absolute;
@@ -367,9 +372,14 @@ input[type="file"]:not(:disabled),
   pointer-events: none;
   opacity: 0;
   transition: opacity 400ms var(--ease-out);
-  /* One layer: the darkening lifts inside a diagonal band, so the text there brightens. The layer is three times the
-     width and doesn't tile; moving it from 100% to 0% keeps the whole report covered while the band starts just past
-     the left edge and ends just past the right, slant included, so the next pass follows soon after. */
+}
+.report-busy-wrap::before {
+  background: oklch(16% 0.012 250 / 0.5);
+}
+.report-busy-wrap::after {
+  /* The layer is three times the width and doesn't tile; moving it from 100% to 0% keeps the whole report covered
+     while the band starts just past the left edge and ends just past the right, slant included, so the next pass
+     follows soon after. */
   background: linear-gradient(
       100deg,
       oklch(16% 0.012 250 / 0.5) 40%,
@@ -380,11 +390,18 @@ input[type="file"]:not(:disabled),
   background-size: 300% 100%;
   background-position: 100% 0;
 }
-.report-busy-wrap.busy::after {
+/* Dark: during the undo window, and from the end of the work until the report has rolled up. */
+.report-busy-wrap.busy::before {
   opacity: 1;
 }
-/* The sheen only once the actions are really running: during the undo window the report just darkens. */
+/* The sheen only once the actions are really running; it keeps moving while it fades out. */
+.report-busy-wrap.busy.running::before {
+  opacity: 0;
+}
 .report-busy-wrap.busy.running::after {
+  opacity: 1;
+}
+.report-busy-wrap.busy::after {
   animation: sheen 2.6s linear infinite;
 }
 @keyframes sheen {
