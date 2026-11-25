@@ -177,7 +177,7 @@ function WorkingSpinner({ answer }: { answer: ReportAnswer | undefined }) {
     <Loader2
       role="img"
       aria-label={`${report.posted_by.tab} is working on this`}
-      className="absolute top-1.5 left-full ml-2 size-3.5 animate-spin text-neutral motion-reduce:animate-none max-sm:ml-0.5"
+      className="absolute top-1.5 left-full ml-2 size-3.5 animate-spin text-neutral max-sm:ml-0.5"
     />
   );
 }
