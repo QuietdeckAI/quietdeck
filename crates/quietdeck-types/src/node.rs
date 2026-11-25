@@ -227,7 +227,7 @@ pub enum DeckRequest {
     Presence {
         active: bool,
     },
-    /// To the runner: the person pressed "Show now": wake the agent for what it holds, even while they read.
+    /// To the runner: the person pressed "Triage now": wake the agent for what it holds, even while they read.
     ReleaseHeld,
     /// To the runner: its agent finished its round (`quietdeck round done`), so the next wake-up can go.
     RoundDone,

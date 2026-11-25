@@ -548,6 +548,45 @@ pub async fn save_settings(state: &AppState, s: Settings) -> AppResult<Settings>
 
 /// Releases each Approve All batch when its undo window ends, and tells each agent it has decisions to take. One
 /// task for the deck, woken when a batch is recorded.
+/// The watchdog over approved work (Nathan, 25 November: "don't let anything get stuck in progress"): every minute,
+/// a card the runner claimed 10 minutes ago and hasn't finished, or one released 5 minutes ago that nothing took, goes
+/// to its agent with the reason, and the agent is told at once.
+pub async fn stuck_watch(state: AppState) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        let stuck = match decisions::unstick(&state.db, now_ms(), 10 * 60_000, 5 * 60_000).await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(error = %e, "the stuck-work watchdog");
+                continue;
+            }
+        };
+        if stuck.is_empty() {
+            continue;
+        }
+        tracing::warn!(cards = stuck.len(), "approved work was stuck: handed to its agent");
+        state.changed(Changed::Cards);
+        let mut by_agent: std::collections::BTreeMap<(String, String), Vec<String>> = Default::default();
+        for s in stuck {
+            by_agent.entry((s.node, s.tab)).or_default().push(format!("c_{} ({})", s.card_id, s.reason));
+        }
+        for ((node, tab), lines) in by_agent {
+            let body = format!(
+                "Watchdog: {} approved {} stuck and {} now handed to you: {}. Take {} with `quietdeck decisions take`.",
+                lines.len(),
+                if lines.len() == 1 { "card was" } else { "cards were" },
+                if lines.len() == 1 { "is" } else { "are" },
+                lines.join("; "),
+                if lines.len() == 1 { "it" } else { "them" },
+            );
+            let to = format!("{tab}@{node}");
+            if let Err(e) = crate::relay::send(&state.db, &state.hub, &to, DeliveryKind::Deck, body).await {
+                tracing::warn!(%to, error = %e, "telling the agent about stuck work: it'll see it on its next take");
+            }
+        }
+    }
+}
+
 pub async fn releaser(state: AppState) {
     loop {
         let wait = match decisions::next_due(&state.db).await {

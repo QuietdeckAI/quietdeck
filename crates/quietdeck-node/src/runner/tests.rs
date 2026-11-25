@@ -575,7 +575,7 @@ async fn while_the_person_reads_only_what_the_deck_lets_through_wakes_the_agent(
     assert!(told[1].1.starts_with("New mail: 1 Personal."), "{}", told[1].1);
     assert_eq!(deck.held.lock().unwrap().last(), Some(&(None, 0)));
 
-    // "Show now" wakes for what's held even while the person reads.
+    // "Triage now" wakes for what's held even while the person reads.
     runner.round_done().await;
     runner.set_reading(true).await;
     added.lock().unwrap().push((103, "c", "INBOX"));

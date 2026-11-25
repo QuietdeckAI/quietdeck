@@ -433,6 +433,87 @@ impl DecisionRow {
     }
 }
 
+/// An approved card that stopped moving, handed to its agent by [`unstick`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stuck {
+    pub card_id: i64,
+    pub node: String,
+    pub tab: String,
+    pub reason: String,
+}
+
+/// The watchdog: nothing approved may sit in progress. A card the runner claimed more than `claimed_ms` ago and never
+/// finished (it stopped mid-batch, or an action never reported back), and a released card nobody took within
+/// `unclaimed_ms`, are handed to the agent that posted them with the reason. Nothing that may already have happened
+/// is run again by itself: the agent checks and finishes it.
+pub async fn unstick(db: &Db, now: i64, claimed_ms: i64, unclaimed_ms: i64) -> anyhow::Result<Vec<Stuck>> {
+    type Row = (i64, i64, i64, String, String, Option<String>, Option<i64>, i64);
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT d.id, d.card_id, d.card_version, c.posted_node, c.posted_tab, d.claimed_by, d.picked_up_at, \
+           d.released_at \
+         FROM decisions d JOIN cards c ON c.id = d.card_id \
+         WHERE d.released_at IS NOT NULL AND d.skipped IS NULL AND d.handoff_reason IS NULL \
+           AND d.kind IN ('approve', 'edit', 'adjust') AND c.version = d.card_version \
+           AND c.state IN ('approved', 'executing') \
+           AND ((d.claimed_by = 'runner' AND d.picked_up_at < ?) OR (d.claimed_by IS NULL AND d.released_at < ?)) \
+           AND EXISTS (SELECT 1 FROM actions a WHERE a.card_id = d.card_id AND a.card_version = d.card_version \
+             AND a.status IN ('released', 'started'))",
+    )
+    .bind(now - claimed_ms)
+    .bind(now - unclaimed_ms)
+    .fetch_all(db)
+    .await?;
+    let mut out = Vec::new();
+    for (id, card_id, version, node, tab, claimed_by, picked_up_at, released_at) in rows {
+        let kinds: Vec<(String,)> = sqlx::query_as(
+            "SELECT type FROM actions WHERE card_id = ? AND card_version = ? AND status = 'started' ORDER BY seq",
+        )
+        .bind(card_id)
+        .bind(version)
+        .fetch_all(db)
+        .await?;
+        let kinds: Vec<String> = kinds.into_iter().map(|(t,)| t.replace('_', " ")).collect();
+        let minutes = (now - picked_up_at.unwrap_or(released_at)) / 60_000;
+        let reason = match (claimed_by.as_deref(), kinds.is_empty()) {
+            (Some(_), false) => format!(
+                "stuck in progress for {minutes} minutes: the runner started its {} and never reported back. Check \
+                 whether it happened, then finish it",
+                kinds.join(" and ")
+            ),
+            (Some(_), true) => format!(
+                "stuck for {minutes} minutes: the runner claimed it and never started it (it may have restarted). \
+                 Carry it out"
+            ),
+            (None, _) => {
+                format!("approved {minutes} minutes ago and nothing took it (is the runner running?). Carry it out")
+            }
+        };
+        let mut tx = db.begin().await?;
+        sqlx::query("UPDATE decisions SET claimed_by = NULL, picked_up_at = NULL, handoff_reason = ? WHERE id = ?")
+            .bind(&reason)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "UPDATE actions SET status = 'released', run_by = NULL, started_at = NULL \
+             WHERE card_id = ? AND card_version = ? AND status IN ('released', 'started')",
+        )
+        .bind(card_id)
+        .bind(version)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("UPDATE cards SET state = 'handed_off', handoff_reason = ?, updated_at = ? WHERE id = ?")
+            .bind(&reason)
+            .bind(now)
+            .bind(card_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        out.push(Stuck { card_id, node, tab, reason });
+    }
+    Ok(out)
+}
+
 /// `quietdeck decisions take`: every released decision on cards this agent posted, claimed for it in one go.
 pub async fn take(db: &Db, me: &SessionRef) -> anyhow::Result<Vec<Released>> {
     let now = now_ms();
@@ -953,6 +1034,37 @@ mod tests {
         undo(&db, &a.batch).await.unwrap();
         assert!(matches!(undo(&db, &a.batch).await, Err(AppError::NotFound(_))));
         assert_eq!(cards::get(&db, c.id).await.unwrap().unwrap().state, CardState::Open);
+    }
+
+    #[tokio::test]
+    async fn the_watchdog_hands_stuck_work_to_the_agent() {
+        let db = crate::db::memory().await;
+        let runner = SessionRef { session_id: None, ..agent() };
+        // Claimed by the runner, one action started, never reported.
+        let c = post(&db, "t1").await;
+        approve_all(&db, &ApproveAll { cards: vec![approve(&c)], timeline: vec![] }, 0).await.unwrap();
+        release_due(&db).await.unwrap();
+        let taken = runner_take(&db, &runner).await.unwrap();
+        runner_sort(&db, &runner, &[taken[0].decision.id], &[]).await.unwrap();
+        start(&db, &runner, RunBy::Runner, c.action_records[0].id).await.unwrap();
+        // Released, and nothing took it.
+        let d = post(&db, "t2").await;
+        approve_all(&db, &ApproveAll { cards: vec![approve(&d)], timeline: vec![] }, 0).await.unwrap();
+        release_due(&db).await.unwrap();
+
+        assert!(unstick(&db, now_ms(), 600_000, 300_000).await.unwrap().is_empty(), "not stuck yet");
+        let later = now_ms() + 11 * 60_000;
+        let stuck = unstick(&db, later, 600_000, 300_000).await.unwrap();
+        assert_eq!(stuck.len(), 2);
+        assert!(stuck.iter().any(|s| s.card_id == c.id && s.reason.contains("started its archive and never reported")));
+        assert!(stuck.iter().any(|s| s.card_id == d.id && s.reason.contains("nothing took it")));
+        assert_eq!(cards::get(&db, c.id).await.unwrap().unwrap().state, CardState::HandedOff);
+        // The agent takes both, with the reasons, and the runner no longer sees them.
+        let mine = take(&db, &agent()).await.unwrap();
+        assert_eq!(mine.len(), 2);
+        assert!(mine.iter().all(|r| r.handoff_reason.is_some()));
+        assert!(runner_take(&db, &runner).await.unwrap().is_empty());
+        assert!(unstick(&db, later, 600_000, 300_000).await.unwrap().is_empty(), "handed over once");
     }
 
     #[tokio::test]

@@ -42,7 +42,7 @@ export function ReportMeta({ report }: { report: Report }) {
 
 /**
  * While the person reads: a toast that stays in the top right until what's held comes in, saying what waits, with
- * Show now.
+ * Triage now.
  */
 /** While open cards are missing from the report: a toast that stays until the agent adds them, with Threads. */
 function MissingToast({ count }: { count: number }) {
@@ -85,7 +85,7 @@ function HeldToast({ presence }: { presence: Presence }) {
           disabled={release.isSuccess}
           onClick={() => release.mutate()}
         >
-          {release.isSuccess ? "Coming in" : "Show now"}
+          {release.isSuccess ? "Triaging" : "Triage now"}
         </Button>
       </div>
     </div>

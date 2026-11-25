@@ -166,7 +166,7 @@ pub async fn held(state: &AppState, node: &str, summary: Option<String>, count: 
     Ok(())
 }
 
-/// "Show now": the runners wake their agents for what they hold.
+/// "Triage now": the runners wake their agents for what they hold.
 pub async fn release(state: &AppState) -> AppResult<()> {
     crate::runner::tell_runners(state, DeckRequest::ReleaseHeld).await;
     Ok(())

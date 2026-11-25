@@ -80,7 +80,7 @@ pub struct Runner {
     send_as: Mutex<HashMap<String, (Instant, Vec<String>)>>,
     /// The person is reading the Inbox (the deck says so): new items wait unless the deck lets them through.
     reading: std::sync::atomic::AtomicBool,
-    /// "Show now": the next wake-up goes even while the person reads.
+    /// "Triage now": the next wake-up goes even while the person reads.
     release: std::sync::atomic::AtomicBool,
     /// What the deck was last told the runner holds, so it's told only of changes.
     last_held: std::sync::Mutex<Option<(Option<String>, u64)>>,
@@ -659,7 +659,7 @@ impl Runner {
         state.save(&self.mail_state_path);
     }
 
-    /// "Show now": wake the agent for what's held, even while the person reads.
+    /// "Triage now": wake the agent for what's held, even while the person reads.
     pub async fn release_held(&self) {
         self.release.store(true, std::sync::atomic::Ordering::SeqCst);
         let mut state = self.mail.lock().await;
