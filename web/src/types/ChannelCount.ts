@@ -8,4 +8,9 @@ export type ChannelCount = { source: string, channel_name: string, count: number
  * While the person reads the Inbox: why each message that may get through now does ("rule Critical alerts").
  * The others wait until the person is idle.
  */
-let_through: Array<string>, };
+let_through: Array<string>, 
+/**
+ * Delivered straight to the session that owns them (`<tab>@<node>`), such as a webhook's alerts: the runner
+ * counts them into its agent's next wake-up as handled, for the report's summary, and doesn't wake it for them.
+ */
+handled_by: string | null, };

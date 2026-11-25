@@ -69,6 +69,7 @@ pub async fn store(db: &Db, node: &str, messages: &[IncomingMessage]) -> AppResu
                 channel_name: m.channel_name.clone(),
                 count: 1,
                 let_through: vec![],
+                handled_by: None,
             }),
         }
     }

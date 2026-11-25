@@ -82,6 +82,12 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   and approved by the person; retries and a fallback to triage. Now: the design sent to planning (25 November). Not
   built yet.
 
+- **Alerts go straight to the agent that owns them.** A webhook per sender (Alertmanager, Argo CD notifications,
+  Gatus), approved by the person, delivered to the owning session as outside data; the triage agent only folds a count
+  into the report ("42 alerts about memory; talira infra handled them"), never a card per alert (Nathan, 25 November).
+  An alert whose owner is offline falls back to triage. Now: `deploy/README.md` "Webhooks",
+  `crates/quietdeck-server/src/hooks.rs`, build plan 3.7.
+
 ## Watching everything in the background
 
 - **Every background thing has a check that alerts, and an agent listens.** Heartbeats for scheduled jobs, health

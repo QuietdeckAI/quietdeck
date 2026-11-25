@@ -42,6 +42,10 @@ pub struct MailState {
     /// Items the deck let through while the person reads the Inbox, each with why, not yet told to the agent.
     #[serde(default)]
     pub urgent: Vec<String>,
+    /// Items delivered straight to the session that owns them since the last wake-up (a webhook's alerts), per
+    /// "source\troom\towner": counted for the report's summary, never a wake-up of their own.
+    #[serde(default)]
+    pub handled: BTreeMap<String, u64>,
     /// Mail the person sent since the last wake-up, a line each ("DocSpring: 'Re: Ads' to rep@x.com (thread 1a2b)").
     /// It wakes the agent like new mail, but says it's sent, so the agent passes the sent version on to the sessions
     /// involved instead of hunting the inbox for it (Nathan, 25 Nov).
@@ -79,6 +83,11 @@ impl MailState {
     /// New messages arrived on the deck (from [`quietdeck_types::node::DeckRequest::MessagesArrived`]).
     pub fn add_messages(&mut self, channels: &[quietdeck_types::message::ChannelCount]) {
         for c in channels {
+            if let Some(owner) = &c.handled_by {
+                *self.handled.entry(format!("{}\t{}\t{owner}", c.source, c.channel_name)).or_default() +=
+                    u64::from(c.count);
+                continue;
+            }
             *self.channels.entry(format!("{}\t{}", c.source, c.channel_name)).or_default() += u64::from(c.count);
         }
     }
@@ -89,6 +98,7 @@ impl MailState {
         self.channels.clear();
         self.urgent.clear();
         self.sent.clear();
+        self.handled.clear();
     }
 
     /// What waits, in a line ("2 Personal, 1 in Infrastructure Alerts (Matrix)"), and how many items.
@@ -140,6 +150,7 @@ impl MailState {
     pub fn wakeup_text(&self, cfg: &RunnerConfig) -> Option<String> {
         let mail = self.mail_counts(cfg);
         let chat = self.message_counts();
+        // Handled items ride along with the next wake-up; alone, they don't wake the agent.
         if mail.is_none() && chat.is_none() && self.sent.is_empty() {
             return None;
         }
@@ -158,6 +169,22 @@ impl MailState {
         }
         if mail.is_some() || chat.is_some() {
             text.push_str("Run your triage round.");
+        }
+        if !self.handled.is_empty() {
+            let parts: Vec<String> = self
+                .handled
+                .iter()
+                .map(|(k, n)| {
+                    let mut it = k.splitn(3, '\t');
+                    let (_, room, owner) = (it.next(), it.next().unwrap_or(""), it.next().unwrap_or(""));
+                    format!("{n} in {room} (→ {owner})")
+                })
+                .collect();
+            text.push_str(&format!(
+                " Handled by their owners since your last wake-up, for a line in the report's archive (scale and \
+                 gist, never a card each): {}.",
+                parts.join(", ")
+            ));
         }
         Some(text.trim_end().to_string())
     }
@@ -374,6 +401,30 @@ mod tests {
     }
 
     #[test]
+    fn alerts_handled_by_their_owner_ride_along_and_never_wake_alone() {
+        let cfg: RunnerConfig = yaml_serde::from_str(
+            "agent: { tab: t }\naccounts:\n  work: { address: b@example.com, label: DocSpring }\n",
+        )
+        .unwrap();
+        let mut s = MailState::default();
+        let handled = quietdeck_types::message::ChannelCount {
+            source: "webhook".into(),
+            channel_name: "Talira alerts".into(),
+            count: 42,
+            let_through: vec![],
+            handled_by: Some("talira infra@agents".into()),
+        };
+        s.add_messages(&[handled]);
+        assert_eq!(s.wakeup_text(&cfg), None, "handled alerts alone don't wake the agent");
+        assert!(s.channels.is_empty());
+        s.add("work", Some(1));
+        let text = s.wakeup_text(&cfg).unwrap();
+        assert!(text.contains("42 in Talira alerts (→ talira infra@agents)"), "{text}");
+        s.clear_pending();
+        assert!(s.handled.is_empty());
+    }
+
+    #[test]
     fn sent_mail_wakes_as_sent_not_new_mail() {
         let cfg: RunnerConfig = yaml_serde::from_str(
             "agent: { tab: t }\naccounts:\n  work: { address: b@example.com, label: DocSpring }\n",
@@ -400,6 +451,7 @@ mod tests {
             channel_name: "Infrastructure Alerts".into(),
             count: 2,
             let_through: vec![],
+            handled_by: None,
         };
         s.add_messages(std::slice::from_ref(&alerts));
         s.add_messages(&[alerts]);

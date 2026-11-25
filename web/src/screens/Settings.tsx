@@ -14,6 +14,7 @@ import type { AuthState } from "@/types/AuthState";
 import type { Ceremony } from "@/types/Ceremony";
 import type { DeckInfo } from "@/types/DeckInfo";
 import type { EnrolmentCode } from "@/types/EnrolmentCode";
+import type { HookEndpoint } from "@/types/HookEndpoint";
 import type { Lease } from "@/types/Lease";
 import type { LeasesView } from "@/types/LeasesView";
 import type { LeaseState } from "@/types/LeaseState";
@@ -30,6 +31,7 @@ export function SettingsScreen() {
       <Notifications />
       <Passkeys />
       <Nodes />
+      <Webhooks />
       <Leases />
       <SignOut />
       <Release />
@@ -390,6 +392,68 @@ const LEASE_STATE: Record<LeaseState, string> = {
   released: "Ended",
   rejected: "Not approved",
 };
+
+/**
+ * Webhook endpoints: an agent proposes one (`quietdeck hooks create`) and it receives nothing until approved here.
+ * Each event goes straight to the session named, kept on the deck so it can catch up; none of it comes to the Inbox.
+ */
+function Webhooks() {
+  const qc = useQueryClient();
+  const hooks = useQuery({ queryKey: ["hooks"], queryFn: () => api<HookEndpoint[]>("/api/hooks") });
+  const approve = useMutation({
+    mutationFn: (id: string) => api(`/api/hooks/${encodeURIComponent(id)}/approve`, { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["hooks"] }),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => api(`/api/hooks/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["hooks"] }),
+  });
+  if (!hooks.data || hooks.data.length === 0) return null;
+  return (
+    <Section title="Webhooks">
+      <p className="mb-3 text-sm text-neutral">
+        Alerts a service sends here go straight to the session named, never to your Inbox. Each event is kept on the
+        deck so that session can read it later.
+      </p>
+      <ul className="flex flex-col divide-y divide-rule rounded-lg border border-rule bg-paper-2">
+        {hooks.data.map((h) => (
+          <li key={h.id} className="flex flex-wrap items-center gap-3 p-4">
+            <span
+              className={cn("size-2 shrink-0 rounded-full", h.approved_at ? "bg-accent" : "bg-rule-strong")}
+              aria-hidden
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate">
+                {h.label} <span className="text-neutral">→ {h.to}</span>
+              </p>
+              <p className="text-sm text-neutral">
+                {h.kind === "alertmanager" ? "Alertmanager" : "JSON"}
+                {h.proposed_by && <> · proposed by {h.proposed_by}</>}
+                {" · "}
+                {h.approved_at
+                  ? `${h.event_count} ${h.event_count === 1 ? "event" : "events"}${h.last_event_at ? `, last ${when(h.last_event_at)}` : ""}`
+                  : "waiting for your approval"}
+              </p>
+            </div>
+            {!h.approved_at && (
+              <Button size="sm" loading={approve.isPending && approve.variables === h.id} onClick={() => approve.mutate(h.id)}>
+                Approve
+              </Button>
+            )}
+            <Button
+              variant="danger"
+              size="sm"
+              loading={remove.isPending && remove.variables === h.id}
+              onClick={() => remove.mutate(h.id)}
+            >
+              Delete
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
 
 function leaseWhat(l: Lease): string {
   const query = typeof l.params.query === "string" ? l.params.query : null;

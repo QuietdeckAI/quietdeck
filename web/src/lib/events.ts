@@ -8,7 +8,7 @@ const STALE: Record<Changed, string[][]> = {
   timeline: [["inbox"], ["history"]],
   sessions: [["sessions"]],
   settings: [["settings"], ["info"]],
-  nodes: [["nodes"]],
+  nodes: [["nodes"], ["hooks"]],
   rules: [["rules"], ["reading-rules"], ["inbox"]],
   leases: [["leases"]],
   pings: [["pings"], ["watches"]],

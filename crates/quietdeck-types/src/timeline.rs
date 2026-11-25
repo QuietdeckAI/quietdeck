@@ -227,78 +227,12 @@ pub struct ThreadWatch {
     pub active: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-#[ts(export)]
-pub enum HookSource {
-    Gatus,
-    Cronitor,
-    Ohdear,
-    Generic,
-}
-
-impl HookSource {
-    pub fn label(self) -> &'static str {
-        match self {
-            HookSource::Gatus => "Gatus",
-            HookSource::Cronitor => "Cronitor",
-            HookSource::Ohdear => "Oh Dear",
-            HookSource::Generic => "Webhook",
-        }
-    }
-}
-
-/// `quietdeck hook create <source> --to <tab>[@<node>]`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
-#[ts(export)]
-pub struct HookCreate {
-    #[garde(skip)]
-    pub source: HookSource,
-    #[garde(length(min = 1, max = 300))]
-    pub to: String,
-    #[serde(default)]
-    #[garde(inner(length(min = 1, max = 100)))]
-    pub account: Option<String>,
-    #[garde(length(min = 1, max = 100))]
-    pub label: String,
-    #[serde(default)]
-    #[garde(skip)]
-    pub fail_to_sender: bool,
-    /// Oh Dear's signing secret, for its HMAC check. Stored on the deck: it's the endpoint's own secret, not a
-    /// service credential.
-    #[serde(default)]
-    #[garde(inner(length(min = 8, max = 500)))]
-    pub signing_secret: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
-#[ts(export)]
-pub struct HookEndpoint {
-    pub id: String,
-    pub source: HookSource,
-    pub target: SessionRef,
-    pub account: Option<String>,
-    pub label: String,
-    pub fail_to_sender: bool,
-    #[ts(type = "string")]
-    #[schemars(with = "String")]
-    pub created_at: Timestamp,
-}
-
-/// `hook create`'s answer. The URL holds the secret and is shown once.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
-#[ts(export)]
-pub struct HookCreated {
-    pub endpoint: HookEndpoint,
-    pub url: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[ts(export)]
 pub struct WebhookFailure {
     pub id: i64,
     pub endpoint_id: String,
-    pub source: HookSource,
+    pub source: crate::hooks::HookKind,
     pub monitor: Option<String>,
     /// firing or resolved
     pub state: Option<String>,

@@ -2,6 +2,6 @@
 import type { HookEndpoint } from "./HookEndpoint";
 
 /**
- * `hook create`'s answer. The URL holds the secret and is shown once.
+ * What `hooks create` answers: the endpoint and its URL, shown this once.
  */
 export type HookCreated = { endpoint: HookEndpoint, url: string, };

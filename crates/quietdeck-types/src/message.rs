@@ -74,6 +74,10 @@ pub struct ChannelCount {
     /// The others wait until the person is idle.
     #[serde(default)]
     pub let_through: Vec<String>,
+    /// Delivered straight to the session that owns them (`<tab>@<node>`), such as a webhook's alerts: the runner
+    /// counts them into its agent's next wake-up as handled, for the report's summary, and doesn't wake it for them.
+    #[serde(default)]
+    pub handled_by: Option<String>,
 }
 
 /// `quietdeck messages`: messages after the caller's last read (`new`), or after a message ID.
@@ -86,7 +90,7 @@ pub struct MessagesPage {
 }
 
 /// The source names the deck takes.
-pub const SOURCES: &[&str] = &["matrix"];
+pub const SOURCES: &[&str] = &["matrix", "webhook"];
 
 /// The text the deck keeps for a message: cut to [`MAX_BODY`] bytes on a character boundary, with a note.
 pub fn clip_body(body: &str) -> String {

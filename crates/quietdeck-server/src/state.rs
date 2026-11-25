@@ -27,7 +27,6 @@ pub struct AppState {
     pub release: Arc<tokio::sync::Notify>,
     /// Web push, when the deck has VAPID keys.
     pub pusher: Option<Arc<crate::push::Pusher>>,
-    #[expect(dead_code, reason = "webhook endpoints' URLs use it (build step 11)")]
     pub hooks_public_url: Option<String>,
     /// True once the deck is stopping (SIGTERM): long-lived connections close.
     pub stopping: tokio::sync::watch::Receiver<bool>,

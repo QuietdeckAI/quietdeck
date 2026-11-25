@@ -29,6 +29,22 @@ Quietdeck has two parts to deploy:
 Health: `GET /healthz` on both ports answers `200 ok` once the database is open and migrated, and 503 before that. Use
 it for liveness and readiness probes.
 
+### Webhooks
+
+`POST /hooks/<endpoint id>/<secret>` on port 8081 (public only through the tunnel; everything else answers 404).
+
+- An agent proposes an endpoint: `quietdeck hooks create --label "Talira alerts" --kind alertmanager --to "talira
+  infra@agents"`. It prints the URL once (the deck keeps only the secret's hash). The endpoint answers 404 until the
+  owner approves it in Settings → Webhooks.
+- Kinds: `generic` (any JSON, or text: a title is taken from `title`, `summary`, `message`, `text`, `description`;
+  lenient for Gatus, which doesn't escape its values) and `alertmanager` (its `webhook_configs` JSON, one event per
+  alert, firing and resolved).
+- Each event is kept once (a repeat of the same call or alert is dropped), delivered straight to the `--to` session as
+  outside data, and readable later with `quietdeck messages --new --source webhook`. The triage agent isn't woken for
+  it: its next wake-up counts it as handled, for a line in the report. If the owner can't be reached, the failure is
+  recorded and the event goes to the triage agent instead.
+- The service always gets 200. At most 120 events per endpoint per minute and 256 KB per call.
+
 ### Data volume
 
 Mounted at `/data`, ReadWriteOnce, owned by gid 65532 (`fsGroup: 65532`).

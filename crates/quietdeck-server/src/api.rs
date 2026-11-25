@@ -89,6 +89,9 @@ pub fn router() -> Router<AppState> {
         .route("/api/report", get(report_show).post(report_set))
         .route("/api/report/done", post(report_done))
         .route("/api/chat/reply", post(chat_reply))
+        .route("/api/hooks", get(hooks_list).post(hooks_create))
+        .route("/api/hooks/{id}/approve", post(hooks_approve))
+        .route("/api/hooks/{id}", axum::routing::delete(hooks_delete))
         .route("/api/report/answers", post(report_answer))
         .route("/api/report/answers/take", post(report_answers_take))
         .route("/api/report/chat", post(report_chat))
@@ -221,6 +224,43 @@ async fn report_show(
     Authed(_): Authed,
 ) -> AppResult<Json<Option<quietdeck_types::report::Report>>> {
     Ok(Json(crate::reports::current(&state.db).await?))
+}
+
+async fn hooks_list(
+    State(state): State<AppState>,
+    Authed(_): Authed,
+) -> AppResult<Json<Vec<quietdeck_types::hooks::HookEndpoint>>> {
+    Ok(Json(crate::hooks::list(&state.db).await?))
+}
+
+/// An agent proposes an endpoint (or the owner makes one); it receives nothing until the owner approves it.
+async fn hooks_create(
+    State(state): State<AppState>,
+    Authed(caller): Authed,
+    Json(req): Json<quietdeck_types::hooks::HookCreate>,
+) -> AppResult<Json<quietdeck_types::hooks::HookCreated>> {
+    let by = match &caller {
+        quietdeck_types::api::Caller::Session { session } => Some(session.clone()),
+        _ => None,
+    };
+    Ok(Json(crate::hooks::create(&state, by.as_ref(), req).await?))
+}
+
+async fn hooks_approve(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(id): Path<String>,
+) -> AppResult<Json<quietdeck_types::hooks::HookEndpoint>> {
+    Ok(Json(crate::hooks::approve(&state, &id).await?))
+}
+
+async fn hooks_delete(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(id): Path<String>,
+) -> AppResult<axum::http::StatusCode> {
+    crate::hooks::delete(&state, &id).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 async fn chat_reply(
