@@ -123,6 +123,33 @@ pub async fn project_of_tab(db: &Db, node: &str, tab: &str) -> anyhow::Result<Op
 }
 
 /// One session pushed by its node.
+/// A session on `node` now has tab `tab`: its open cards and its open report, posted under an earlier tab name, move
+/// to this one. Finished cards keep the name they were posted under. Returns how many cards moved.
+pub async fn follow_rename(db: &Db, node: &str, session_id: &str, tab: &str) -> anyhow::Result<u64> {
+    let moved = sqlx::query(
+        "UPDATE cards SET posted_tab = ? WHERE posted_node = ? AND posted_session_id = ? AND posted_tab != ? \
+         AND state NOT IN ('done', 'handled_elsewhere', 'automatic')",
+    )
+    .bind(tab)
+    .bind(node)
+    .bind(session_id)
+    .bind(tab)
+    .execute(db)
+    .await?
+    .rows_affected();
+    sqlx::query(
+        "UPDATE reports SET posted_tab = ? WHERE posted_node = ? AND posted_session_id = ? AND posted_tab != ? \
+         AND closed_at IS NULL",
+    )
+    .bind(tab)
+    .bind(node)
+    .bind(session_id)
+    .bind(tab)
+    .execute(db)
+    .await?;
+    Ok(moved)
+}
+
 pub async fn upsert(db: &Db, config: &DeckConfig, node: &str, s: &SessionInfo) -> anyhow::Result<()> {
     let project = s.cwd.as_deref().and_then(|cwd| config.project_for_dir(cwd, home_of(Some(cwd)).as_deref()));
     let now = now_ms();

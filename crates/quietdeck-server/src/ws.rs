@@ -125,6 +125,23 @@ async fn send(sink: &mut futures::stream::SplitSink<WebSocket, Message>, frame: 
     sink.send(Message::Text(text.into())).await
 }
 
+/// A session whose tab was renamed keeps its cards and report: they move to its new tab name, so its runner and
+/// `decisions take` still find them. Then the runner is told, since decisions it couldn't see may be waiting.
+async fn follow_renames(state: &AppState, node: &str, sessions: &[quietdeck_types::directory::SessionInfo]) {
+    for s in sessions.iter().filter(|s| s.running) {
+        let Some(tab) = &s.tab else { continue };
+        match sessions::follow_rename(&state.db, node, &s.session_id, tab).await {
+            Ok(0) => {}
+            Ok(moved) => {
+                tracing::info!(%node, %tab, moved, "a renamed session's cards moved to its new tab name");
+                state.changed(Changed::Cards);
+                crate::runner::notify(state, node, tab).await;
+            }
+            Err(e) => tracing::warn!(%node, %tab, error = %e, "moving a renamed session's cards"),
+        }
+    }
+}
+
 async fn handle(state: &AppState, node: &str, reg: &crate::hub::Registration, frame: NodeFrame) {
     let sessions_changed = matches!(
         frame,
@@ -135,8 +152,16 @@ async fn handle(state: &AppState, node: &str, reg: &crate::hub::Registration, fr
     );
     let result = match frame {
         NodeFrame::Hello { .. } => Ok(()),
-        NodeFrame::Sessions { sessions } => sessions::replace_snapshot(&state.db, &state.config, node, &sessions).await,
-        NodeFrame::Session { session } => sessions::upsert(&state.db, &state.config, node, &session).await,
+        NodeFrame::Sessions { sessions } => {
+            let r = sessions::replace_snapshot(&state.db, &state.config, node, &sessions).await;
+            follow_renames(state, node, &sessions).await;
+            r
+        }
+        NodeFrame::Session { session } => {
+            let r = sessions::upsert(&state.db, &state.config, node, &session).await;
+            follow_renames(state, node, std::slice::from_ref(&session)).await;
+            r
+        }
         NodeFrame::SessionClosed { session_id, at, ended } => {
             match sessions::closed(&state.db, node, &session_id, at, ended.as_ref()).await {
                 // A tab closed or an agent exited: its grants are archived. A herdr restart or a sleeping machine

@@ -956,6 +956,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_renamed_session_still_gets_its_released_cards() {
+        let db = crate::db::memory().await;
+        let c = post(&db, "t1").await;
+        approve_all(&db, &ApproveAll { cards: vec![approve(&c)], timeline: vec![] }, 0).await.unwrap();
+        release_due(&db).await.unwrap();
+        let renamed = SessionRef { tab: "quietdeck triage".into(), ..agent() };
+        assert!(runner_take(&db, &renamed).await.unwrap().is_empty(), "the bug: cards keep the old tab name");
+        let moved = crate::store::sessions::follow_rename(&db, "server", "s1", "quietdeck triage").await.unwrap();
+        assert_eq!(moved, 1);
+        assert_eq!(runner_take(&db, &renamed).await.unwrap().len(), 1);
+        assert_eq!(crate::store::sessions::follow_rename(&db, "server", "s1", "quietdeck triage").await.unwrap(), 0);
+    }
+
+    #[tokio::test]
     async fn approve_all_leaves_out_what_changed_just_before_the_click() {
         let db = crate::db::memory().await;
         let c = post(&db, "t1").await;
