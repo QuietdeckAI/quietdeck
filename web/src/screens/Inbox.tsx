@@ -162,19 +162,6 @@ function ReportScreen({
   const byId = cardsById(inbox);
   // From the click until the approved actions have run: the report shows it's being dealt with.
   const [sending, setSending] = useState(false);
-  // The runner's part of an Approve All: cards waiting to be picked up, or being carried out by the runner. Cards handed
-  // to the agent aren't in it: they keep their own spinner until the agent finishes them, without darkening the whole
-  // page (or bringing the darkening back when the agent starts on them). Not the deck's "running" flag either, which
-  // stays on while a handed-off card waits, possibly for hours.
-  const executing = [...byId.values()].some(
-    (c) =>
-      c.state === "approved" ||
-      (c.state === "executing" &&
-        c.action_records.some((a) => a.run_by === "runner" && (a.status === "released" || a.status === "started"))),
-  );
-  const busy = sending || inbox.approving !== null || executing;
-  // Carrying out the approved actions (the undo window is over): the sheen moves.
-  const working = executing && inbox.approving === null && !sending;
   // The cards being carried out: the last Approve All's, and any card approved or running now (so a reload mid-run
   // still shows them). Kept as they finish, so each default shows a spinner, then a check. Cleared when the report
   // next changes after the work is over (the agent rewrites it for the next round).
@@ -196,7 +183,7 @@ function ReportScreen({
   const inFlight = [
     ...(inbox.approving?.cards.map(Number) ?? []),
     ...[...cardsById(inbox).values()]
-      .filter((c) => c.state === "approved" || c.state === "executing")
+      .filter((c) => c.state === "approved" || c.state === "executing" || c.state === "handed_off")
       .map((c) => Number(c.id)),
   ]
     .sort((a, b) => a - b)
@@ -209,6 +196,17 @@ function ReportScreen({
       return { cards, version: report.version };
     });
   }, [inFlight, report.version]);
+  // Everything an Approve All set going, until it's all finished: cards waiting to be picked up, being carried out by
+  // the runner, handed to the agent, or being carried out by it. One continuous state from the click to "All done.",
+  // with no gap between the runner's part and the agent's. (Not the deck's "running" flag.)
+  const unfinished = (id: number) => {
+    const state = byId.get(id)?.state;
+    return state === "approved" || state === "executing" || state === "handed_off" || state === "revising";
+  };
+  const executing = [...(approved?.cards ?? [])].some(unfinished) || inFlight !== "";
+  const busy = sending || inbox.approving !== null || executing;
+  // Carrying out the approved actions (the undo window is over): the sheen moves.
+  const working = executing && inbox.approving === null && !sending;
   useEffect(() => {
     if (!busy && !inFlight && approved && report.version !== approved.version) setApproved(null);
   }, [busy, inFlight, approved, report.version]);
