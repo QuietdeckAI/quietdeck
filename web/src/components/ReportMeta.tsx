@@ -172,18 +172,3 @@ export function ReportToasts({ report, presence }: { report: Report; presence: P
     </>
   );
 }
-
-/**
- * When Approve All may go: 10 seconds after the newest change to anything it would approve (a card's new version, or
- * a change to its default on the report). The deck checks the same.
- */
-export function settleUntil(report: Report, cards: { id: number; updated_at: string }[]): number {
-  const ids = new Set(cards.map((c) => Number(c.id)));
-  const times = cards.map((c) => new Date(c.updated_at).getTime());
-  for (const ch of report.changes) {
-    if (ch.cards.some((id) => ids.has(Number(id)))) times.push(new Date(ch.at).getTime());
-  }
-  return times.length ? Math.max(...times) + SETTLE_MS : 0;
-}
-
-export const SETTLE_MS = 10_000;

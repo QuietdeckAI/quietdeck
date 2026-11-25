@@ -452,6 +452,8 @@ function ApprovedMark({ cards }: { cards: string | undefined }) {
     );
   const mine = ids.filter((id) => approved?.has(id));
   if (mine.length === 0) return null;
+  // During the undo window nothing has started (the cards are still open): no mark until it's really being done.
+  if (mine.every((id) => byId.get(id)?.state === "open")) return null;
   // A finished card leaves the Inbox's list, so one that's gone is done.
   const done = mine.every((id) => {
     const state = byId.get(id)?.state ?? "done";
@@ -840,18 +842,24 @@ export function ReportBody({
   drafts,
   setDraft,
   approved,
+  rolled,
 }: {
   report: Report;
   cards: Map<number, Card>;
   drafts: Record<string, string>;
   setDraft: (key: string, text: string) => void;
   approved?: Set<number>;
+  /** Everything on it is done: all but the heading rolls up and away ("rolling"), then is removed ("gone"). */
+  rolled?: "no" | "rolling" | "gone";
 }) {
   const running = useRunningSessions();
   const kept = useKeptFields();
   return (
     <ReportCtx value={{ report, cards, sessions: running.data ?? [], drafts, setDraft, kept, approved }}>
-      <Render className="md report" options={OPTIONS}>
+      <Render
+        className={cn("md report", (rolled === "rolling" || rolled === "gone") && "rolled", rolled === "gone" && "gone")}
+        options={OPTIONS}
+      >
         {onlyReportTags(report.markdown)}
       </Render>
     </ReportCtx>

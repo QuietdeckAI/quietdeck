@@ -377,7 +377,10 @@ input[type="file"]:not(:disabled),
 }
 .report-busy-wrap.busy::after {
   opacity: 1;
-  animation: sheen 3.2s linear infinite;
+}
+/* The sheen only once the actions are really running: during the undo window the report just darkens. */
+.report-busy-wrap.busy.running::after {
+  animation: sheen 2.6s linear infinite;
 }
 @keyframes sheen {
   from {
@@ -404,4 +407,30 @@ input[type="file"]:not(:disabled),
 }
 .check-in {
   animation: check-in 320ms var(--ease-out);
+}
+
+/* The report rolls up when everything on it is done: each part under the heading slides up and fades, one after
+   another from the top, then the space closes. The heading stays. */
+.report > * {
+  transition:
+    opacity 450ms var(--ease-out),
+    transform 450ms var(--ease-out);
+}
+.report.rolled > :not(h1:first-child) {
+  opacity: 0;
+  transform: translateY(-14px);
+  pointer-events: none;
+}
+.report.rolled > :nth-child(2) { transition-delay: 0ms; }
+.report.rolled > :nth-child(3) { transition-delay: 40ms; }
+.report.rolled > :nth-child(4) { transition-delay: 80ms; }
+.report.rolled > :nth-child(5) { transition-delay: 120ms; }
+.report.rolled > :nth-child(6) { transition-delay: 160ms; }
+.report.rolled > :nth-child(7) { transition-delay: 200ms; }
+.report.rolled > :nth-child(8) { transition-delay: 240ms; }
+.report.rolled > :nth-child(9) { transition-delay: 280ms; }
+.report.rolled > :nth-child(n + 10) { transition-delay: 320ms; }
+/* Then the emptied parts are removed, so the space closes. */
+.report.gone > :not(h1:first-child) {
+  display: none;
 }

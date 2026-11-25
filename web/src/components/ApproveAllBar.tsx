@@ -2,7 +2,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Square, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { SETTLE_MS } from "@/components/ReportMeta";
 import { api } from "@/lib/api";
 import type { ApproveAll } from "@/types/ApproveAll";
 import type { Approving } from "@/types/Approving";
@@ -17,7 +16,6 @@ export function ApproveAllBar({
   beforeApprove,
   top,
   inline,
-  settleUntil = 0,
   onPending,
 }: {
   inbox: Inbox;
@@ -28,42 +26,33 @@ export function ApproveAllBar({
   top?: boolean;
   /** Just the buttons, compact, for another bar (the report's chat box): the status floats above that bar. */
   inline?: boolean;
-  /** Until this time (ms), something Approve All would approve changed too recently to have been read. */
-  settleUntil?: number;
   /** Told when an Approve All starts and finishes being sent, so the page can show it's busy from the click. */
   onPending?: (pending: boolean) => void;
 }) {
-  // Counts down while something changed too recently: "Approve All in 4s". The deck refuses it too.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (settleUntil <= Date.now()) return;
-    setNow(Date.now());
-    const t = window.setInterval(() => {
-      setNow(Date.now());
-      if (Date.now() >= settleUntil) window.clearInterval(t);
-    }, 250);
-    return () => window.clearInterval(t);
-  }, [settleUntil]);
-  const wait = Math.ceil((settleUntil - now) / 1000);
-  const fresh = wait > 0;
-  // Not a countdown on the button, which reads like an approval about to happen: nothing is pending, so there's
-  // nothing to cancel. The button only unlocks.
-  const settleNote = fresh
-    ? `Inbox changed ${Math.max(1, SETTLE_MS / 1000 - wait)}s ago: read it first. Approve All unlocks in ${wait}s.`
-    : null;
   const qc = useQueryClient();
   const [skipped, setSkipped] = useState<Skipped[]>([]);
   // Awaited in onSuccess, so a button stays busy until the Inbox it changed is back: otherwise Approve All shows
   // again for a moment between the answer and the refreshed Inbox, then turns into Undo.
   const refresh = () => qc.invalidateQueries({ queryKey: ["inbox"] });
 
+  // The batch being undone (or "pending": Undo pressed before the deck answered), so the bar shows Approve All at once.
+  const [undoing, setUndoing] = useState<string | null>(null);
+  // Undo pressed before the deck answered: undo as soon as the answer names the batch.
+  const undoWhenAnswered = useRef(false);
   const approve = useMutation({
+    onMutate: () => setUndoing(null),
     mutationFn: async () => {
+      undoWhenAnswered.current = false;
       await beforeApprove?.();
       return api<Approving>("/api/decisions/approve-all", { method: "POST", body: request });
     },
     onSuccess: async (a) => {
       setSkipped(a.skipped);
+      if (undoWhenAnswered.current && a.cards.length > 0) {
+        undoWhenAnswered.current = false;
+        setUndoing(a.batch);
+        await api("/api/decisions/undo", { method: "POST", body: { batch: a.batch } });
+      }
       await refresh();
     },
   });
@@ -78,9 +67,25 @@ export function ApproveAllBar({
   });
 
   const approving = inbox.approving;
+  // Undo shows the moment Approve All is pressed, not after the deck answers, so the button never flashes through a
+  // loading state on its way there.
+  // And it goes back to Approve All the moment Undo is pressed, for the same reason.
+  const undoingThis = undoing !== null && (approving?.batch === undoing || (approving === null && undoing === "pending"));
+  const showUndo = (approving !== null || approve.isPending) && !undoingThis;
+  const pressUndo = () => {
+    undone.current = true;
+    if (approving) {
+      setUndoing(approving.batch);
+      undo.mutate(approving.batch);
+    } else {
+      setUndoing("pending");
+      undoWhenAnswered.current = true;
+    }
+  };
   // Undo and Approve All share the bar's corner: a tap meant for Undo that lands just after the window ends must
   // not approve whatever is on screen now. So Approve All waits a moment after each window.
   const [settling, setSettling] = useState(false);
+  const undone = useRef(false);
   const lastBatch = useRef<string | null>(null);
   useEffect(() => {
     if (approving) {
@@ -89,6 +94,11 @@ export function ApproveAllBar({
     }
     if (lastBatch.current === null) return;
     lastBatch.current = null;
+    // Undone on purpose: no stray tap to guard against.
+    if (undone.current) {
+      undone.current = false;
+      return;
+    }
     setSettling(true);
     const t = window.setTimeout(() => setSettling(false), 1500);
     return () => window.clearTimeout(t);
@@ -99,16 +109,14 @@ export function ApproveAllBar({
   const error = approve.error ?? undo.error ?? stop.error;
 
   if (inline) {
-    const status = approving
+    const status = approving && !undoingThis
       ? `Approving ${approving.cards.length === 1 ? "1 card" : `${approving.cards.length} cards`}`
-      : settleNote
-        ? settleNote
-        : skipped.length > 0
+      : skipped.length > 0
         ? `Left alone: ${skipped.map((s) => s.reason).filter((r, i, all) => all.indexOf(r) === i).join("; ")}`
         : null;
     return (
       <>
-        {approving && (
+        {approving && !undoingThis && (
           <div
             key={approving.batch}
             className="drain absolute inset-x-0 top-0 h-px bg-accent"
@@ -128,13 +136,12 @@ export function ApproveAllBar({
             {error ? error.message : status}
           </p>
         )}
-        {approving ? (
+        {showUndo ? (
           <Button
             size="sm"
             variant="secondary"
             className="h-10 min-w-32"
-            loading={undo.isPending}
-            onClick={() => undo.mutate(approving.batch)}
+            onClick={pressUndo}
           >
             <Undo2 aria-hidden /> Undo
           </Button>
@@ -145,8 +152,7 @@ export function ApproveAllBar({
             size="sm"
             variant="primary"
             className="h-10 min-w-32"
-            loading={approve.isPending}
-            disabled={settling || nothing || fresh}
+            disabled={settling || nothing}
             onClick={() => approve.mutate()}
           >
             Approve All
@@ -164,7 +170,7 @@ export function ApproveAllBar({
           : "sticky bottom-0 z-10 mt-10 border-t border-rule bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm"
       }
     >
-      {approving && (
+      {approving && !undoingThis && (
         <div
           key={approving.batch}
           className="drain h-px bg-accent"
@@ -173,20 +179,21 @@ export function ApproveAllBar({
         />
       )}
       <div className={top ? "flex flex-wrap items-center gap-3 py-3" : "mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-3"}>
-        {approving ? (
+        {showUndo ? (
           <>
             <p className="flex-1 text-sm text-muted" role="status">
-              Approving {approving.cards.length === 1 ? "1 card" : `${approving.cards.length} cards`}
+              {approving
+                ? `Approving ${approving.cards.length === 1 ? "1 card" : `${approving.cards.length} cards`}`
+                : "Approving"}
             </p>
-            <Button variant="secondary" loading={undo.isPending} onClick={() => undo.mutate(approving.batch)}>
+            <Button variant="secondary" onClick={pressUndo}>
               <Undo2 aria-hidden /> Undo
             </Button>
           </>
         ) : (
           <>
             <div className="min-w-0 flex-1 text-sm text-neutral" role="status">
-              {settleNote && <p className="truncate">{settleNote}</p>}
-              {!settleNote && skipped.length > 0 && (
+              {skipped.length > 0 && (
                 <p className="truncate">
                   Left alone: {skipped.map((s) => s.reason).filter((r, i, all) => all.indexOf(r) === i).join("; ")}
                 </p>
@@ -200,8 +207,7 @@ export function ApproveAllBar({
             {!nothing && (
               <Button
                 variant="primary"
-                loading={approve.isPending}
-                disabled={settling || fresh}
+                    disabled={settling}
                 onClick={() => approve.mutate()}
               >
                 Approve All

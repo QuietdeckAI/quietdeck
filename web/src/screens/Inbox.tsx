@@ -4,7 +4,7 @@ import { useAccount } from "@/components/AccountTabs";
 import { ApproveAllBar } from "@/components/ApproveAllBar";
 import { Link } from "@/components/Header";
 import { changedKeys, ReportBody, ReportChatBox, reportDefaults } from "@/components/Report";
-import { ReportMeta, ReportToasts, settleUntil, UpdatedAt } from "@/components/ReportMeta";
+import { ReportMeta, ReportToasts, UpdatedAt } from "@/components/ReportMeta";
 import { TimelineRow } from "@/components/TimelineRow";
 import { api, query } from "@/lib/api";
 import { usePresence } from "@/lib/presence";
@@ -47,14 +47,15 @@ function reportApproveRequest(inbox: Inbox, report: Report, changed: Set<string>
 const APPROVED_KEY = "quietdeck.inbox.approved";
 
 /** The cards being carried out, as saved for this report: none for another report. */
-function loadApproved(reportId: number): { cards: Set<number>; version: number } | null {
+function loadApproved(reportId: number, version: number): { cards: Set<number>; version: number } | null {
   try {
     const saved = JSON.parse(localStorage.getItem(APPROVED_KEY) ?? "null") as {
       report: number;
       version: number;
       cards: number[];
     } | null;
-    if (!saved || saved.report !== Number(reportId)) return null;
+    // Another report, or a deck that started again (its report is at an earlier version): not ours.
+    if (!saved || saved.report !== Number(reportId) || saved.version > Number(version)) return null;
     return { cards: new Set(saved.cards), version: saved.version };
   } catch {
     return null;
@@ -70,6 +71,51 @@ function saveApproved(reportId: number, value: { cards: Set<number>; version: nu
     );
 }
 
+/**
+ * Still water at dusk, in thin grey lines: a sun setting on the horizon when a round is done, a crescent moon over the
+ * same water while the Inbox waits for its first report. Decorative, so hidden from screen readers.
+ */
+function StillWater({ moon }: { moon?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 120 64"
+      className="mx-auto h-44 w-[330px] max-w-full text-neutral/45"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="0.6"
+      strokeLinecap="round"
+      aria-hidden
+    >
+      {moon ? (
+        <path d="M66 12a12 12 0 1 0 6 22.4A14 14 0 0 1 66 12Z" />
+      ) : (
+        <>
+          <path d="M44 38a16 16 0 0 1 32 0" />
+          {/* Seven rays every 22.5°, from 20 to 25 units out from the sun's centre. */}
+          <path d="M41.52 30.35L36.90 28.43M45.86 23.86L42.32 20.32M52.35 19.52L50.43 14.90M60 18L60 13M67.65 19.52L69.57 14.90M74.14 23.86L77.68 20.32M78.48 30.35L83.10 28.43" />
+        </>
+      )}
+      <path d="M14 38h92" />
+      <path d="M30 46h28M66 46h22" opacity="0.8" />
+      <path d="M40 53h16M64 53h14" opacity="0.6" />
+      <path d="M52 59h14" opacity="0.4" />
+    </svg>
+  );
+}
+
+/** The Inbox's empty state: "No report yet." over a moon before the first report, "All done." over a setting sun
+ * after a round is cleared. */
+function NoReport({ cleared }: { cleared?: boolean }) {
+  return (
+    <div className="text-center">
+      <p className="font-display text-2xl text-neutral">{cleared ? "All done." : "No report yet."}</p>
+      <div className="mt-8">
+        <StillWater moon={!cleared} />
+      </div>
+    </div>
+  );
+}
+
 export function InboxScreen() {
   const account = useAccount();
   const inbox = useQuery({
@@ -83,7 +129,8 @@ export function InboxScreen() {
     return <ReportScreen inbox={inbox.data} report={report} changes={changes} setChanges={setChanges} />;
   }
   return (
-    <main className="mx-auto max-w-3xl px-4 pt-6 pb-4">
+    // A screen tall below the header, so the empty state sits in the middle of the screen.
+    <main className="mx-auto flex min-h-[calc(100dvh-57px)] max-w-3xl flex-col px-4 pt-6 pb-4">
       {inbox.isError && (
         <p role="alert" className="mt-8 text-danger">
           {inbox.error.message}
@@ -91,14 +138,9 @@ export function InboxScreen() {
       )}
       {inbox.data && (
         <>
-          <p className="mt-16 text-center font-display text-xl text-neutral">No report yet.</p>
-          <p className="mt-3 text-center text-sm text-neutral">
-            The triage agent writes one on its next round. Every thread is on{" "}
-            <Link to="/threads" className="text-ink underline underline-offset-4 hover:text-accent">
-              Threads
-            </Link>
-            .
-          </p>
+          <div className="flex flex-1 items-center justify-center">
+            <NoReport />
+          </div>
           {inbox.data.timeline.length > 0 && <Automatic inbox={inbox.data} />}
         </>
       )}
@@ -118,15 +160,18 @@ function ReportScreen({
   setChanges: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
   usePresence();
+  const byId = cardsById(inbox);
   // From the click until the approved actions have run: the report shows it's being dealt with.
   const [sending, setSending] = useState(false);
   const busy = sending || inbox.approving !== null || inbox.running;
+  // Carrying out the approved actions (the undo window is over): the sheen moves.
+  const working = inbox.running && inbox.approving === null && !sending;
   // The cards being carried out: the last Approve All's, and any card approved or running now (so a reload mid-run
   // still shows them). Kept as they finish, so each default shows a spinner, then a check. Cleared when the report
   // next changes after the work is over (the agent rewrites it for the next round).
   // Kept in this browser's storage, for this report, so the checks survive a reload until the reset.
   const [approved, setApprovedState] = useState<{ cards: Set<number>; version: number } | null>(() =>
-    loadApproved(report.id),
+    loadApproved(report.id, report.version),
   );
   const setApproved = (
     next:
@@ -164,15 +209,29 @@ function ReportScreen({
   const pending = Object.entries(changes).filter(([, t]) => t.trim());
   const changed = changedKeys(report);
   for (const [k] of pending) changed.add(k);
+  // Everything the report names is finished and nothing more is running: a moment after the last check, all but the
+  // heading rolls up and away, until the next report arrives.
+  const named = reportDefaults(report.markdown).flatMap((d) => d.cards);
+  const finished = (id: number) => {
+    const state = byId.get(id)?.state ?? "done";
+    return state === "done" || state === "automatic" || state === "handled_elsewhere";
+  };
+  const allDone = named.length > 0 && named.every(finished) && approved !== null;
+  // "rolling" slides and fades the parts away; "gone" then removes them, so the space closes.
+  const [rolled, setRolled] = useState<"no" | "rolling" | "gone">("no");
+  useEffect(() => {
+    setRolled("no");
+  }, [report.id]);
+  useEffect(() => {
+    if (!allDone || busy) return;
+    const roll = window.setTimeout(() => setRolled("rolling"), 1200);
+    const gone = window.setTimeout(() => setRolled("gone"), 1200 + 600);
+    return () => {
+      window.clearTimeout(roll);
+      window.clearTimeout(gone);
+    };
+  }, [allDone, busy]);
   const request = reportApproveRequest(inbox, report, changed);
-  const byId = cardsById(inbox);
-  const settle = settleUntil(
-    report,
-    request.cards.flatMap((d) => {
-      const c = byId.get(Number(d.card_id));
-      return c ? [c] : [];
-    }),
-  );
   const beforeApprove = async () => {
     const defaults = reportDefaults(report.markdown);
     for (const [k, t] of pending) {
@@ -191,12 +250,31 @@ function ReportScreen({
     setChanges({});
   };
   return (
-    <>
-      <main className="mx-auto max-w-3xl px-4 pt-6 pb-4">
+    // Everything under the header (57px) is at least the rest of the screen, and the report's part grows to fill it:
+    // with little on the page (the empty state) the bar still sits exactly at the bottom, as it does when the report
+    // is long and scrolls.
+    <div className="flex min-h-[calc(100dvh-57px)] flex-col">
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pt-6 pb-4">
         <ReportMeta report={report} />
-        <div className={`report-busy-wrap mt-4${busy ? " busy" : ""}`} aria-busy={busy}>
-          <ReportBody report={report} cards={byId} drafts={changes} setDraft={setChange} approved={approved?.cards} />
+        <div
+          className={`report-busy-wrap mt-4${busy ? " busy" : ""}${working ? " running" : ""}`}
+          aria-busy={busy}
+        >
+          <ReportBody
+            report={report}
+            cards={byId}
+            drafts={changes}
+            setDraft={setChange}
+            approved={approved?.cards}
+            rolled={rolled}
+          />
         </div>
+        {rolled === "gone" && (
+          // Fills the space the report left, with "All done." in its middle: the middle of the screen, near enough.
+          <div className="arrive flex flex-1 items-center justify-center">
+            <NoReport cleared />
+          </div>
+        )}
         {others && (
           <p className="mt-10 text-sm text-neutral">
             Some threads aren't in the report yet:{" "}
@@ -212,10 +290,10 @@ function ReportScreen({
         running={inbox.running}
         corner={<UpdatedAt at={report.updated_at} stacked />}
       >
-        <ApproveAllBar inbox={inbox} request={request} beforeApprove={beforeApprove} settleUntil={settle} onPending={setSending} inline />
+        <ApproveAllBar inbox={inbox} request={request} beforeApprove={beforeApprove} onPending={setSending} inline />
       </ReportChatBox>
       <ReportToasts report={report} presence={inbox.presence} />
-    </>
+    </div>
   );
 }
 
