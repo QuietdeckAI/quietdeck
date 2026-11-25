@@ -12,7 +12,9 @@ use crate::hub::{Hub, HubError};
 use crate::store::sessions;
 
 /// How long a node gets to hand a delivery over. Delivery itself is quick (a socket write or one herdr call).
-pub const DELIVERY_TIMEOUT: Duration = Duration::from_secs(20);
+/// Delivering to a session is a socket write or a herdr prompt, done in well under a second: the CLI waits 5 seconds
+/// for `msg send` in all, so the deck answers within 4.
+pub const DELIVERY_TIMEOUT: Duration = Duration::from_secs(4);
 
 /// The one running session an address names, or why there isn't one.
 pub async fn find_target(db: &Db, hub: &Hub, address: &str) -> Result<SessionRow, DeliveryError> {

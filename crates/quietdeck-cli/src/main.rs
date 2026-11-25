@@ -16,6 +16,11 @@ use quietdeck_types::timeline::{TimelineAdd, TimelineKind};
 
 use crate::client::Client;
 
+/// `msg send`, end to end.
+const MSG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Starting or resuming a session: the deck waits up to 150 seconds for the agent to come up.
+const SESSION_START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(160);
+
 #[derive(Parser)]
 #[command(name = "quietdeck", version, about = "Quietdeck: cards, sessions, the message relay and the timeline")]
 struct Cli {
@@ -647,7 +652,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             print::out(json, &rows, |rs| rs.iter().map(print::session_line).collect::<Vec<_>>().join("\n"))
         }
         Command::Session { command: SessionCommand::Start { on, tab, cwd, agent, model, effort, prompt, handoff } } => {
-            let c = Client::connect().await?;
+            let c = Client::connect_with(SESSION_START_TIMEOUT).await?;
             let spec = quietdeck_types::directory::SessionStart {
                 on,
                 tab,
@@ -713,7 +718,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             })
         }
         Command::Session { command: SessionCommand::Resume { session } } => {
-            let c = Client::connect().await?;
+            let c = Client::connect_with(SESSION_START_TIMEOUT).await?;
             let r: quietdeck_types::directory::SessionStarted =
                 c.post("/api/sessions/resume", &quietdeck_types::directory::SessionTarget { session }).await?;
             print::out(json, &r, |r| format!("Resumed {} on {}.", r.tab, r.node))
@@ -742,9 +747,20 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             }
         }
         Command::Msg { command: MsgCommand::Send { to, text } } => {
-            let c = Client::connect().await?;
-            let r: quietdeck_types::node::Delivered =
-                c.post("/api/msg", &MsgSend { to: to.clone(), text: read_arg(&text)? }).await?;
+            // 5 seconds end to end: the token, the deck, and the deck's delivery to the session (4 seconds).
+            let text = read_arg(&text)?;
+            let send = async {
+                let c = Client::connect_with(MSG_TIMEOUT).await?;
+                let r: quietdeck_types::node::Delivered = c.post("/api/msg", &MsgSend { to: to.clone(), text }).await?;
+                anyhow::Ok(r)
+            };
+            let r = match tokio::time::timeout(MSG_TIMEOUT, send).await {
+                Ok(r) => r?,
+                Err(_) => anyhow::bail!(
+                    "not confirmed within {} seconds: the message may not have been delivered to {to}. Try again",
+                    MSG_TIMEOUT.as_secs()
+                ),
+            };
             print::out(json, &r, |_| format!("Delivered to {to}."))
         }
         Command::Timeline { command: TimelineCommand::Add { kind, text, account, refs, lease } } => {
@@ -950,7 +966,7 @@ async fn enroll(code: String, deck: String, name: Option<String>, token_file: Op
         Some(n) => n,
         None => hostname()?,
     };
-    let http = reqwest::Client::new();
+    let http = client::http(client::DECK_TIMEOUT);
     let resp = http.post(format!("{deck}/api/nodes/enroll")).json(&EnrolRequest { code, name }).send().await?;
     let enrolled: Enrolled = client::read(resp).await?;
     let config_dir = client::config_dir();

@@ -393,11 +393,13 @@ async fn close_session(herdr: &str, session_id: &str) -> Result<(), String> {
 
 /// `herdr agent prompt`: types the text into the pane and submits it, once the agent takes input.
 async fn prompt(herdr: &str, pane: &str, text: &str) -> Result<Delivered, String> {
-    let out = tokio::process::Command::new(herdr)
-        .args(["agent", "prompt", pane, text])
-        .output()
-        .await
-        .map_err(|e| format!("running {herdr}: {e}"))?;
+    // Typing into a pane takes milliseconds; the deck gives a whole delivery 4 seconds (relay.rs), so a herdr that
+    // hangs is cut off at 3 and its process killed.
+    let run = tokio::process::Command::new(herdr).args(["agent", "prompt", pane, text]).kill_on_drop(true).output();
+    let out = match tokio::time::timeout(std::time::Duration::from_secs(3), run).await {
+        Ok(r) => r.map_err(|e| format!("running {herdr}: {e}"))?,
+        Err(_) => return Err(format!("{herdr} agent prompt didn't finish within 3 seconds")),
+    };
     if out.status.success() {
         return Ok(Delivered::Orchestrator);
     }

@@ -24,6 +24,10 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   `~/Notes` covers nearly everything. It never remembers the home folder, so sessions shouldn't start there: the node
   marks a new session's folder trusted and moves a home-folder start to `~/Notes/Agents/<tab>`. Now:
   `crates/quietdeck-node/src/control.rs` (25 November).
+- **Every agent-facing command needs a timeout.** A CLI waiting on a socket or HTTP call with no limit hangs an
+  agent's turn forever when the other end restarts mid-request (a node restart during `msg send`, 25 November): the
+  agent can't recover by itself. Quietdeck's CLI: 10 seconds for the local node, 3 to connect and 30 in all for the
+  deck, 5 end to end for a message (the deck's delivery 4, a herdr prompt 3). Now: `crates/quietdeck-cli/src/client.rs`.
 - **Sessions survive a reboot.** herdr resumes Claude Code sessions after a VM restart, with their conversation;
   background processes and the session's temporary scratchpad don't survive. Now: the agents VM restart, 25 November.
 - **Per-machine instructions.** A shared global instructions file for every machine, plus one file per machine

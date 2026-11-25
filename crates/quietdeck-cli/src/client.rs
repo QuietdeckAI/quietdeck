@@ -1,6 +1,23 @@
 //! The local node (for tokens) and the deck's REST API.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// Nothing the CLI does may hang: every call to the node and the deck has a limit, and says which one ran out.
+/// The local node answers in milliseconds; a deck call gets 3 seconds to connect and 30 in all unless the command
+/// says otherwise (a message gets 5 seconds end to end, starting a session waits for the agent to come up).
+pub const NODE_TIMEOUT: Duration = Duration::from_secs(10);
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+pub const DECK_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// An HTTP client with the CLI's limits.
+pub fn http(timeout: Duration) -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(timeout)
+        .build()
+        .expect("the HTTP client builds")
+}
 
 use quietdeck_types::api::ApiError;
 use quietdeck_types::node::{LocalRequest, LocalResponse, NodeStatus};
@@ -41,6 +58,16 @@ pub fn socket_path() -> PathBuf {
 }
 
 pub async fn ask_node(req: &LocalRequest) -> anyhow::Result<LocalResponse> {
+    match tokio::time::timeout(NODE_TIMEOUT, ask_node_once(req)).await {
+        Ok(r) => r,
+        Err(_) => anyhow::bail!(
+            "this machine's Quietdeck node didn't answer within {} seconds (restarting?): try again",
+            NODE_TIMEOUT.as_secs()
+        ),
+    }
+}
+
+async fn ask_node_once(req: &LocalRequest) -> anyhow::Result<LocalResponse> {
     let path = socket_path();
     let stream = tokio::net::UnixStream::connect(&path).await.map_err(|e| {
         anyhow::anyhow!(
@@ -91,9 +118,20 @@ pub struct Client {
     token: String,
 }
 
+/// A failed call, saying when it was a limit that ran out.
+fn sent(e: reqwest::Error) -> anyhow::Error {
+    if e.is_timeout() {
+        anyhow::anyhow!("the deck didn't answer in time: {e}")
+    } else if e.is_connect() {
+        anyhow::anyhow!("couldn't reach the deck: {e}")
+    } else {
+        e.into()
+    }
+}
+
 pub async fn read<T: DeserializeOwned>(resp: reqwest::Response) -> anyhow::Result<T> {
     let status = resp.status();
-    let bytes = resp.bytes().await?;
+    let bytes = resp.bytes().await.map_err(sent)?;
     if status.is_success() {
         return serde_json::from_slice(&bytes).map_err(|e| anyhow::anyhow!("reading the deck's answer: {e}"));
     }
@@ -105,17 +143,36 @@ pub async fn read<T: DeserializeOwned>(resp: reqwest::Response) -> anyhow::Resul
 
 impl Client {
     pub async fn connect() -> anyhow::Result<Client> {
+        Self::connect_with(DECK_TIMEOUT).await
+    }
+
+    /// With a limit of its own for each deck call.
+    pub async fn connect_with(timeout: Duration) -> anyhow::Result<Client> {
         let t = session_token().await?;
-        Ok(Client { http: reqwest::Client::new(), base: t.deck_url, token: t.token })
+        Ok(Client { http: http(timeout), base: t.deck_url, token: t.token })
     }
 
     pub async fn get<T: DeserializeOwned>(&self, path: &str, query: &[(&str, String)]) -> anyhow::Result<T> {
-        let resp = self.http.get(format!("{}{path}", self.base)).bearer_auth(&self.token).query(query).send().await?;
+        let resp = self
+            .http
+            .get(format!("{}{path}", self.base))
+            .bearer_auth(&self.token)
+            .query(query)
+            .send()
+            .await
+            .map_err(sent)?;
         read(resp).await
     }
 
     pub async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> anyhow::Result<T> {
-        let resp = self.http.post(format!("{}{path}", self.base)).bearer_auth(&self.token).json(body).send().await?;
+        let resp = self
+            .http
+            .post(format!("{}{path}", self.base))
+            .bearer_auth(&self.token)
+            .json(body)
+            .send()
+            .await
+            .map_err(sent)?;
         read(resp).await
     }
 }
