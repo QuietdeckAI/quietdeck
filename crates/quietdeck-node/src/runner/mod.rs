@@ -733,9 +733,10 @@ impl Runner {
             }
             return;
         }
-        let Some(mut text) = state.wakeup_text(&self.cfg).or_else(|| {
-            (!state.urgent.is_empty()).then(|| "Run your triage round.".to_string())
-        }) else {
+        let Some(mut text) = state
+            .wakeup_text(&self.cfg)
+            .or_else(|| (!state.urgent.is_empty()).then(|| "Run your triage round.".to_string()))
+        else {
             return;
         };
         if !state.urgent.is_empty() {
