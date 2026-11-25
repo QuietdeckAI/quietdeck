@@ -239,6 +239,9 @@ struct St {
     /// In the order they registered.
     sessions: Vec<SessionInfo>,
     open_polls: HashMap<String, u32>,
+    /// Each session's last long poll: the `since` it sent, when that was behind the state. A session that sends the
+    /// same stale `since` twice isn't taking the version from the answers (an older hook), and would spin.
+    stale_polls: HashMap<String, (u64, bool)>,
     notices: Vec<Notice>,
     next_notice_id: u64,
     claims: HashMap<u64, String>,
@@ -472,13 +475,35 @@ impl<D: Deps> Coordinator<D> {
         self.inner.wake.subscribe()
     }
 
-    /// Resolves once the state moves past `since`, or after `ms`.
-    pub async fn wait_for_change(&self, since: f64, ms: f64) {
+    /// Resolves once the state moves past `since`, or after `ms`. A session that polls again with the same stale
+    /// `since` it sent last time didn't take the version from the answer it got, so it waits as if up to date:
+    /// otherwise every poll returns at once and it spins (25 Nov 2026: ~50 sessions on a Mac kept a node at 80% CPU).
+    pub async fn wait_for_change(&self, since: f64, ms: f64, session: Option<&str>) {
         let mut rx = self.inner.wake.subscribe();
         {
-            let st = self.st();
-            if since != st.version as f64 || st.is_stopped {
+            let mut st = self.st();
+            if st.is_stopped {
                 return;
+            }
+            if since != st.version as f64 {
+                let Some(session) = session else { return };
+                let stale = if since < 0.0 { u64::MAX } else { since as u64 };
+                let version = st.version;
+                let logged = match st.stale_polls.get(session) {
+                    Some(&(last, logged)) if last == stale => logged,
+                    _ => {
+                        st.stale_polls.insert(session.to_string(), (stale, false));
+                        return;
+                    }
+                };
+                if !logged {
+                    st.stale_polls.insert(session.to_string(), (stale, true));
+                    self.deps().log(&format!(
+                        "session {session} keeps polling since version {stale} (now {version}): waiting as if up to date"
+                    ));
+                }
+            } else if let Some(session) = session {
+                st.stale_polls.remove(session);
             }
         }
         let wait = if ms.is_finite() { (ms.max(0.0) as Ms).min(MAX_WAIT_MS) } else { 0 };
@@ -1336,10 +1361,16 @@ impl<D: Deps> Coordinator<D> {
             }
             "GET /state" => {
                 if let Some(since) = req.query.get("since") {
-                    let since = js_number(since);
-                    if since.is_finite() {
+                    let session = req.query.get("session").map(String::as_str);
+                    // `since=undefined` from a session counts as a stale version, so repeating it waits too.
+                    let since = match js_number(since) {
+                        n if n.is_finite() => Some(n),
+                        _ if session.is_some() => Some(-1.0),
+                        _ => None,
+                    };
+                    if let Some(since) = since {
                         let wait = js_number(req.query.get("wait").map_or("0", String::as_str));
-                        self.wait_for_change(since, if wait.is_nan() { 0.0 } else { wait }).await;
+                        self.wait_for_change(since, if wait.is_nan() { 0.0 } else { wait }, session).await;
                     }
                 }
                 Ok(Response {

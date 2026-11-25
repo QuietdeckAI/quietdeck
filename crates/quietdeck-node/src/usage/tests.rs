@@ -617,7 +617,7 @@ async fn long_polls_answer_at_once_when_the_state_moved_on_the_next_change_or_af
         *is_done.lock().expect("lock") = false;
         let (c, flag) = (c.clone(), is_done.clone());
         tokio::spawn(async move {
-            c.wait_for_change(since, ms).await;
+            c.wait_for_change(since, ms, None).await;
             *flag.lock().expect("lock") = true;
         });
     };
@@ -639,6 +639,35 @@ async fn long_polls_answer_at_once_when_the_state_moved_on_the_next_change_or_af
     assert!(!done());
     w.advance(1).await;
     assert!(done(), "capped at the longest wait");
+}
+
+#[tokio::test]
+async fn a_session_that_repeats_a_stale_since_waits_instead_of_spinning() {
+    let w = World::new();
+    let c = started(&w, Some(&three_logins(&w))).await;
+    let stale = c.state().version as f64 + 500.0; // seen from an earlier run, say
+    let is_done = Arc::new(Mutex::new(false));
+    let wait = |session: &'static str| {
+        *is_done.lock().expect("lock") = false;
+        let (c, flag) = (c.clone(), is_done.clone());
+        tokio::spawn(async move {
+            c.wait_for_change(stale, 50_000.0, Some(session)).await;
+            *flag.lock().expect("lock") = true;
+        });
+    };
+    let done = || *is_done.lock().expect("lock");
+    wait("s1");
+    settle().await;
+    assert!(done(), "the first stale poll answers at once");
+    wait("s2");
+    settle().await;
+    assert!(done(), "per session");
+    wait("s1");
+    settle().await;
+    assert!(!done(), "the same stale since again waits");
+    c.patch_settings(json!({ "rotateTo": "room" }).as_object().expect("object")).expect("patched");
+    settle().await;
+    assert!(done(), "and still wakes on a change");
 }
 
 #[tokio::test]
