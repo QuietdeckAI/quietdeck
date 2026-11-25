@@ -422,6 +422,25 @@ async fn forged_unreleased_and_unknown_items_never_reach_executor() {
 }
 
 #[tokio::test]
+async fn a_card_with_no_actions_is_claimed_quietly_unless_the_person_wrote_something() {
+    let h = harness(
+        vec![
+            released(1, json!([]), json!({})),
+            released(2, json!([]), json!({"kind": "adjust", "text": "forward this to homeserver"})),
+        ],
+        "",
+    )
+    .await;
+    let out = h.runner.process().await.unwrap();
+    assert_eq!(out.claimed, vec![101], "claimed, with nothing to run");
+    assert_eq!(out.done, 0);
+    assert_eq!(h.reason(102), "adjustment text");
+    let handed = h.told(is_handoff);
+    assert_eq!(handed.len(), 1, "only the card with the person's message wakes the agent: {handed:?}");
+    assert!(handed[0].contains("Subject 2") && !handed[0].contains("Subject 1"), "{}", handed[0]);
+}
+
+#[tokio::test]
 async fn a_card_for_several_emails_checks_each_by_when_its_newest_message_arrived() {
     let when = {
         let prepared: jiff::Timestamp = "2026-11-23T09:12:00Z".parse().unwrap();

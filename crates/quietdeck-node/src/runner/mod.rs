@@ -363,6 +363,12 @@ impl Runner {
         if r.card.input.needs_agent {
             return handoff("the agent asked to carry it out (--needs-agent)");
         }
+        // A card with no actions at all (a record, a thread kept in the inbox) was approved with nothing to carry out:
+        // the runner claims it, the deck marks it done, and the agent isn't woken for it (it sees the state on its next
+        // round). One approved with a change or message went to the agent above.
+        if r.card.input.actions.is_empty() {
+            return Sorted::Claim;
+        }
         let actions = released_actions(r);
         if actions.is_empty() {
             return handoff("nothing released to run");
