@@ -8,6 +8,7 @@ import { ThreadsScreen } from "@/screens/Threads";
 import { HistoryScreen } from "@/screens/History";
 import { InboxScreen } from "@/screens/Inbox";
 import { MailScreen } from "@/screens/Mail";
+import { useHomeEndInTextBoxes } from "@/lib/homeEnd";
 import { LaterScreen } from "@/screens/Later";
 import { RulesScreen } from "@/screens/Rules";
 import { SessionScreen } from "@/screens/Session";
@@ -34,6 +35,7 @@ export function App() {
     [qc],
   );
   useDeckEvents(signedIn);
+  useHomeEndInTextBoxes();
 
   if (auth.isPending) return null;
   if (auth.isError) {
