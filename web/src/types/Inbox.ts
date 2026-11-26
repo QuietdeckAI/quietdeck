@@ -38,4 +38,9 @@ report: Report | null,
 /**
  * Whether the person is reading the Inbox, and what the runner holds meanwhile.
  */
-presence: Presence, };
+presence: Presence, 
+/**
+ * Cards the report names that were carried out after an approval (done, or done by a rule): their defaults keep
+ * the green check on every device and after the report changes, without the browser having to remember.
+ */
+finished_cards: Array<number>, };

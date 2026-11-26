@@ -305,6 +305,23 @@ pub async fn inbox(db: &Db, account: Option<&str>) -> anyhow::Result<Vec<Card>> 
     Ok(out)
 }
 
+/// Which of these cards were carried out after an approval: done, done by a rule, or handled elsewhere after a
+/// released decision (the person approved it and the work landed another way).
+pub async fn finished_of(db: &Db, ids: &[i64]) -> anyhow::Result<Vec<i64>> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let list = ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+    let rows: Vec<(i64,)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT id FROM cards c WHERE id IN ({list}) AND (state IN ('done', 'automatic') \
+           OR (state = 'handled_elsewhere' AND EXISTS (SELECT 1 FROM decisions d WHERE d.card_id = c.id \
+             AND d.released_at IS NOT NULL AND d.skipped IS NULL))) ORDER BY id"
+    )))
+    .fetch_all(db)
+    .await?;
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}
+
 /// Whether any thread is left for later.
 pub async fn has_later(db: &Db, account: Option<&str>) -> anyhow::Result<bool> {
     let row: Option<(i64,)> = match account {
@@ -465,6 +482,21 @@ mod tests {
             "summary": summary, "section": "actions", "reason": "r",
             "actions": [{"type": "archive", "account": "personal", "thread_id": "t1"}]}))
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn finished_of_names_only_cards_carried_out() {
+        let db = crate::db::memory().await;
+        let mut ids = vec![];
+        for (thread, state) in [("t1", "done"), ("t2", "open"), ("t3", "automatic"), ("t4", "later")] {
+            let mut i = input("x");
+            i.thread_key = thread.into();
+            let id = add(&db, &me(), &i, CardState::Open, None).await.unwrap().card.id;
+            sqlx::query("UPDATE cards SET state = ? WHERE id = ?").bind(state).bind(id).execute(&db).await.unwrap();
+            ids.push(id);
+        }
+        assert_eq!(finished_of(&db, &ids).await.unwrap(), vec![ids[0], ids[2]]);
+        assert!(finished_of(&db, &[]).await.unwrap().is_empty());
     }
 
     #[tokio::test]

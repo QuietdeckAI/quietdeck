@@ -454,7 +454,12 @@ pub async fn inbox(state: &AppState, account: Option<&str>) -> AppResult<Inbox> 
         rule_offers: vec![],
         report: crate::reports::current(&state.db).await?,
         presence: crate::reading::current(&state.db).await?,
+        finished_cards: vec![],
     };
+    if let Some(report) = &inbox.report {
+        let (named, _) = quietdeck_types::report::default_cards(&report.markdown);
+        inbox.finished_cards = cards::finished_of(&state.db, &named).await?;
+    }
     if let Some(a) = account {
         inbox.timeline.retain(|e| e.account.as_deref() == Some(a));
     }

@@ -154,6 +154,10 @@ pub struct Inbox {
     /// Whether the person is reading the Inbox, and what the runner holds meanwhile.
     #[serde(default)]
     pub presence: crate::reading::Presence,
+    /// Cards the report names that were carried out after an approval (done, or done by a rule): their defaults keep
+    /// the green check on every device and after the report changes, without the browser having to remember.
+    #[serde(default)]
+    pub finished_cards: Vec<i64>,
 }
 
 #[cfg(test)]
