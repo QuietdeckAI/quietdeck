@@ -77,7 +77,8 @@ impl Client {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Feed {
-    summaries: Vec<Wire>,
+    /// Records and tombstones, in cursor order.
+    summaries: Vec<serde_json::Value>,
     /// Pass back as `since` for the records strictly after this page.
     next_cursor: Option<String>,
 }
@@ -107,15 +108,30 @@ struct WirePeriod {
     key: String,
 }
 
+impl WirePeriod {
+    fn period(self) -> Option<SummaryPeriod> {
+        match self.kind.as_str() {
+            "hour" => Some(SummaryPeriod::Hour(self.key)),
+            "day" => Some(SummaryPeriod::Day(self.key)),
+            "week" => Some(SummaryPeriod::Week(self.key)),
+            _ => None,
+        }
+    }
+}
+
+/// Fleetlayer deleted summaries: one period's record, or (`period: null`) every record of the session on that node.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Tombstone {
+    node: String,
+    session_id: String,
+    period: Option<WirePeriod>,
+}
+
 impl Wire {
     /// Quietdeck's record, or None for one it can't place (an agent or period kind it doesn't know).
     fn record(self) -> Option<(String, SummaryRecord)> {
-        let period = match self.period.kind.as_str() {
-            "hour" => SummaryPeriod::Hour(self.period.key),
-            "day" => SummaryPeriod::Day(self.period.key),
-            "week" => SummaryPeriod::Week(self.period.key),
-            _ => return None,
-        };
+        let period = self.period.period()?;
         let agent = match self.agent.as_str() {
             "claude" => AgentKind::Claude,
             "codex" => AgentKind::Codex,
@@ -162,12 +178,34 @@ async fn set_cursor(state: &AppState, value: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Stores one page of records. Returns how many there were.
-async fn store(state: &AppState, page: Vec<Wire>) -> anyhow::Result<usize> {
+/// Stores one page of records and applies its tombstones, in order. Returns how many items there were.
+async fn store(state: &AppState, page: Vec<serde_json::Value>) -> anyhow::Result<usize> {
     let n = page.len();
-    for wire in page {
-        if let Some((node, record)) = wire.record() {
-            crate::store::sessions::apply_summary(&state.db, &node, &SummaryEvent::Summary(record)).await?;
+    for item in page {
+        if item.get("deleted").and_then(serde_json::Value::as_bool) == Some(true) {
+            match serde_json::from_value::<Tombstone>(item) {
+                Ok(t) => {
+                    let period = match t.period {
+                        Some(p) => match p.period() {
+                            Some(p) => Some(p),
+                            None => continue,
+                        },
+                        None => None,
+                    };
+                    crate::store::sessions::forget_summaries(&state.db, &t.node, &t.session_id, period.as_ref())
+                        .await?;
+                }
+                Err(e) => tracing::warn!(error = %e, "a Fleetlayer tombstone the deck can't read"),
+            }
+            continue;
+        }
+        match serde_json::from_value::<Wire>(item) {
+            Ok(wire) => {
+                if let Some((node, record)) = wire.record() {
+                    crate::store::sessions::apply_summary(&state.db, &node, &SummaryEvent::Summary(record)).await?;
+                }
+            }
+            Err(e) => tracing::warn!(error = %e, "a Fleetlayer summary the deck can't read"),
         }
     }
     Ok(n)
@@ -226,13 +264,12 @@ pub async fn ticker(state: AppState) {
 mod tests {
     use super::*;
 
-    fn wire(session: &str, kind: &str, key: &str, to: i64, written: i64, sentence: &str) -> Wire {
-        serde_json::from_value(serde_json::json!({
+    fn wire(session: &str, kind: &str, key: &str, to: i64, written: i64, sentence: &str) -> serde_json::Value {
+        serde_json::json!({
             "node": "agents", "sessionId": session, "period": {"kind": kind, "key": key}, "agent": "claude",
             "activityFrom": to - 60_000, "activityTo": to, "writtenAt": written, "sentence": sentence,
             "paragraph": "p", "page": "pg", "tab": "ci", "dir": "/home/nathan/code/app", "origin": "node"
-        }))
-        .unwrap()
+        })
     }
 
     #[tokio::test]
@@ -273,9 +310,38 @@ mod tests {
         }], "nextCursor": "3:17"}))
         .unwrap();
         assert_eq!(feed.next_cursor.as_deref(), Some("3:17"));
-        let (node, r) = feed.summaries.into_iter().next().unwrap().record().unwrap();
+        let wire: Wire = serde_json::from_value(feed.summaries.into_iter().next().unwrap()).unwrap();
+        let (node, r) = wire.record().unwrap();
         assert_eq!((node.as_str(), r.agent, r.origin), ("agents", AgentKind::Codex, RecordOrigin::ClaudeSummarizer));
         assert_eq!(r.period, SummaryPeriod::Day("2026-11-26".into()));
+    }
+
+    #[tokio::test]
+    async fn tombstones_drop_a_period_or_the_whole_session() {
+        let state = AppState::for_tests().await;
+        let t = 1_795_600_000_000;
+        store(
+            &state,
+            vec![
+                wire("s1", "hour", "2026-11-26T01", t, t + 1, "first"),
+                wire("s1", "hour", "2026-11-26T02", t + 3_600_000, t + 3_600_001, "second"),
+            ],
+        )
+        .await
+        .unwrap();
+        let gone = |kind: Option<&str>| {
+            let period = kind.map(|k| serde_json::json!({"kind": k, "key": "2026-11-26T02"}));
+            serde_json::json!({"deleted": true, "node": "agents", "sessionId": "s1", "period": period, "cursor": "x"})
+        };
+        store(&state, vec![gone(Some("hour"))]).await.unwrap();
+        let row = crate::store::sessions::get(&state.db, &state.hub, "agents", "s1").await.unwrap().unwrap();
+        assert_eq!(row.sentence.as_deref(), Some("first"), "the newest record left is the latest again");
+        store(&state, vec![gone(None)]).await.unwrap();
+        assert!(crate::store::sessions::timeline(&state.db, "agents", "s1").await.unwrap().is_empty());
+        assert!(
+            crate::store::sessions::get(&state.db, &state.hub, "agents", "s1").await.unwrap().is_none(),
+            "a session that only existed for its summaries goes"
+        );
     }
 
     #[tokio::test]

@@ -337,6 +337,89 @@ async fn store_record(db: &Db, node: &str, r: &SummaryRecord) -> anyhow::Result<
     Ok(())
 }
 
+/// Fleetlayer deleted summaries (a tombstone in its feed): drop the session's records for one period, or every one
+/// with `period: None`. The newest record left becomes the session's tiers again. A session left with no records that
+/// isn't running and has nothing else attached (cards, links) goes from the directory too: it existed only because
+/// of those summaries.
+pub async fn forget_summaries(
+    db: &Db,
+    node: &str,
+    session_id: &str,
+    period: Option<&SummaryPeriod>,
+) -> anyhow::Result<()> {
+    let mut tx = db.begin().await?;
+    match period {
+        Some(p) => {
+            let (kind, key) = period_parts(p);
+            sqlx::query(
+                "DELETE FROM session_updates WHERE node = ? AND session_id = ? AND period_kind = ? AND period_key = ?",
+            )
+            .bind(node)
+            .bind(session_id)
+            .bind(kind)
+            .bind(key)
+            .execute(&mut *tx)
+            .await?;
+        }
+        None => {
+            sqlx::query("DELETE FROM session_updates WHERE node = ? AND session_id = ?")
+                .bind(node)
+                .bind(session_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
+    let newest: Option<(String,)> = sqlx::query_as(
+        "SELECT record FROM session_updates WHERE node = ? AND session_id = ? ORDER BY activity_to DESC LIMIT 1",
+    )
+    .bind(node)
+    .bind(session_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    match newest {
+        Some((record,)) => {
+            let r: SummaryRecord = serde_json::from_str(&record)?;
+            sqlx::query("UPDATE sessions SET sentence = ?, paragraph = ?, page = ? WHERE node = ? AND session_id = ?")
+                .bind(&r.sentence)
+                .bind(&r.paragraph)
+                .bind(&r.page)
+                .bind(node)
+                .bind(session_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+        None => {
+            let attached: (i64,) = sqlx::query_as(
+                "SELECT (SELECT COUNT(*) FROM sessions WHERE node = ?1 AND session_id = ?2 AND running = 1) \
+                      + (SELECT COUNT(*) FROM cards WHERE posted_node = ?1 AND posted_session_id = ?2) \
+                      + (SELECT COUNT(*) FROM session_links WHERE node = ?1 AND session_id = ?2)",
+            )
+            .bind(node)
+            .bind(session_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            if attached.0 == 0 {
+                sqlx::query("DELETE FROM sessions WHERE node = ? AND session_id = ?")
+                    .bind(node)
+                    .bind(session_id)
+                    .execute(&mut *tx)
+                    .await?;
+            } else {
+                sqlx::query(
+                    "UPDATE sessions SET sentence = NULL, paragraph = NULL, page = NULL WHERE node = ? AND session_id = ?",
+                )
+                .bind(node)
+                .bind(session_id)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+    }
+    refresh_fts(&mut tx, node, session_id).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 pub async fn links_for(db: &Db, node: &str, session_id: &str) -> anyhow::Result<Vec<SessionLink>> {
     type LinkRow = (String, String, Option<String>, Option<String>, Option<String>, String, i64);
     let rows: Vec<LinkRow> = sqlx::query_as(
