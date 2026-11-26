@@ -28,6 +28,8 @@ pub struct AppState {
     /// Web push, when the deck has VAPID keys.
     pub pusher: Option<Arc<crate::push::Pusher>>,
     pub hooks_public_url: Option<String>,
+    /// Fleetlayer's control plane, when the deck has its address and a token.
+    pub fleetlayer: Option<Arc<crate::fleetlayer::Client>>,
     /// True once the deck is stopping (SIGTERM): long-lived connections close.
     pub stopping: tokio::sync::watch::Receiver<bool>,
 }
@@ -62,6 +64,7 @@ impl AppState {
             release: Arc::default(),
             pusher: None,
             hooks_public_url: Some("https://hooks.example.com".into()),
+            fleetlayer: None,
             stopping: tokio::sync::watch::channel(false).1,
         }
     }

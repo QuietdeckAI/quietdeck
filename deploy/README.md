@@ -71,6 +71,8 @@ below). Never run two replicas.
 |---|---|---|---|
 | `QUIETDECK_PUBLIC_URL` | yes | | The app's one stable HTTPS origin, e.g. `https://quietdeck.example.com`: a host name, not an IP address. It's the passkey relying party (its host is the RP ID), the only origin whose pages may act with the sign-in cookie, the origin push links open, and the URL nodes connect to. Changing it means registering passkeys and installing the web app again. `http://localhost:<port>` works for a deck on your own machine |
 | `QUIETDECK_HOOKS_PUBLIC_URL` | yes, for webhooks | | The public origin of the hooks port through the tunnel, e.g. `https://hooks.example.com`. Used to print endpoint URLs |
+| `QUIETDECK_FLEETLAYER_URL` | no | | Fleetlayer's control plane, e.g. `https://fleetlayer.example.com`. With the token, the deck pulls the session summaries Fleetlayer's summaries plugin writes (every minute, into its own store) and asks Fleetlayer for a catch-up when a session's node can't write one |
+| `QUIETDECK_FLEETLAYER_TOKEN` | with the URL | | A read-scoped Fleetlayer token: `fleetlayer-control token add quietdeck-deck --scope read`. A secret |
 | `QUIETDECK_VAPID_PUBLIC_KEY` | yes, for push | | Web Push VAPID public key, base64url (uncompressed P-256 point) |
 | `QUIETDECK_VAPID_PRIVATE_KEY` | yes, for push | | The matching private key, base64url. A secret. Generate a pair with `quietdeck-server vapid-keys` |
 | `QUIETDECK_VAPID_SUBJECT` | no | `QUIETDECK_PUBLIC_URL` | A contact for push services: `mailto:you@example.com` or an `https://` URL. Apple rejects localhost and `.local` addresses |

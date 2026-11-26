@@ -669,14 +669,29 @@ pub async fn transcript(
     serde_json::from_value(v).map_err(|e| AppError::Internal(e.into()))
 }
 
-/// "Since your last message", from the session's machine. The first one for a session waits for a model call.
+/// "Since your last message", from the session's machine. The first one for a session waits for a model call. A
+/// machine whose summaries Fleetlayer writes can't answer itself, so then Fleetlayer asks it.
 pub async fn catchup(state: &AppState, address: &str) -> AppResult<quietdeck_types::summary::Catchup> {
     let s = one_session(state, address).await?;
     let request = DeckRequest::Catchup { session_id: s.info.session_id.clone() };
-    let v = crate::control::ask(state, &s.node, request, Duration::from_secs(120)).await?;
-    let reply: quietdeck_types::node::CatchupReply =
-        serde_json::from_value(v).map_err(|e| AppError::Internal(e.into()))?;
-    Ok(reply.catchup)
+    let from_node = async {
+        let v = crate::control::ask(state, &s.node, request, Duration::from_secs(120)).await?;
+        let reply: quietdeck_types::node::CatchupReply =
+            serde_json::from_value(v).map_err(|e| AppError::Internal(e.into()))?;
+        Ok::<_, AppError>(reply.catchup)
+    }
+    .await;
+    match (from_node, &state.fleetlayer) {
+        (Ok(c), _) => Ok(c),
+        (Err(e), Some(fleetlayer)) => match fleetlayer.catchup(&s.info.session_id).await {
+            Ok(c) => Ok(c),
+            Err(fe) => {
+                tracing::info!(error = %fe, "Fleetlayer has no catch-up either");
+                Err(e)
+            }
+        },
+        (Err(e), None) => Err(e),
+    }
 }
 
 pub async fn show_session(

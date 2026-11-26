@@ -7,6 +7,7 @@ mod control;
 mod db;
 mod error;
 mod events;
+mod fleetlayer;
 mod handoffs;
 mod hooks;
 mod hub;
@@ -182,6 +183,16 @@ async fn serve(env: Env) -> anyhow::Result<()> {
         release: Arc::default(),
         pusher,
         hooks_public_url: env.hooks_public_url.clone(),
+        fleetlayer: match (&env.fleetlayer_url, &env.fleetlayer_token) {
+            (Some(url), Some(token)) => Some(Arc::new(fleetlayer::Client::new(url, token)?)),
+            (Some(_), None) | (None, Some(_)) => {
+                tracing::warn!(
+                    "QUIETDECK_FLEETLAYER_URL and QUIETDECK_FLEETLAYER_TOKEN go together: Fleetlayer is off"
+                );
+                None
+            }
+            (None, None) => None,
+        },
         stopping: stop_rx.clone(),
     };
     if env.dev_trust_local {
@@ -191,6 +202,7 @@ async fn serve(env: Env) -> anyhow::Result<()> {
     tokio::spawn(ops::stuck_watch(state.clone()));
     tokio::spawn(leases::ticker(state.clone()));
     tokio::spawn(reading::ticker(state.clone()));
+    tokio::spawn(fleetlayer::ticker(state.clone()));
     ready.store(true, Ordering::SeqCst);
 
     let health = {

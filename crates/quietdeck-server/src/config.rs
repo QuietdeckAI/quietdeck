@@ -16,6 +16,12 @@ pub struct Env {
     /// The public origin of the hooks port.
     #[arg(long, env = "QUIETDECK_HOOKS_PUBLIC_URL")]
     pub hooks_public_url: Option<String>,
+    /// Fleetlayer's control plane, for the summaries its plugin writes on machines that use it.
+    #[arg(long, env = "QUIETDECK_FLEETLAYER_URL")]
+    pub fleetlayer_url: Option<String>,
+    /// A read-scoped Fleetlayer token (`fleetlayer-control token add quietdeck-deck --scope read`).
+    #[arg(long, env = "QUIETDECK_FLEETLAYER_TOKEN", hide_env_values = true)]
+    pub fleetlayer_token: Option<String>,
     #[arg(long, env = "QUIETDECK_VAPID_PUBLIC_KEY", hide_env_values = true)]
     pub vapid_public_key: Option<String>,
     #[arg(long, env = "QUIETDECK_VAPID_PRIVATE_KEY", hide_env_values = true)]
