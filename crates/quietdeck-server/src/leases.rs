@@ -1008,7 +1008,9 @@ mod tests {
     async fn approve(state: &AppState, card_id: i64) {
         let card = cards::get(&state.db, card_id).await.unwrap().unwrap();
         let d = CardDecision { card_id, version: card.version, kind: DecisionKind::Approve, fields: None, text: None };
-        decisions::approve_all(&state.db, &ApproveAll { cards: vec![d], timeline: vec![] }, 0).await.unwrap();
+        decisions::approve_all(&state.db, &ApproveAll { cards: vec![d], timeline: vec![], single: None }, 0)
+            .await
+            .unwrap();
         decisions::release_due(&state.db).await.unwrap();
     }
 

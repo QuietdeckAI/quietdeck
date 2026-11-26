@@ -238,7 +238,9 @@ mod tests {
             fields: None,
             text: None,
         };
-        decisions::approve_all(&state.db, &ApproveAll { cards: vec![d], timeline: vec![] }, 0).await.unwrap();
+        decisions::approve_all(&state.db, &ApproveAll { cards: vec![d], timeline: vec![], single: None }, 0)
+            .await
+            .unwrap();
         decisions::release_due(&state.db).await.unwrap();
         card.id
     }

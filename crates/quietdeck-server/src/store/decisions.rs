@@ -835,6 +835,7 @@ pub async fn retry(db: &Db, card_id: i64) -> Result<Approving, AppError> {
             text: None,
         }],
         timeline: vec![],
+        single: Some(true),
     };
     approve_all(db, &req, 0).await
 }
@@ -991,7 +992,7 @@ mod tests {
     }
 
     async fn approve_now(db: &Db, cards: &[&Card]) -> Approving {
-        let req = ApproveAll { cards: cards.iter().map(|c| approve(c)).collect(), timeline: vec![] };
+        let req = ApproveAll { cards: cards.iter().map(|c| approve(c)).collect(), timeline: vec![], single: None };
         let a = approve_all(db, &req, 0).await.unwrap();
         release_due(db).await.unwrap();
         a
@@ -1027,7 +1028,9 @@ mod tests {
     async fn nothing_is_released_during_the_undo_window_and_undo_cancels_it() {
         let db = crate::db::memory().await;
         let c = post(&db, "t1").await;
-        let a = approve_all(&db, &ApproveAll { cards: vec![approve(&c)], timeline: vec![] }, 60).await.unwrap();
+        let a = approve_all(&db, &ApproveAll { cards: vec![approve(&c)], timeline: vec![], single: None }, 60)
+            .await
+            .unwrap();
         assert_eq!(a.cards, vec![c.id]);
         assert!(release_due(&db).await.unwrap().is_empty());
         assert!(take(&db, &agent()).await.unwrap().is_empty());
@@ -1042,14 +1045,14 @@ mod tests {
         let runner = SessionRef { session_id: None, ..agent() };
         // Claimed by the runner, one action started, never reported.
         let c = post(&db, "t1").await;
-        approve_all(&db, &ApproveAll { cards: vec![approve(&c)], timeline: vec![] }, 0).await.unwrap();
+        approve_all(&db, &ApproveAll { cards: vec![approve(&c)], timeline: vec![], single: None }, 0).await.unwrap();
         release_due(&db).await.unwrap();
         let taken = runner_take(&db, &runner).await.unwrap();
         runner_sort(&db, &runner, &[taken[0].decision.id], &[]).await.unwrap();
         start(&db, &runner, RunBy::Runner, c.action_records[0].id).await.unwrap();
         // Released, and nothing took it.
         let d = post(&db, "t2").await;
-        approve_all(&db, &ApproveAll { cards: vec![approve(&d)], timeline: vec![] }, 0).await.unwrap();
+        approve_all(&db, &ApproveAll { cards: vec![approve(&d)], timeline: vec![], single: None }, 0).await.unwrap();
         release_due(&db).await.unwrap();
 
         assert!(unstick(&db, now_ms(), 600_000, 300_000).await.unwrap().is_empty(), "not stuck yet");
@@ -1071,7 +1074,7 @@ mod tests {
     async fn a_renamed_session_still_gets_its_released_cards() {
         let db = crate::db::memory().await;
         let c = post(&db, "t1").await;
-        approve_all(&db, &ApproveAll { cards: vec![approve(&c)], timeline: vec![] }, 0).await.unwrap();
+        approve_all(&db, &ApproveAll { cards: vec![approve(&c)], timeline: vec![], single: None }, 0).await.unwrap();
         release_due(&db).await.unwrap();
         let renamed = SessionRef { tab: "quietdeck triage".into(), ..agent() };
         assert!(runner_take(&db, &renamed).await.unwrap().is_empty(), "the bug: cards keep the old tab name");
@@ -1085,7 +1088,7 @@ mod tests {
     async fn approve_all_leaves_out_what_changed_just_before_the_click() {
         let db = crate::db::memory().await;
         let c = post(&db, "t1").await;
-        let req = ApproveAll { cards: vec![approve(&c)], timeline: vec![] };
+        let req = ApproveAll { cards: vec![approve(&c)], timeline: vec![], single: None };
         let a = approve_all_settling(&db, &req, 60, 10_000).await.unwrap();
         assert!(a.cards.is_empty());
         assert!(a.skipped[0].reason.contains("before you clicked: read it, then approve it"), "{:?}", a.skipped);
@@ -1111,7 +1114,7 @@ mod tests {
         .execute(&db)
         .await
         .unwrap();
-        let req = ApproveAll { cards: vec![approve(&c)], timeline: vec![] };
+        let req = ApproveAll { cards: vec![approve(&c)], timeline: vec![], single: None };
         assert!(approve_all_settling(&db, &req, 60, 10_000).await.unwrap().cards.is_empty());
     }
 
@@ -1119,7 +1122,7 @@ mod tests {
     async fn released_decisions_go_to_the_posting_agent_only() {
         let db = crate::db::memory().await;
         let c = post(&db, "t1").await;
-        let req = ApproveAll { cards: vec![approve(&c)], timeline: vec![] };
+        let req = ApproveAll { cards: vec![approve(&c)], timeline: vec![], single: None };
         approve_all(&db, &req, 0).await.unwrap();
         let waiting = release_due(&db).await.unwrap();
         assert_eq!(waiting, vec![Waiting { node: "server".into(), tab: "email triage".into(), decisions: 1 }]);
@@ -1137,7 +1140,7 @@ mod tests {
     async fn an_approval_of_one_version_never_releases_the_next() {
         let db = crate::db::memory().await;
         let v1 = post(&db, "t1").await;
-        approve_all(&db, &ApproveAll { cards: vec![approve(&v1)], timeline: vec![] }, 60).await.unwrap();
+        approve_all(&db, &ApproveAll { cards: vec![approve(&v1)], timeline: vec![], single: None }, 60).await.unwrap();
         let v2 = post(&db, "t1").await;
         assert_eq!(v2.version, 2);
         sqlx::query("UPDATE decision_batches SET release_after = 0").execute(&db).await.unwrap();
@@ -1146,7 +1149,9 @@ mod tests {
         assert_eq!(card.state, CardState::Open);
         assert_eq!(card.action_records[0].status, ActionStatus::Pending);
         // And a stale version on screen is skipped up front.
-        let a = approve_all(&db, &ApproveAll { cards: vec![approve(&v1)], timeline: vec![] }, 0).await.unwrap();
+        let a = approve_all(&db, &ApproveAll { cards: vec![approve(&v1)], timeline: vec![], single: None }, 0)
+            .await
+            .unwrap();
         assert!(a.cards.is_empty());
         assert!(a.skipped[0].reason.contains("version 2"));
         assert!(approving(&db).await.unwrap().is_none(), "nothing approved leaves no batch to undo");
@@ -1166,7 +1171,9 @@ mod tests {
         let left: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM later").fetch_optional(&db).await.unwrap();
         assert!(left.is_none(), "the thread is no longer left for later");
         // And it can be approved like any other card.
-        let a = approve_all(&db, &ApproveAll { cards: vec![approve(&back)], timeline: vec![] }, 60).await.unwrap();
+        let a = approve_all(&db, &ApproveAll { cards: vec![approve(&back)], timeline: vec![], single: None }, 60)
+            .await
+            .unwrap();
         assert_eq!(a.cards, vec![c.id]);
     }
 
@@ -1222,7 +1229,7 @@ mod tests {
     async fn stop_cancels_batches_in_their_undo_window() {
         let db = crate::db::memory().await;
         let c = post(&db, "t1").await;
-        approve_all(&db, &ApproveAll { cards: vec![approve(&c)], timeline: vec![] }, 60).await.unwrap();
+        approve_all(&db, &ApproveAll { cards: vec![approve(&c)], timeline: vec![], single: None }, 60).await.unwrap();
         assert_eq!(stop(&db).await.unwrap().decisions, 1);
         sqlx::query("UPDATE decision_batches SET release_after = 0").execute(&db).await.unwrap();
         assert!(release_due(&db).await.unwrap().is_empty());
@@ -1256,7 +1263,7 @@ mod tests {
             {"type": "archive", "account": "personal", "thread_id": "t1"}]))
         .unwrap();
         let d = CardDecision { card_id: c.id, version: 1, kind: DecisionKind::Edit, fields: Some(fields), text: None };
-        approve_all(&db, &ApproveAll { cards: vec![d], timeline: vec![] }, 0).await.unwrap();
+        approve_all(&db, &ApproveAll { cards: vec![d], timeline: vec![], single: None }, 0).await.unwrap();
         release_due(&db).await.unwrap();
         let taken = take(&db, &agent()).await.unwrap();
         assert_eq!(taken[0].actions.len(), 2);
@@ -1274,7 +1281,7 @@ mod tests {
             fields: None,
             text: Some("forward it to the api tab instead".into()),
         };
-        approve_all(&db, &ApproveAll { cards: vec![d], timeline: vec![] }, 0).await.unwrap();
+        approve_all(&db, &ApproveAll { cards: vec![d], timeline: vec![], single: None }, 0).await.unwrap();
         assert_eq!(release_due(&db).await.unwrap().len(), 1);
         assert_eq!(cards::get(&db, c.id).await.unwrap().unwrap().state, CardState::Revising);
         let taken = take(&db, &agent()).await.unwrap();
@@ -1292,9 +1299,13 @@ mod tests {
         let later = post(&db, "t3").await;
         decide(&db, later.id, &Decide { version: 1, kind: DecisionKind::Later, text: None }).await.unwrap();
         let later = cards::get(&db, later.id).await.unwrap().unwrap();
-        let a = approve_all(&db, &ApproveAll { cards: vec![approve(&empty), approve(&later)], timeline: vec![] }, 3)
-            .await
-            .unwrap();
+        let a = approve_all(
+            &db,
+            &ApproveAll { cards: vec![approve(&empty), approve(&later)], timeline: vec![], single: None },
+            3,
+        )
+        .await
+        .unwrap();
         assert!(a.cards.is_empty());
         assert_eq!(a.skipped.len(), 2);
     }
@@ -1316,7 +1327,7 @@ mod tests {
         )
         .await
         .unwrap();
-        approve_all(&db, &ApproveAll { cards: vec![], timeline: vec![e.id] }, 0).await.unwrap();
+        approve_all(&db, &ApproveAll { cards: vec![], timeline: vec![e.id], single: None }, 0).await.unwrap();
         release_due(&db).await.unwrap();
         let read: (Option<i64>,) = sqlx::query_as("SELECT read_at FROM timeline_entries WHERE id = ?")
             .bind(e.id)

@@ -373,8 +373,10 @@ pub async fn approve_all(state: &AppState, req: ApproveAll) -> AppResult<Approvi
     garde::Validate::validate(&req).map_err(bad)?;
     let settings = crate::api::load_settings(&state.db).await?;
     let a = decisions::approve_all(&state.db, &req, settings.undo_seconds).await?;
-    // History keeps the Inbox document as it was at this moment. Approve All doesn't fail over it.
+    // History keeps the Inbox document as it was at this moment (Approve All only, not one default's Approve).
+    // Approve All doesn't fail over it.
     if !a.cards.is_empty()
+        && req.single != Some(true)
         && let Err(e) = crate::reports::snapshot(&state.db, &a.batch, &a.cards).await
     {
         tracing::warn!(error = %e, "couldn't keep the Inbox document for History");

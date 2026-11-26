@@ -726,6 +726,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn approve_all_keeps_a_snapshot_and_one_defaults_approve_does_not() {
+        let state = AppState::for_tests().await;
+        let input: quietdeck_types::card::CardInput = serde_json::from_value(serde_json::json!({
+            "account": "personal", "thread_key": "t1", "subject": "s", "summary": "x", "section": "archive_list",
+            "reason": "r", "actions": [{"type": "archive", "account": "personal", "thread_id": "t1"}]}))
+        .unwrap();
+        let mut ids = vec![];
+        for t in ["t1", "t2"] {
+            let mut i = input.clone();
+            i.thread_key = t.into();
+            let c = crate::store::cards::add(&state.db, &me(), &i, quietdeck_types::card::CardState::Open, None)
+                .await
+                .unwrap()
+                .card;
+            ids.push((c.id, c.version));
+        }
+        let md = format!("<Default id=\"archive-all\" cards=\"c_{} c_{}\">Archive all</Default>", ids[0].0, ids[1].0);
+        super::set(&state, &me(), ReportSet { markdown: md, base: None, new: false, change: None }).await.unwrap();
+        let decision = |(id, version): (i64, i64)| quietdeck_types::decision::CardDecision {
+            card_id: id,
+            version,
+            kind: quietdeck_types::card::DecisionKind::Approve,
+            fields: None,
+            text: None,
+        };
+        let all =
+            |single| quietdeck_types::decision::ApproveAll { cards: vec![decision(ids[0])], timeline: vec![], single };
+        crate::ops::approve_all(&state, all(Some(true))).await.unwrap();
+        let count = || async { snapshots_between(&state.db, 0, i64::MAX).await.unwrap().len() };
+        assert_eq!(count().await, 0, "one default's Approve keeps no snapshot");
+        let mut whole = all(None);
+        whole.cards = vec![decision(ids[1])];
+        crate::ops::approve_all(&state, whole).await.unwrap();
+        assert_eq!(count().await, 1, "Approve All does");
+    }
+
+    #[tokio::test]
     async fn answers_are_kept_and_taken_once_when_the_agent_was_away() {
         let state = AppState::for_tests().await;
         let r = super::set(&state, &me(), ReportSet { markdown: "x".into(), base: None, new: false, change: None })

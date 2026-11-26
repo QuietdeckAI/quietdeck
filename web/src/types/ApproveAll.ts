@@ -5,4 +5,9 @@ import type { CardDecision } from "./CardDecision";
  * Approve All: every card on screen with its decision (unmentioned means yes, so the app sends approve for each
  * card the person didn't change), and the timeline entries on screen, which move to History.
  */
-export type ApproveAll = { cards: Array<CardDecision>, timeline: Array<number>, };
+export type ApproveAll = { cards: Array<CardDecision>, timeline: Array<number>, 
+/**
+ * One default's own Approve rather than Approve All: the same undo window, but no Inbox snapshot in History
+ * (Nathan, 26 Nov 2026).
+ */
+single?: boolean, };

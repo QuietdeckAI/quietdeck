@@ -58,6 +58,12 @@ pub struct ApproveAll {
     #[serde(default)]
     #[garde(length(max = 1000))]
     pub timeline: Vec<i64>,
+    /// One default's own Approve rather than Approve All: the same undo window, but no Inbox snapshot in History
+    /// (Nathan, 26 Nov 2026).
+    #[serde(default)]
+    #[garde(skip)]
+    #[ts(optional)]
+    pub single: Option<bool>,
 }
 
 /// A card Approve All left alone, and why.
