@@ -559,7 +559,8 @@ enum HandoffCommand {
 
 #[derive(Subcommand)]
 enum MsgCommand {
-    /// Send a message to `tab` or `tab@node`. Fails at once when that session is offline.
+    /// Send a message to `tab` or `tab@node`. Fails at once when that session is offline, or when no session has
+    /// that name (the error suggests close names; `quietdeck sessions` lists them all).
     Send {
         #[arg(long)]
         to: String,

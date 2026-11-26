@@ -23,7 +23,18 @@ pub async fn find_target(db: &Db, hub: &Hub, address: &str) -> Result<SessionRow
     let mut nodes: Vec<&str> = rows.iter().map(|r| r.node.as_str()).collect();
     nodes.dedup();
     match rows.len() {
-        0 => Err(DeliveryError::SessionOffline { address: address.to_string() }),
+        // None running: one the node knew that has stopped is offline; a name nobody has is a wrong name.
+        0 => {
+            if !sessions::resolve_ended(db, hub, address).await.map_err(fail)?.is_empty() {
+                return Err(DeliveryError::SessionOffline { address: address.to_string() });
+            }
+            let (tab, node) = match address.rsplit_once('@') {
+                Some((t, n)) if !t.is_empty() && !n.is_empty() => (t.trim(), Some(n.trim())),
+                _ => (address.trim(), None),
+            };
+            let suggestions = sessions::similar_tabs(db, tab, node).await.map_err(fail)?;
+            Err(DeliveryError::SessionNotFound { tab: tab.to_string(), node: node.map(str::to_string), suggestions })
+        }
         _ if nodes.len() > 1 => {
             Err(DeliveryError::Ambiguous { candidates: rows.iter().map(SessionRow::address).collect() })
         }
@@ -108,5 +119,55 @@ async fn count(db: &Db, node: &str, ok: bool) {
     }
     if let Err(e) = q.execute(db).await {
         tracing::warn!(error = %e, "counting a delivery");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quietdeck_types::directory::SessionInfo;
+    use quietdeck_types::{AgentKind, AgentStatus};
+
+    fn info(id: &str, tab: &str, running: bool) -> SessionInfo {
+        SessionInfo {
+            session_id: id.into(),
+            agent: AgentKind::Claude,
+            workspace: Some("w1".into()),
+            tab: Some(tab.into()),
+            address: Some("w1:p1".into()),
+            cwd: Some("/home/sam/code/app".into()),
+            status: AgentStatus::Idle,
+            status_changed_at: jiff::Timestamp::now(),
+            resume_command: None,
+            running,
+            open_url: None,
+            opens_in: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_wrong_name_is_not_found_with_suggestions_and_a_stopped_session_is_offline() {
+        let state = crate::state::AppState::for_tests().await;
+        let config = crate::config::DeckConfig::default();
+        sessions::upsert(&state.db, &config, "agents-triage", &info("s1", "quietdeck triage", true)).await.unwrap();
+        sessions::upsert(&state.db, &config, "agents", &info("s2", "old work", false)).await.unwrap();
+
+        let e = find_target(&state.db, &state.hub, "triage@agents-triage").await.unwrap_err();
+        assert_eq!(
+            e,
+            DeliveryError::SessionNotFound {
+                tab: "triage".into(),
+                node: Some("agents-triage".into()),
+                suggestions: vec!["quietdeck triage@agents-triage".into()],
+            }
+        );
+        assert_eq!(
+            e.to_string(),
+            "no session named 'triage' on agents-triage; did you mean 'quietdeck triage@agents-triage'?"
+        );
+        let e = find_target(&state.db, &state.hub, "nobody").await.unwrap_err();
+        assert_eq!(e.to_string(), "no session named 'nobody'");
+        let e = find_target(&state.db, &state.hub, "old work@agents").await.unwrap_err();
+        assert_eq!(e, DeliveryError::SessionOffline { address: "old work@agents".into() });
     }
 }

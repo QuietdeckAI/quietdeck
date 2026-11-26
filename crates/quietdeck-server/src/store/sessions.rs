@@ -660,6 +660,24 @@ async fn resolve(db: &Db, hub: &crate::hub::Hub, address: &str, running: bool) -
     hydrate(db, hub, rows).await
 }
 
+/// Running sessions whose tab names contain `needle` (any case), on `node` when given: what a mistyped address might
+/// have meant. Addresses (`tab@node`), most recently active first, at most 3.
+pub async fn similar_tabs(db: &Db, needle: &str, node: Option<&str>) -> anyhow::Result<Vec<String>> {
+    let needle = needle.trim().to_lowercase();
+    if needle.is_empty() {
+        return Ok(vec![]);
+    }
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT node, tab FROM sessions WHERE running = 1 AND tab IS NOT NULL AND instr(lower(tab), ?1) > 0 \
+         AND (?2 IS NULL OR node = ?2) ORDER BY COALESCE(last_activity, status_changed_at) DESC LIMIT 3",
+    )
+    .bind(&needle)
+    .bind(node)
+    .fetch_all(db)
+    .await?;
+    Ok(rows.into_iter().map(|(node, tab)| format!("{tab}@{node}")).collect())
+}
+
 /// The node knows nothing about a session's tab beyond what it pushed: a lookup for tokens.
 pub async fn tab_of(db: &Db, node: &str, session_id: &str) -> anyhow::Result<Option<String>> {
     let row: Option<(Option<String>,)> = sqlx::query_as("SELECT tab FROM sessions WHERE node = ? AND session_id = ?")

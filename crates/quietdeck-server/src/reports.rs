@@ -497,6 +497,7 @@ pub async fn chat(state: &AppState, c: ReportChat) -> AppResult<Delivered> {
         DeliveryError::SessionOffline { .. } | DeliveryError::NodeOffline { .. } => {
             AppError::Offline(format!("{to} isn't running, so it didn't get that."))
         }
+        DeliveryError::SessionNotFound { .. } => AppError::NotFound(e.to_string()),
         DeliveryError::Ambiguous { .. } => AppError::BadRequest(e.to_string()),
         DeliveryError::Failed { .. } => AppError::Unavailable(e.to_string()),
     })

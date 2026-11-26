@@ -298,7 +298,8 @@ impl Mcp {
     }
 
     #[tool(description = "Send a message to a session on another machine (`tab` or `tab@node`). Fails at once when \
-        that session is offline: then find another way or try again later. Use SendMessage on the same machine.")]
+        that session is offline (then find another way or try again later) or when no session has that name (then \
+        check `sessions`; the error suggests close names). Use SendMessage on the same machine.")]
     async fn msg_send(
         &self,
         Parameters(msg): Parameters<MsgSend>,

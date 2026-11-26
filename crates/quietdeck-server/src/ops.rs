@@ -298,6 +298,7 @@ pub async fn msg_send(state: &AppState, me: &SessionRef, msg: MsgSend) -> AppRes
             DeliveryError::SessionOffline { .. } | DeliveryError::NodeOffline { .. } => {
                 AppError::Offline(e.to_string())
             }
+            DeliveryError::SessionNotFound { .. } => AppError::NotFound(e.to_string()),
             DeliveryError::Ambiguous { .. } => AppError::BadRequest(e.to_string()),
             DeliveryError::Failed { .. } => AppError::Unavailable(e.to_string()),
         })

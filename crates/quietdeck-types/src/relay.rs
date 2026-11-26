@@ -135,13 +135,16 @@ impl Delivery {
     }
 }
 
-/// Why a delivery failed. The only failure the relay reports: the session is offline.
+/// Why a delivery failed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[serde(tag = "reason", rename_all = "snake_case")]
 #[ts(export)]
 pub enum DeliveryError {
-    /// No such session running on the node.
+    /// The session exists (the node knew it) but isn't running now.
     SessionOffline { address: String },
+    /// No session has that tab name (on that node, when one was given): a wrong name, not one that will come back.
+    /// `suggestions` are running sessions whose tab names contain it.
+    SessionNotFound { tab: String, node: Option<String>, suggestions: Vec<String> },
     /// The node isn't connected.
     NodeOffline { address: String },
     /// Several sessions have that tab name on different nodes.
@@ -155,6 +158,17 @@ impl std::fmt::Display for DeliveryError {
         match self {
             DeliveryError::SessionOffline { address } | DeliveryError::NodeOffline { address } => {
                 write!(f, "{address} is offline")
+            }
+            DeliveryError::SessionNotFound { tab, node, suggestions } => {
+                write!(f, "no session named '{tab}'")?;
+                if let Some(node) = node {
+                    write!(f, " on {node}")?;
+                }
+                if !suggestions.is_empty() {
+                    let quoted: Vec<String> = suggestions.iter().map(|s| format!("'{s}'")).collect();
+                    write!(f, "; did you mean {}?", quoted.join(" or "))?;
+                }
+                Ok(())
             }
             DeliveryError::Ambiguous { candidates } => {
                 write!(f, "several sessions have that tab name: {}; add @<node>", candidates.join(", "))
