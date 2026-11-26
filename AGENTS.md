@@ -23,6 +23,8 @@ info, in `~/.cache/quietdeck-dev-deck`.
 
 Release images build on docspring-dev too: `scripts/build-images --wait <commit>` pushes
 `harbor.home.ndbroadbent.com/quietdeck/deck:<sha>` and `node-bin:<sha>`, which the homeserver session deploys.
+A Mac has no release binary: its node is built on the Mac itself with `scripts/install-node-from-source <commit>`
+(release build only, in `~/.cache/quietdeck-node-build`, a temporary worktree), the one other Rust build allowed there.
 
 ## Guides to write
 

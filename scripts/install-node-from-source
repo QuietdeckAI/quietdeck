@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Builds quietdeck-node and the quietdeck CLI from source at a commit, on this machine, and installs them as the
+# running node: for a Mac, which has no release binary (Linux machines take node-bin from scripts/build-images).
+#
+#   scripts/install-node-from-source <commit>
+#
+# It builds in a temporary worktree, so your checkout is left as it is, with a target directory of its own
+# (~/.cache/quietdeck-node-build, release only, so it stays a few GB). It installs into ~/.local/lib/quietdeck-<sha>,
+# points ~/.local/bin/quietdeck-node and ~/.local/bin/quietdeck at it, and reinstalls the service (launchd on macOS,
+# systemd on Linux), which replaces the running copy. Your node.yaml is untouched. Older ~/.local/lib/quietdeck-*
+# folders stay, so going back is the same command with the old commit.
+set -euo pipefail
+
+commit=${1:?usage: scripts/install-node-from-source <commit>}
+repo=$(git rev-parse --show-toplevel)
+git -C "$repo" fetch -q origin
+short=$(git -C "$repo" rev-parse --short=7 "$commit^{commit}")
+
+src=$(mktemp -d)/quietdeck
+git -C "$repo" worktree add -q --detach "$src" "$short"
+trap 'git -C "$repo" worktree remove --force "$src"' EXIT
+
+target=${CARGO_TARGET_DIR:-$HOME/.cache/quietdeck-node-build}
+echo "Building quietdeck-node and quietdeck at $short (target $target)"
+(cd "$src" && CARGO_TARGET_DIR=$target cargo build -q --release --locked -p quietdeck-node -p quietdeck-cli)
+
+dest=$HOME/.local/lib/quietdeck-$short
+mkdir -p "$dest" "$HOME/.local/bin"
+cp "$target/release/quietdeck-node" "$target/release/quietdeck" "$dest/"
+ln -sfn "$dest/quietdeck-node" "$HOME/.local/bin/quietdeck-node"
+ln -sfn "$dest/quietdeck" "$HOME/.local/bin/quietdeck"
+echo "Installed in $dest; restarting the service"
+"$dest/quietdeck-node" install
+
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if "$dest/quietdeck" node status >/dev/null 2>&1; then
+    "$dest/quietdeck" node status
+    exit 0
+  fi
+  sleep 2
+done
+echo "The node didn't answer within 20 s: check its log (macOS: ~/Library/Logs/quietdeck-node.log)" >&2
+exit 1
