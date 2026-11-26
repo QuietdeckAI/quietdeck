@@ -39,8 +39,9 @@ impl Client {
         Ok(Client { http, base: base.trim_end_matches('/').to_string(), token: token.to_string() })
     }
 
-    /// Records written after `cursor` (a `writtenAt` in ms), oldest first.
-    async fn since(&self, cursor: i64) -> anyhow::Result<Vec<Wire>> {
+    /// Records written after `cursor`, oldest first. The cursor is the feed's own `<writtenAt>:<rowid>` (exact, from
+    /// `nextCursor`), or `0` to start.
+    async fn since(&self, cursor: &str) -> anyhow::Result<Feed> {
         let res = self
             .http
             .get(format!("{}/v1/summaries", self.base))
@@ -70,6 +71,15 @@ impl Client {
         }
         Ok(res.json().await?)
     }
+}
+
+/// A page of `/v1/summaries?since=`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Feed {
+    summaries: Vec<Wire>,
+    /// Pass back as `since` for the records strictly after this page.
+    next_cursor: Option<String>,
 }
 
 /// One record as `/v1/summaries` serves it.
@@ -134,34 +144,33 @@ impl Wire {
     }
 }
 
-async fn cursor(state: &AppState) -> anyhow::Result<i64> {
+async fn cursor(state: &AppState) -> anyhow::Result<String> {
     let row: Option<(String,)> =
         sqlx::query_as("SELECT value FROM settings WHERE name = ?").bind(CURSOR).fetch_optional(&state.db).await?;
-    Ok(row.and_then(|r| r.0.parse().ok()).unwrap_or(0))
+    Ok(row.map(|r| r.0).unwrap_or_else(|| "0".into()))
 }
 
-async fn set_cursor(state: &AppState, value: i64) -> anyhow::Result<()> {
+async fn set_cursor(state: &AppState, value: &str) -> anyhow::Result<()> {
     sqlx::query(
         "INSERT INTO settings (name, value) VALUES (?, ?) \
          ON CONFLICT (owner_type, owner_id, name) DO UPDATE SET value = excluded.value",
     )
     .bind(CURSOR)
-    .bind(value.to_string())
+    .bind(value)
     .execute(&state.db)
     .await?;
     Ok(())
 }
 
-/// Stores one page of records. Returns how many there were and the newest `writtenAt`.
-async fn store(state: &AppState, page: Vec<Wire>) -> anyhow::Result<(usize, Option<i64>)> {
+/// Stores one page of records. Returns how many there were.
+async fn store(state: &AppState, page: Vec<Wire>) -> anyhow::Result<usize> {
     let n = page.len();
-    let newest = page.iter().map(|w| w.written_at).max();
     for wire in page {
         if let Some((node, record)) = wire.record() {
             crate::store::sessions::apply_summary(&state.db, &node, &SummaryEvent::Summary(record)).await?;
         }
     }
-    Ok((n, newest))
+    Ok(n)
 }
 
 /// Pulls everything new once, page after page. Returns how many records it stored.
@@ -169,15 +178,15 @@ pub async fn pull(state: &AppState, client: &Client) -> anyhow::Result<usize> {
     let mut total = 0;
     loop {
         let from = cursor(state).await?;
-        let page = client.since(from).await?;
-        let (n, newest) = store(state, page).await?;
+        let feed = client.since(&from).await?;
+        let n = store(state, feed.summaries).await?;
         total += n;
-        let moved = newest.filter(|t| *t > from);
-        if let Some(newest) = moved {
-            set_cursor(state, newest).await?;
+        let moved = feed.next_cursor.filter(|c| *c != from);
+        if let Some(next) = &moved {
+            set_cursor(state, next).await?;
         }
-        // A short page is the end; so is a full one that didn't move the cursor (every record shared one writtenAt,
-        // with a feed that answers >=), or the same page would come back forever.
+        // A short page is the end; so is a full one that didn't move the cursor, or the same page would come back
+        // forever.
         if n < PAGE || moved.is_none() {
             break;
         }
@@ -230,7 +239,7 @@ mod tests {
     async fn records_land_in_the_deck_store_and_newer_ones_replace_older() {
         let state = AppState::for_tests().await;
         let t = 1_795_600_000_000;
-        let (n, newest) = store(
+        let n = store(
             &state,
             vec![
                 wire("s1", "hour", "2026-11-26T01", t, t + 1, "first"),
@@ -240,7 +249,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!((n, newest), (3, Some(t + 3_600_001)));
+        assert_eq!(n, 3);
         let timeline = crate::store::sessions::timeline(&state.db, "agents", "s1").await.unwrap();
         assert_eq!(timeline.iter().map(|r| r.sentence.as_str()).collect::<Vec<_>>(), ["first", "second"]);
         assert!(crate::store::sessions::timeline(&state.db, "agents", "s2").await.unwrap().is_empty());
@@ -255,13 +264,27 @@ mod tests {
         assert_eq!(timeline.len(), 2);
     }
 
+    #[test]
+    fn a_feed_page_parses_with_its_cursors() {
+        let feed: Feed = serde_json::from_value(serde_json::json!({"summaries": [{
+            "node": "agents", "sessionId": "s1", "period": {"kind": "day", "key": "2026-11-26"}, "agent": "codex",
+            "activityFrom": 1, "activityTo": 2, "writtenAt": 3, "sentence": "s", "paragraph": "p", "page": "pg",
+            "tab": null, "dir": null, "origin": "claude_summarizer", "cursor": "3:17"
+        }], "nextCursor": "3:17"}))
+        .unwrap();
+        assert_eq!(feed.next_cursor.as_deref(), Some("3:17"));
+        let (node, r) = feed.summaries.into_iter().next().unwrap().record().unwrap();
+        assert_eq!((node.as_str(), r.agent, r.origin), ("agents", AgentKind::Codex, RecordOrigin::ClaudeSummarizer));
+        assert_eq!(r.period, SummaryPeriod::Day("2026-11-26".into()));
+    }
+
     #[tokio::test]
     async fn the_cursor_is_kept_in_settings() {
         let state = AppState::for_tests().await;
-        assert_eq!(cursor(&state).await.unwrap(), 0);
-        set_cursor(&state, 42).await.unwrap();
-        set_cursor(&state, 43).await.unwrap();
-        assert_eq!(cursor(&state).await.unwrap(), 43);
+        assert_eq!(cursor(&state).await.unwrap(), "0");
+        set_cursor(&state, "1795600000000:41").await.unwrap();
+        set_cursor(&state, "1795600000000:42").await.unwrap();
+        assert_eq!(cursor(&state).await.unwrap(), "1795600000000:42");
         assert_eq!(crate::api::load_settings(&state.db).await.unwrap(), Default::default());
     }
 }
