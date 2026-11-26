@@ -417,8 +417,9 @@ pub fn spawn(config: UsageConfig, env: UsageEnv, events: mpsc::Sender<UsageEvent
     let logger = Logger::new(server::log_path(&env.rotator_dir));
     let poll_ms: Ms = Ms::from(config.poll_minutes.max(1)) * 60_000;
 
-    // The Claude side: our own monitor while we hold the lock, else the one that does.
-    {
+    // The Claude side: our own monitor while we hold the lock, else the one that does. Off (`claude: false`) where
+    // Fleetlayer's claude-auth-manager owns the sign-ins and the coordinator API.
+    if config.claude {
         let (shared, config, env, logger) = (shared.clone(), config.clone(), env.clone(), logger.clone());
         tokio::spawn(async move {
             let mut stopped = shared.stopped.subscribe();

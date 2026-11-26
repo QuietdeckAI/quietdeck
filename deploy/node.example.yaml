@@ -19,6 +19,7 @@ summaries:
 usage:
   enabled: true
   poll_minutes: 5
+  claude: true                  # false where Fleetlayer's claude-auth-manager owns the Claude sign-ins; Codex stays
   codex: true
   serve_coordinator_api: true   # keeps the account rotator's plugin working
 

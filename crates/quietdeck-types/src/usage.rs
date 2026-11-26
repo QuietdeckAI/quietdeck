@@ -143,6 +143,10 @@ pub struct UsageConfig {
     pub enabled: bool,
     /// Poll each account's usage endpoint at most this often, and less while sessions report readings.
     pub poll_minutes: u32,
+    /// The Claude side: reading the Claude sign-ins, polling their usage and the coordinator API. Off where
+    /// Fleetlayer's claude-auth-manager owns them (the slots hold setup tokens there, which can't read usage, so
+    /// polling would only mark every account signed out), leaving Codex on.
+    pub claude: bool,
     /// Read Codex sign-ins too.
     pub codex: bool,
     /// Serve the account rotator's coordinator API on its socket, so the rotation plugin keeps working.
@@ -151,6 +155,6 @@ pub struct UsageConfig {
 
 impl Default for UsageConfig {
     fn default() -> Self {
-        UsageConfig { enabled: true, poll_minutes: 5, codex: true, serve_coordinator_api: true }
+        UsageConfig { enabled: true, poll_minutes: 5, claude: true, codex: true, serve_coordinator_api: true }
     }
 }

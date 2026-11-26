@@ -9,6 +9,12 @@ export type UsageConfig = { enabled: boolean,
  */
 poll_minutes: number, 
 /**
+ * The Claude side: reading the Claude sign-ins, polling their usage and the coordinator API. Off where
+ * Fleetlayer's claude-auth-manager owns them (the slots hold setup tokens there, which can't read usage, so
+ * polling would only mark every account signed out), leaving Codex on.
+ */
+claude: boolean, 
+/**
  * Read Codex sign-ins too.
  */
 codex: boolean, 
