@@ -41,7 +41,7 @@ async-trait = "0.1"
 anyhow = "1"
 p256 = "0.13.2"
 web-push-native = "0.5.0"
-reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "query"] }
 http = "1"
 mime_guess = "2"
 
