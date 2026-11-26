@@ -167,23 +167,23 @@ function SentStatus({ answer }: { answer: ReportAnswer }) {
   const tab = report.posted_by.tab;
   if (!answer.picked_up)
     return <span className="block text-sm text-neutral">Not sent to {tab} yet: it gets this when it's next online.</span>;
-  return <span className="block text-sm text-neutral">{working ? `${tab} is working on it` : `Sent to ${tab}.`}</span>;
+  return (
+    <span className="block text-sm text-neutral">
+      {working ? (
+        <>
+          {tab} is working on it
+          <InlineSpinner />
+        </>
+      ) : (
+        `Sent to ${tab}.`
+      )}
+    </span>
+  );
 }
 
-/**
- * Outside the panel at its right edge, level with its first line: the agent is working on this change now. It fits the
- * Inbox's 16px side padding (4px gap + 12px), which clips anything wider (`overflow-clip` on its main).
- */
-function WorkingSpinner({ answer }: { answer: ReportAnswer | undefined }) {
-  const { report } = useReport();
-  if (!useWorkingOn(answer)) return null;
-  return (
-    <Loader2
-      role="img"
-      aria-label={`${report.posted_by.tab} is working on this`}
-      className="absolute top-2 left-full ml-1 size-3 animate-spin text-neutral max-sm:ml-0.5"
-    />
-  );
+/** Right after "… is working on it": the agent is on it now. */
+function InlineSpinner() {
+  return <Loader2 aria-hidden className="ml-1.5 inline-block size-3 animate-spin align-[-1px]" />;
 }
 
 type Ctx = {
@@ -571,8 +571,6 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
   const draft = drafts[key] ?? "";
   const about = text(children).trim();
   const tab = report.posted_by.tab;
-  // The agent is on his newest message until it replies.
-  const working = useWorkingOn(newest && newest.kind !== "reply" ? newest : undefined);
   // A sent message waits out the undo window as a draft: Approve All keeps its cards out meanwhile, and sends it first.
   const undoWindow = useUndoWindow();
   const [sending, setSending] = useState<string | null>(null);
@@ -631,7 +629,6 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
       className="report-default relative rounded-md border border-rule bg-paper-2 py-1 pr-1 pl-3"
       data-card-ids={cardIds(cards).join(" ")}
     >
-      <WorkingSpinner answer={working ? newest : undefined} />
       <span className="-my-0.5 flex items-start gap-0.5">
         <ApprovedMark cards={cards} />
         <span className="min-w-0 flex-1 py-0.5 text-ink">{children}</span>
@@ -708,7 +705,12 @@ function ChatStatus({ answer }: { answer: ReportAnswer }) {
     : working
       ? `${tab} is working on it…`
       : `Sent to ${tab}.`;
-  return <span className="mt-1 block pr-1 text-right text-xs text-neutral">{words}</span>;
+  return (
+    <span className="mt-1 block pr-1 text-right text-xs text-neutral">
+      {words}
+      {answer.picked_up && working && <InlineSpinner />}
+    </span>
+  );
 }
 
 /** The cards a `<Default cards="c_1 c_2">` names, among those the report has. */
@@ -808,7 +810,6 @@ function Ask({
   const otherOn = other !== undefined && other !== false && other !== "false";
   return (
     <span className="report-ask relative">
-      <WorkingSpinner answer={answered} />
       <span>{children}</span>{" "}
       <span className="inline-flex flex-wrap items-center gap-1.5 align-baseline">
         {choices.map((c) => (
