@@ -172,10 +172,13 @@ pub async fn pull(state: &AppState, client: &Client) -> anyhow::Result<usize> {
         let page = client.since(from).await?;
         let (n, newest) = store(state, page).await?;
         total += n;
-        if let Some(newest) = newest.filter(|t| *t > from) {
+        let moved = newest.filter(|t| *t > from);
+        if let Some(newest) = moved {
             set_cursor(state, newest).await?;
         }
-        if n < PAGE {
+        // A short page is the end; so is a full one that didn't move the cursor (every record shared one writtenAt,
+        // with a feed that answers >=), or the same page would come back forever.
+        if n < PAGE || moved.is_none() {
             break;
         }
     }
