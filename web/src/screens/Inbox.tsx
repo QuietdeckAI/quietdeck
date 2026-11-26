@@ -1,13 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useAccount } from "@/components/AccountTabs";
 import { ApproveAllBar } from "@/components/ApproveAllBar";
-import { changedKeys, ReportBody, ReportChatBox, reportDefaults } from "@/components/Report";
+import { changedKeys, ReportBody, ReportChatBox, reportDefaults, TriageNotes, triageNotes } from "@/components/Report";
 import { ReportMeta, ReportToasts, UpdatedAt } from "@/components/ReportMeta";
 import { TimelineRow } from "@/components/TimelineRow";
 import { api, query } from "@/lib/api";
 import { usePresence } from "@/lib/presence";
 import type { ApproveAll } from "@/types/ApproveAll";
+import type { Approving } from "@/types/Approving";
 import type { Card } from "@/types/Card";
 import type { CardDecision } from "@/types/CardDecision";
 import type { Inbox } from "@/types/Inbox";
@@ -22,6 +23,13 @@ function cardsById(inbox: Inbox): Map<number, Card> {
   return all;
 }
 
+/** The decision Approve All sends for a card: approve, or for a suggestion, its actions as they stand. */
+function decisionFor(c: Card): CardDecision {
+  return c.section === "suggestion"
+    ? { card_id: c.id, version: c.version, kind: "edit", fields: c.actions, text: null }
+    : { card_id: c.id, version: c.version, kind: "approve", fields: null, text: null };
+}
+
 /** With a report: approve the cards of every default he didn't change. Cards the report doesn't name wait. */
 function reportApproveRequest(inbox: Inbox, report: Report, changed: Set<string>): ApproveAll {
   const all = cardsById(inbox);
@@ -33,11 +41,7 @@ function reportApproveRequest(inbox: Inbox, report: Report, changed: Set<string>
       const c = all.get(id);
       if (!c || seen.has(id) || (c.state !== "open" && c.state !== "handed_off")) continue;
       seen.add(id);
-      cards.push(
-        c.section === "suggestion"
-          ? { card_id: c.id, version: c.version, kind: "edit", fields: c.actions, text: null }
-          : { card_id: c.id, version: c.version, kind: "approve", fields: null, text: null },
-      );
+      cards.push(decisionFor(c));
     }
   }
   return { cards, timeline: inbox.timeline.map((e) => e.id) };
@@ -203,10 +207,17 @@ function ReportScreen({
     const state = byId.get(id)?.state;
     return state === "approved" || state === "executing" || state === "handed_off" || state === "revising";
   };
-  const executing = [...(approved?.cards ?? [])].some(unfinished) || inFlight !== "";
-  const busy = sending || inbox.approving !== null || executing;
+  // Cards approved one at a time (a default's own Approve): they show their spinner and check like the rest, but the
+  // report's darkening is Approve All's alone, so they don't count towards it.
+  const [singles, setSingles] = useState<Set<number>>(() => new Set());
+  const whole = (id: number) => !singles.has(id);
+  const executing =
+    [...(approved?.cards ?? [])].filter(whole).some(unfinished) ||
+    inFlight.split(",").filter((id) => id !== "" && whole(Number(id))).length > 0;
+  const approvingAll = inbox.approving !== null && inbox.approving.cards.map(Number).some(whole);
+  const busy = sending || approvingAll || executing;
   // Carrying out the approved actions (the undo window is over): the sheen moves.
-  const working = executing && inbox.approving === null && !sending;
+  const working = executing && !approvingAll && !sending;
   useEffect(() => {
     if (!busy && !inFlight && approved && report.version !== approved.version) setApproved(null);
   }, [busy, inFlight, approved, report.version]);
@@ -225,6 +236,7 @@ function ReportScreen({
   // Nothing left to act on: every card the defaults name is finished, or there are no defaults or questions at all
   // (whatever text the agent left).
   // Or the agent said so (`quietdeck report done`), whatever text it left.
+  const notes = triageNotes(report.markdown);
   const allDone =
     report.finished ||
     (named.every(finished) && !/<Ask\b/.test(report.markdown) && report.cards_not_in_report.length === 0);
@@ -275,7 +287,28 @@ function ReportScreen({
     };
   }, [allDone, busy]);
   const request = reportApproveRequest(inbox, report, changed);
+  const qc = useQueryClient();
+  // One default's Approve: its cards go through Approve All's path (the same undo window, Undo in the bar), alone.
+  const approveOne = async (ids: number[]) => {
+    const cards = ids.flatMap((id) => {
+      const c = byId.get(id);
+      return c && (c.state === "open" || c.state === "handed_off") ? [decisionFor(c)] : [];
+    });
+    if (cards.length === 0) return null;
+    setSingles((prev) => new Set([...prev, ...ids]));
+    const a = await api<Approving>("/api/decisions/approve-all", { method: "POST", body: { cards, timeline: [], single: true } });
+    setApproved((prev) => ({ cards: new Set([...(prev?.cards ?? []), ...ids]), version: report.version }));
+    await qc.invalidateQueries({ queryKey: ["inbox"] });
+    return a;
+  };
+  const undoBatch = async (batch: string) => {
+    await api("/api/decisions/undo", { method: "POST", body: { batch } });
+    await qc.invalidateQueries({ queryKey: ["inbox"] });
+  };
   const beforeApprove = async () => {
+    // Undone singles that Approve All now takes count towards its darkening again.
+    const taken = new Set(request.cards.map((c) => Number(c.card_id)));
+    setSingles((prev) => new Set([...prev].filter((id) => !taken.has(id))));
     const defaults = reportDefaults(report.markdown);
     for (const [k, t] of pending) {
       await api("/api/report/answers", {
@@ -312,11 +345,19 @@ function ReportScreen({
             setDraft={setChange}
             approved={approved?.cards}
             rolled={rolled}
+            approveOne={approveOne}
+            undoBatch={undoBatch}
+            changed={changed}
           />
         </div>
         {rolled === "gone" && (
           // Fills the space the report left, with "All done." in its middle: the middle of the screen, near enough.
-          <div className="arrive flex flex-1 items-center justify-center">
+          <div className="arrive flex flex-1 flex-col items-center justify-center">
+            {notes && (
+              <div className="w-full self-stretch">
+                <TriageNotes markdown={notes} />
+              </div>
+            )}
             <NoReport cleared />
           </div>
         )}

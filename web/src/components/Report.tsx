@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { clock } from "@/lib/format";
 import { cn, enterSends } from "@/lib/utils";
+import type { Approving } from "@/types/Approving";
 import type { Card } from "@/types/Card";
 import type { Delivered } from "@/types/Delivered";
 import { dismissNote, notify, replaceNote } from "@/lib/notes";
@@ -169,7 +170,10 @@ function SentStatus({ answer }: { answer: ReportAnswer }) {
   return <span className="block text-sm text-neutral">{working ? `${tab} is working on it` : `Sent to ${tab}.`}</span>;
 }
 
-/** Outside the panel at its right edge, level with its first line: the agent is working on this change now. */
+/**
+ * Outside the panel at its right edge, level with its first line: the agent is working on this change now. It fits the
+ * Inbox's 16px side padding (4px gap + 12px), which clips anything wider (`overflow-clip` on its main).
+ */
 function WorkingSpinner({ answer }: { answer: ReportAnswer | undefined }) {
   const { report } = useReport();
   if (!useWorkingOn(answer)) return null;
@@ -177,7 +181,7 @@ function WorkingSpinner({ answer }: { answer: ReportAnswer | undefined }) {
     <Loader2
       role="img"
       aria-label={`${report.posted_by.tab} is working on this`}
-      className="absolute top-1.5 left-full ml-2 size-3.5 animate-spin text-neutral max-sm:ml-0.5"
+      className="absolute top-2 left-full ml-1 size-3 animate-spin text-neutral max-sm:ml-0.5"
     />
   );
 }
@@ -198,6 +202,15 @@ type Ctx = {
   kept: KeptFields;
   /** The cards the last Approve All sent: their defaults show a spinner, then a check (or a failure). */
   approved?: Set<number>;
+  /**
+   * Approve one default's cards on their own, as Approve All would (same undo window), or undefined where nothing
+   * can be approved (History's snapshot). Resolves once the deck has the batch.
+   */
+  approveOne?: (cards: number[]) => Promise<Approving | null>;
+  /** Undoes a batch still in its undo window. */
+  undoBatch?: (batch: string) => Promise<void>;
+  /** Defaults whose cards the person changed (a change sent or typed): those wait for the agent, not an approval. */
+  changed?: Set<string>;
 };
 
 type Caret = { key: string; start: number; end: number };
@@ -438,6 +451,68 @@ function ThreadMessages({
  * Left of a default's text, for the cards the last Approve All sent: a spinner while they're carried out, a green
  * check once all are done, red if one failed. Above the busy darkening, so it stays bright.
  */
+/**
+ * Approve this default's cards on their own, at the right end of its panel; Approve All still takes everything
+ * that's left. Gone once nothing in it waits for approval; greyed out while a change to it is typed or with the
+ * agent, since then the agent rewrites it first.
+ */
+function ApproveOne({
+  about,
+  ids,
+  blocked,
+  approveOne,
+  undoBatch,
+}: {
+  about: string;
+  ids: number[];
+  blocked: boolean;
+  approveOne: (cards: number[]) => Promise<Approving | null>;
+  undoBatch?: (batch: string) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  // In the undo window the check is an undo: pressing it cancels this approval, like Undo in the bar.
+  const [pending, setPending] = useState<Approving | null>(null);
+  useEffect(() => {
+    if (!pending) return;
+    const t = window.setTimeout(() => setPending(null), Math.max(0, new Date(pending.release_at).getTime() - Date.now()));
+    return () => window.clearTimeout(t);
+  }, [pending]);
+  if (pending && undoBatch)
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          const batch = pending.batch;
+          setPending(null);
+          undoBatch(batch);
+        }}
+        aria-label={`Undo approving: ${about}`}
+        title="Undo"
+        className={cn(smallButton, "w-7 px-0")}
+      >
+        <Undo2 aria-hidden />
+      </button>
+    );
+  if (ids.length === 0) return null;
+  return (
+    <button
+      type="button"
+      disabled={blocked || busy}
+      onClick={() => {
+        setBusy(true);
+        approveOne(ids)
+          .then((a) => setPending(a))
+          .finally(() => setBusy(false));
+      }}
+      aria-label={`Approve: ${about}`}
+      title={blocked ? "Waiting for the agent to take your change" : "Approve"}
+      className={cn(smallButton, "w-7 px-0")}
+    >
+      <Check aria-hidden />
+    </button>
+  );
+}
+
 function ApprovedMark({ cards }: { cards: string | undefined }) {
   const { cards: byId, approved } = useReport();
   const ids = cardIds(cards);
@@ -484,7 +559,7 @@ function ApprovedMark({ cards }: { cards: string | undefined }) {
 }
 
 function Default({ id, cards, children }: { id?: string; cards?: string; children?: ReactNode }) {
-  const { report, cards: byId, drafts, setDraft, kept } = useReport();
+  const { report, cards: byId, drafts, setDraft, kept, approveOne, undoBatch, changed } = useReport();
   const key = defaultKey(id, cards);
   const open = kept.open.has(key);
   const setOpen = (on: boolean) => kept.setOpen(key, on);
@@ -562,6 +637,18 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
         <span className="min-w-0 flex-1 py-0.5 text-ink">{children}</span>
         {chatButton}
         <EmailMenu about={about} cards={namedCards(cards, byId)} />
+        {approveOne && (
+          <ApproveOne
+            about={about}
+            ids={cardIds(cards).filter((cid) => {
+              const state = byId.get(cid)?.state;
+              return state === "open" || state === "handed_off";
+            })}
+            blocked={(changed?.has(key) ?? false) || draft.trim() !== "" || sending !== null}
+            approveOne={approveOne}
+            undoBatch={undoBatch}
+          />
+        )}
       </span>
       {open ? (
         <>
@@ -874,6 +961,30 @@ export function onlyReportTags(markdown: string): string {
   return markdown.replace(/<(?!\/?(?:Default|Ask)\b)/g, "&lt;");
 }
 
+/**
+ * The report's `# Triage Notes` section (what the agent's access rules stopped it doing), without its heading, or null
+ * when there is none. It runs to the next top-level heading or rule. Shown above "All done." too, so a note never
+ * vanishes when everything else is finished: Nathan wants them kept until he's dealt with them.
+ */
+export function triageNotes(markdown: string): string | null {
+  const start = /^#\s+Triage Notes\s*$/im.exec(markdown);
+  if (!start) return null;
+  const after = markdown.slice(start.index + start[0].length);
+  const end = /^(?:#\s|-{3,}\s*$|\*{3,}\s*$|_{3,}\s*$)/m.exec(after);
+  const body = (end ? after.slice(0, end.index) : after).trim();
+  return body === "" ? null : body;
+}
+
+/** The Triage Notes on their own, read-only: above "All done." when the rest of the report has rolled away. */
+export function TriageNotes({ markdown }: { markdown: string }) {
+  return (
+    <section className="report md mb-8" aria-label="Triage Notes">
+      <h1>Triage Notes</h1>
+      <Render options={{ ...SNAPSHOT_OPTIONS, wrapper: null }}>{onlyReportTags(markdown)}</Render>
+    </section>
+  );
+}
+
 /** The triage agent's report, as Markdown with its controls. */
 export function ReportBody({
   report,
@@ -882,6 +993,9 @@ export function ReportBody({
   setDraft,
   approved,
   rolled,
+  approveOne,
+  undoBatch,
+  changed,
 }: {
   report: Report;
   cards: Map<number, Card>;
@@ -890,11 +1004,16 @@ export function ReportBody({
   approved?: Set<number>;
   /** Everything on it is done: all but the heading rolls up and away ("rolling"), then is removed ("gone"). */
   rolled?: "no" | "rolling" | "gone";
+  approveOne?: (cards: number[]) => Promise<Approving | null>;
+  undoBatch?: (batch: string) => Promise<void>;
+  changed?: Set<string>;
 }) {
   const running = useRunningSessions();
   const kept = useKeptFields();
   return (
-    <ReportCtx value={{ report, cards, sessions: running.data ?? [], drafts, setDraft, kept, approved }}>
+    <ReportCtx
+      value={{ report, cards, sessions: running.data ?? [], drafts, setDraft, kept, approved, approveOne, undoBatch, changed }}
+    >
       <Render
         className={cn("md report", (rolled === "rolling" || rolled === "gone") && "rolled", rolled === "gone" && "gone")}
         options={OPTIONS}
