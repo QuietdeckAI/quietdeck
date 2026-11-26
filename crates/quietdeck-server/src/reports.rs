@@ -103,7 +103,8 @@ pub async fn current(db: &Db) -> AppResult<Option<Report>> {
     Ok(Some(Report {
         id: r.id,
         version: r.version,
-        markdown: r.markdown,
+        // Reports saved before the deck fixed item Defaults on the way in (27 Nov 2026) are fixed on the way out.
+        markdown: quietdeck_types::report::item_defaults_indented(&r.markdown),
         posted_by: SessionRef { node: r.posted_node, tab: r.posted_tab, session_id: r.posted_session_id },
         created_at: ts(r.created_at),
         updated_at: ts(r.updated_at),
@@ -115,8 +116,10 @@ pub async fn current(db: &Db) -> AppResult<Option<Report>> {
 }
 
 /// `quietdeck report set`: replace the report's text, from the version the agent last saw.
-pub async fn set(state: &AppState, me: &SessionRef, req: ReportSet) -> AppResult<Report> {
+pub async fn set(state: &AppState, me: &SessionRef, mut req: ReportSet) -> AppResult<Report> {
     req.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
+    // An item's Default written flush left is moved inside its item, so the Inbox never draws it as a group's.
+    req.markdown = quietdeck_types::report::item_defaults_indented(&req.markdown);
     let (ids, mut problems) = default_cards(&req.markdown);
     if !ids.is_empty() {
         let list = ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");

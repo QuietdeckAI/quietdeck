@@ -292,6 +292,50 @@ pub fn card_ids(cards: &str) -> Vec<i64> {
 }
 
 /// One attribute's value from a tag's attribute text: `name="value"`.
+/// A `<Default>` written flush left right after a numbered item (with or without a blank line between) belongs to
+/// that item: it's indented to the item's text, with no blank line, so the Inbox draws it inside the item. Written the
+/// other way it renders as a group's Default, flush left with a gap above (the triage agent did that on 27 Nov 2026,
+/// and every item's panel moved). Bulleted lists are left alone: a flush-left Default after one is a group's.
+/// Everything else is unchanged, and running it twice changes nothing more.
+pub fn item_defaults_indented(markdown: &str) -> String {
+    let lines: Vec<&str> = markdown.split('\n').collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    // The open numbered item's text indent ("1. " is 3), while its lines continue.
+    let mut item: Option<usize> = None;
+    for line in lines {
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        if indent == 0
+            && trimmed.starts_with("<Default")
+            && let Some(width) = item
+        {
+            while out.last().is_some_and(|l| l.trim().is_empty()) {
+                out.pop();
+            }
+            out.push(format!("{}{line}", " ".repeat(width)));
+            continue;
+        }
+        if indent == 0 && !trimmed.is_empty() {
+            item = numbered_item_width(trimmed);
+        } else if indent > 0 && trimmed.starts_with("<Default") {
+            // The item has its own Default already: a flush one after it is a group's.
+            item = None;
+        }
+        out.push(line.to_string());
+    }
+    out.join("\n")
+}
+
+/// `"12. text"` → Some(4), the indent of the item's text; anything else → None.
+fn numbered_item_width(line: &str) -> Option<usize> {
+    let digits = line.chars().take_while(char::is_ascii_digit).count();
+    if digits == 0 || digits > 3 {
+        return None;
+    }
+    let rest = &line[digits..];
+    rest.strip_prefix(". ").map(|_| digits + 2)
+}
+
 fn attr<'a>(attrs: &'a str, name: &str) -> Option<&'a str> {
     let mut rest = attrs;
     while let Some(at) = rest.find(name) {
@@ -308,6 +352,35 @@ fn attr<'a>(attrs: &'a str, name: &str) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_flush_default_after_a_numbered_item_moves_inside_it() {
+        let written = "# Inbox\n\n1. **Sentry:** a new error.\n\n<Default id=\"s\" cards=\"c_1\">Forward</Default>\n\n\
+                       10. **Renovate:** two PRs.\n<Default cards=\"c_2\">Archive</Default>\n";
+        let fixed = item_defaults_indented(written);
+        assert_eq!(
+            fixed,
+            "# Inbox\n\n1. **Sentry:** a new error.\n   <Default id=\"s\" cards=\"c_1\">Forward</Default>\n\n\
+             10. **Renovate:** two PRs.\n    <Default cards=\"c_2\">Archive</Default>\n"
+        );
+        assert_eq!(item_defaults_indented(&fixed), fixed, "running it again changes nothing");
+    }
+
+    #[test]
+    fn group_defaults_and_ones_already_inside_items_are_left_alone() {
+        let right = "1. **One:** text.\n   <Default cards=\"c_1\">Archive</Default>\n2. **Two:** text.\n   more text.\n   \
+                     <Default cards=\"c_2\">Archive</Default>\n\n## Archiving\n\n- a\n- b\n\n\
+                     <Default id=\"archive-all\" cards=\"c_3 c_4\">Archive all</Default>\n";
+        assert_eq!(item_defaults_indented(right), right);
+        // After a heading or a paragraph that closed the numbered list, a flush Default stays a group's.
+        let after = "1. **One:** text.\n   <Default cards=\"c_1\">Archive</Default>\n\nSome words.\n\n\
+                     <Default cards=\"c_5\">Keep in inbox</Default>\n";
+        assert_eq!(item_defaults_indented(after), after);
+        // A numbered item with its own Default, then a group's after the list.
+        let group = "1. **One:** text.\n   <Default cards=\"c_1\">Archive</Default>\n\n\
+                     <Default id=\"keep\" cards=\"c_6 c_7\">Keep in inbox</Default>\n";
+        assert_eq!(item_defaults_indented(group), group);
+    }
 
     #[test]
     fn defaults_name_their_cards() {
