@@ -139,6 +139,20 @@ pub fn parse_ts(value: Option<&Value>) -> Option<Timestamp> {
     value?.as_str()?.parse::<Timestamp>().ok()
 }
 
+static OWNER_HOME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Summarise only sessions that ran in `home` (the node's user's home directory). Unset (tests), every transcript
+/// found counts.
+pub fn set_owner_home(home: &str) {
+    let _ = OWNER_HOME.set(home.to_string());
+}
+
+/// Whether `cwd` is `home` or inside it. An empty `home` accepts everything.
+pub fn under_home(cwd: &str, home: &str) -> bool {
+    let home = home.trim_end_matches('/');
+    home.is_empty() || cwd == home || cwd.starts_with(&format!("{home}/"))
+}
+
 fn mtime_ts(path: &Path) -> Timestamp {
     modified(path).and_then(|m| Timestamp::try_from(m).ok()).unwrap_or_else(Timestamp::now)
 }
@@ -146,7 +160,16 @@ fn mtime_ts(path: &Path) -> Timestamp {
 /// Read complete lines from `offset` on. The session ID and cwd come from the file's first records, so a read from a
 /// later offset still peeks at the head for them.
 pub fn read(source: &Source, offset: u64, home: &str) -> std::io::Result<ReadResult> {
-    let meta = head_meta(source)?;
+    let mut meta = head_meta(source)?;
+    if meta.skip.is_none()
+        && let (Some(cwd), Some(owner)) = (&meta.cwd, OWNER_HOME.get())
+        && !under_home(cwd, owner)
+    {
+        // Another user's session: a copy of their transcript (an archive or sync mirror) that their own node
+        // summarises. On the agents VM the triage user's live transcript was mirrored into nathan's home and
+        // summarised under both nodes (26 Nov 2026). Only sessions that ran in this user's home are this node's.
+        meta.skip = Some(format!("another user's session (it ran in {cwd}, outside {owner})"));
+    }
     let mut result =
         ReadResult { session_id: meta.session_id, cwd: meta.cwd, skip: meta.skip, end: offset, ..Default::default() };
     if result.skip.is_some() {
@@ -571,6 +594,15 @@ pub fn codex_record(record: &Value) -> Vec<(Kind, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_sessions_in_this_home_are_this_nodes() {
+        assert!(under_home("/home/nathan/code/x", "/home/nathan"));
+        assert!(under_home("/home/nathan", "/home/nathan/"));
+        assert!(!under_home("/home/nathan2/x", "/home/nathan"));
+        assert!(!under_home("/home/triage/email-triage", "/home/nathan"));
+        assert!(under_home("/anything", ""));
+    }
     use serde_json::json;
 
     const HOME: &str = "/Users/sam";

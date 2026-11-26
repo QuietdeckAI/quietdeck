@@ -150,6 +150,8 @@ pub fn spawn(
 ) -> SummariesHandle {
     let tz = TimeZone::get(&env.time_zone).unwrap_or_else(|_| TimeZone::system());
     let user = if config.user_name.trim().is_empty() { "the user".to_owned() } else { config.user_name.clone() };
+    // Only this user's own sessions: a mirror of another user's transcripts belongs to that user's node.
+    transcript::set_owner_home(&env.home.to_string_lossy());
     let mut c = Config::new(&env.home, &env.state_dir, &user);
     c.tz = tz;
     c.idle_delay = Duration::from_secs(config.idle_seconds);
