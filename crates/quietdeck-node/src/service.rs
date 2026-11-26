@@ -66,9 +66,30 @@ pub fn install(home: &Path, start: bool) -> anyhow::Result<()> {
     }
     if cfg!(target_os = "macos") {
         let domain = format!("gui/{}", uid()?);
-        // Replace a loaded copy, so a reinstall picks up a new binary or PATH.
-        let _ = Command::new("launchctl").args(["bootout", &format!("{domain}/{LABEL}")]).output();
-        run(Command::new("launchctl").args(["bootstrap", &domain]).arg(&file))?;
+        // Replace a loaded copy, so a reinstall picks up a new binary or PATH. bootout returns before the old job is
+        // fully gone, and a bootstrap in that gap fails with "5: Input/output error" (26 Nov 2026, on a Mac): wait for
+        // it to go, then bootstrap, trying again a few times.
+        let target = format!("{domain}/{LABEL}");
+        let _ = Command::new("launchctl").args(["bootout", &target]).output();
+        for _ in 0..40 {
+            let loaded = Command::new("launchctl").args(["print", &target]).output().is_ok_and(|o| o.status.success());
+            if !loaded {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+        let mut tries = 0;
+        loop {
+            tries += 1;
+            match run(Command::new("launchctl").args(["bootstrap", &domain]).arg(&file)) {
+                Ok(()) => break,
+                Err(e) if tries < 5 => {
+                    eprintln!("launchctl bootstrap failed ({e}); trying again in a second");
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+                Err(e) => return Err(e),
+            }
+        }
         println!("Started. Logs: {}", values.log.display());
     } else {
         run(Command::new("systemctl").args(["--user", "daemon-reload"]))?;

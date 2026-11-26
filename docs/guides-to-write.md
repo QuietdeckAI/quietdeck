@@ -142,5 +142,9 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   `docs/drafts/homeserver-guides.md`.
 - **Dev servers on a remote machine.** Vite refuses host names it doesn't know (403), and `crypto.randomUUID` exists
   only on HTTPS pages or localhost; use the tailnet's full name and allow it. Now: this conversation (25 November).
+- **Reinstalling a launchd agent races.** `launchctl bootout` returns before the old job is gone; a `bootstrap`
+  straight after fails with "5: Input/output error" and leaves the service down. Wait until `launchctl print
+  gui/<uid>/<label>` fails, then bootstrap, retrying a few times. Now: `crates/quietdeck-node/src/service.rs`
+  (26 November), and Fleetlayer's `fleetlayer-node/src/service.rs`.
 - **Syncing notes, skills and instructions between machines.** Now: `docs/drafts/sync-how-to.md`.
 - **Account usage and rotation.** Now: `docs/drafts/account-usage-and-rotation.md`.
