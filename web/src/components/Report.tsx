@@ -202,6 +202,9 @@ type Ctx = {
   kept: KeptFields;
   /** The cards the last Approve All sent: their defaults show a spinner, then a check (or a failure). */
   approved?: Set<number>;
+  /** Cards the deck says were carried out after an approval: their defaults keep the check after a reload, a
+   * report edit, or on another device. */
+  finished?: Set<number>;
   /**
    * Approve one default's cards on their own, as Approve All would (same undo window), or undefined where nothing
    * can be approved (History's snapshot). Resolves once the deck has the batch.
@@ -514,7 +517,7 @@ function ApproveOne({
 }
 
 function ApprovedMark({ cards }: { cards: string | undefined }) {
-  const { cards: byId, approved } = useReport();
+  const { cards: byId, approved, finished } = useReport();
   const ids = cardIds(cards);
   const base = "relative z-10 mt-1 mr-1.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full";
   // A failed action stays marked, whether or not it came from the last Approve All, until it's retried or handled.
@@ -527,6 +530,13 @@ function ApprovedMark({ cards }: { cards: string | undefined }) {
         aria-label="Failed"
       >
         !
+      </span>
+    );
+  // Carried out after an approval, as the deck records it: the check stays, whatever this browser remembers.
+  if (ids.length > 0 && ids.every((id) => finished?.has(id)))
+    return (
+      <span className={cn(base, "bg-[oklch(52%_0.1_150)] text-white")} title="Done" role="img" aria-label="Done">
+        <Check className="size-2.5" strokeWidth={4} aria-hidden />
       </span>
     );
   const mine = ids.filter((id) => approved?.has(id));
@@ -997,6 +1007,7 @@ export function ReportBody({
   approveOne,
   undoBatch,
   changed,
+  finished,
 }: {
   report: Report;
   cards: Map<number, Card>;
@@ -1008,12 +1019,13 @@ export function ReportBody({
   approveOne?: (cards: number[]) => Promise<Approving | null>;
   undoBatch?: (batch: string) => Promise<void>;
   changed?: Set<string>;
+  finished?: Set<number>;
 }) {
   const running = useRunningSessions();
   const kept = useKeptFields();
   return (
     <ReportCtx
-      value={{ report, cards, sessions: running.data ?? [], drafts, setDraft, kept, approved, approveOne, undoBatch, changed }}
+      value={{ report, cards, sessions: running.data ?? [], drafts, setDraft, kept, approved, approveOne, undoBatch, changed, finished }}
     >
       <Render
         className={cn("md report", (rolled === "rolling" || rolled === "gone") && "rolled", rolled === "gone" && "gone")}

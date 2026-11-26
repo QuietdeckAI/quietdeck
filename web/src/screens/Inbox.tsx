@@ -348,6 +348,7 @@ function ReportScreen({
             approveOne={approveOne}
             undoBatch={undoBatch}
             changed={changed}
+            finished={new Set(inbox.finished_cards.map(Number))}
           />
         </div>
         {rolled === "gone" && (
