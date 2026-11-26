@@ -55,6 +55,14 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   SSH or Tailscale SSH; later Quietdeck as the gate (allowlist, approvals, audit, kill switch), never as the pipe. Now:
   build plan "Your own browser, from any agent", `~/Notes/Agents/browser/chrome-control-research.md`.
 
+- **Agents messaging each other: never paste into a terminal.** An agent whose `SendMessage` failed (the target was on
+  another machine, with Remote Control off) found the tab with `herdr machine list` and pasted its report in with
+  `herdr agent prompt`. It landed in the middle of a message Nathan was typing and mangled it. Fix: agents use
+  `SendMessage` on the same machine and `quietdeck msg send` across machines or when `SendMessage` says a session
+  isn't reachable, and never paste into another Claude session. The relay's own herdr fallback stays (Nathan, 26 Nov
+  2026): it's only for sessions with no messaging socket. Now: Nathan's shared CLAUDE.md, "Messaging Nathan's herdr
+  sessions" (26 November).
+
 ## The triage agent
 
 - **The triage agent on its own Unix user and node.** It reads untrusted mail with permissions skipped, so no
