@@ -63,6 +63,13 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   2026): it's only for sessions with no messaging socket. Now: Nathan's shared CLAUDE.md, "Messaging Nathan's herdr
   sessions" (26 November).
 
+- **Mirrored transcripts get summarised twice.** On a machine with one Unix user per agent, a root timer
+  (`agents-mirror`, every 2 minutes) copies each agent user's Claude project into the main user's home, so its
+  memory syncs and its transcripts reach the archive. Anything that sweeps the main user's `~/.claude/projects` then
+  sees the other user's live transcript as its own, and summarised it under the wrong node, beside that user's own
+  node. Fix: a summariser takes only sessions whose recorded cwd is inside its own user's home. Now: Fleetlayer
+  6cc8de8 (plugin) and Quietdeck b306e6a (`summaries/transcript.rs`, `under_home`), 26 November.
+
 ## The triage agent
 
 - **The triage agent on its own Unix user and node.** It reads untrusted mail with permissions skipped, so no
