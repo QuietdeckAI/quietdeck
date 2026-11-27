@@ -33,6 +33,7 @@ export const pages = [
   { file: "guides/alerts-to-owners", group: "Guides", label: "Alerts to the agent that owns them" },
   { file: "guides/matrix-source", group: "Guides", label: "Matrix messages" },
   { file: "guides/move-a-session", group: "Guides", label: "Move a session to another machine" },
+  { file: "configuration", group: "Reference", label: "Configuration" },
   { file: "leases", group: "Reference", label: "Leases" },
   { file: "orchestrators", group: "Reference", label: "Orchestrators" },
   { file: "claude-code-messaging", group: "Reference", label: "Claude Code messaging" },
