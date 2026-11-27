@@ -367,9 +367,11 @@ async fn read(node_name: &str, cfg: &MatrixConfig, dir: &Path, outbox: Arc<Outbo
     {
         let rooms = rooms.clone();
         let beats = beats.clone();
+        let outbox = outbox.clone();
         client.add_event_handler(move |ev: OriginalSyncRoomEncryptedEvent, room: Room| {
             let rooms = rooms.clone();
             let beats = beats.clone();
+            let outbox = outbox.clone();
             async move {
                 // A message this device can't read still shows the alert path is alive.
                 if beats.beat(room.room_id().as_str()).await {
@@ -379,6 +381,17 @@ async fn read(node_name: &str, cfg: &MatrixConfig, dir: &Path, outbox: Arc<Outbo
                     // The sender didn't share the key with this device (yet). The message isn't handed over.
                     tracing::warn!(room = %room.room_id(), event = %ev.event_id, sender = %ev.sender,
                         "a Matrix message this device can't decrypt");
+                    // Still told, so nothing goes unseen: who wrote, where and when, and to read it in a Matrix app.
+                    let ms = i64::try_from(u64::from(ev.origin_server_ts.0)).unwrap_or(0);
+                    outbox
+                        .push(undecryptable(
+                            room.room_id().as_str(),
+                            &room_name(&room),
+                            ev.event_id.as_str(),
+                            ev.sender.as_str(),
+                            ms,
+                        ))
+                        .await;
                 }
             }
         });
@@ -454,9 +467,33 @@ fn incoming(room: &Room, ev: &OriginalSyncRoomMessageEvent) -> IncomingMessage {
     }
 }
 
+/// A message this device couldn't decrypt, as the deck gets it. Its ID differs from the event's, so a decrypted copy
+/// that arrives later (once the key is shared) isn't dropped as a repeat.
+fn undecryptable(room_id: &str, room_name: &str, event_id: &str, sender: &str, ms: i64) -> IncomingMessage {
+    IncomingMessage {
+        source: "matrix".into(),
+        channel: room_id.into(),
+        channel_name: room_name.into(),
+        external_id: format!("{event_id}:undecryptable"),
+        sender: sender.into(),
+        body: "(An encrypted message this device can't decrypt yet: the sender's app hasn't shared the key with it. \
+               Read it in a Matrix app.)"
+            .into(),
+        sent_at: jiff::Timestamp::from_millisecond(ms).unwrap_or_else(|_| jiff::Timestamp::now()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_undecryptable_message_is_still_told_under_an_id_of_its_own() {
+        let m = undecryptable("!r:example.com", "Alerts", "$ev1", "@a:example.com", 1_795_000_000_000);
+        assert_eq!(m.external_id, "$ev1:undecryptable", "a decrypted copy later keeps $ev1");
+        assert!(m.body.contains("can't decrypt"));
+        assert_eq!(m.channel_name, "Alerts");
+    }
 
     fn msg(id: &str) -> IncomingMessage {
         IncomingMessage {
