@@ -142,6 +142,25 @@ pub async fn send_via(socket: &Path, msg: &Outgoing) -> Option<Result<Delivered,
     })
 }
 
+/// A delivery the deck routed to this node, through Fleetlayer: to the Claude session by its ID (exact), else to its
+/// tab on this machine. None when Fleetlayer doesn't run Quietdeck's plugin here. A session Fleetlayer finds stopped
+/// or unknown fails with the node's offline prefix, so the deck says it's offline as before.
+pub async fn deliver(d: &quietdeck_types::relay::Delivery) -> Option<Result<Delivered, String>> {
+    deliver_via(&bridge_socket(), d).await
+}
+
+pub async fn deliver_via(socket: &Path, d: &quietdeck_types::relay::Delivery) -> Option<Result<Delivered, String>> {
+    let (to, local) = match (&d.target.session_id, d.target.agent) {
+        (Some(id), quietdeck_types::AgentKind::Claude) => (id.as_str(), false),
+        _ => (d.target.tab.as_str(), true),
+    };
+    let sent = send_via(socket, &Outgoing::of(to, &d.kind, &d.body, local)).await?;
+    Some(sent.map_err(|e| match e.code {
+        Some(code::NOT_HERE | code::NO_SUCH) => format!("{} {}", crate::deliver::OFFLINE_PREFIX, e.message),
+        _ => e.message,
+    }))
+}
+
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, (i64, String)>>>>>;
 
 /// `quietdeck-node fleetlayer-plugin`: run as a Fleetlayer plugin on stdio until the node closes it.
@@ -389,6 +408,36 @@ mod tests {
         let e = sent.await.unwrap().unwrap().unwrap_err();
         assert_eq!(e.code, Some(code::NO_SUCH));
         assert!(e.message.contains("did you mean 'triage@agents-triage'"), "{e}");
+    }
+
+    #[tokio::test]
+    async fn a_deck_delivery_goes_to_the_claude_session_by_id_and_not_here_is_offline() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("fleetlayer-plugin.sock");
+        let (mut nw, mut nr) = plugin(socket.clone()).await;
+        let d = quietdeck_types::relay::Delivery {
+            id: "d1".into(),
+            target: quietdeck_types::relay::DeliveryTarget {
+                tab: "email triage".into(),
+                session_id: Some("0de272d5-8e38-42e4-8eeb-dd5a6c41ba17".into()),
+                address: Some("w1:p3".into()),
+                agent: quietdeck_types::AgentKind::Claude,
+            },
+            kind: DeliveryKind::Deck,
+            body: "Nathan wrote in the Inbox chat: hello".into(),
+        };
+        let sent = tokio::spawn({
+            let socket = socket.clone();
+            async move { deliver_via(&socket, &d).await }
+        });
+        let req = line(&mut nr).await;
+        assert_eq!(req["params"]["to"], "0de272d5-8e38-42e4-8eeb-dd5a6c41ba17");
+        assert_eq!(req["params"]["subkind"], "deck");
+        let gone = json!({"jsonrpc": "2.0", "id": req["id"], "error": {"code": code::NOT_HERE,
+            "message": "email triage on agents-triage isn't running"}});
+        nw.write_all(format!("{gone}\n").as_bytes()).await.unwrap();
+        let e = sent.await.unwrap().unwrap().unwrap_err();
+        assert!(e.starts_with(crate::deliver::OFFLINE_PREFIX), "{e}");
     }
 
     #[tokio::test]

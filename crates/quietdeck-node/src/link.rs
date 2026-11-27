@@ -221,15 +221,22 @@ async fn connect_once(node: &Arc<Node>) -> anyhow::Result<Outcome> {
 
 async fn answer(node: &Node, request: DeckRequest) -> Reply {
     match request {
-        DeckRequest::Deliver { delivery } => match node.deliverer.deliver(&delivery).await {
-            Ok(how) => {
-                if let Some(id) = &delivery.target.session_id {
-                    node.mark_working(id).await;
+        DeckRequest::Deliver { delivery } => {
+            // Through Fleetlayer where it runs Quietdeck's plugin, else the node's own delivery.
+            let sent = match crate::fleetlayer::deliver(&delivery).await {
+                Some(sent) => sent,
+                None => node.deliverer.deliver(&delivery).await,
+            };
+            match sent {
+                Ok(how) => {
+                    if let Some(id) = &delivery.target.session_id {
+                        node.mark_working(id).await;
+                    }
+                    Reply::ok(&how)
                 }
-                Reply::ok(&how)
+                Err(error) => Reply::Err { error },
             }
-            Err(error) => Reply::Err { error },
-        },
+        }
         DeckRequest::SearchTranscripts { query, limit } => {
             Reply::ok(&crate::transcripts::search(node.home.clone(), query, limit.min(500) as usize).await)
         }

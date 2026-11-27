@@ -67,7 +67,8 @@ pub enum MailBackend {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentConfig {
-    /// The agent's tab, or its name when it's headless.
+    /// The agent's tab, or its name when it's headless. Where Fleetlayer runs Quietdeck's plugin it can be
+    /// `<tab>@<node>`, an agent on another node (the runner on a Unix user of its own).
     pub tab: String,
     /// Run the agent as one `claude -p` turn per message, resuming the same conversation, instead of pasting into a
     /// tab. See [`super::headless`].

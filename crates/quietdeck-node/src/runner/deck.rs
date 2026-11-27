@@ -160,9 +160,11 @@ impl AgentInbox for LocalAgent {
             let sessions = self.node.sessions.lock().await;
             sessions.iter().find(|s| s.running && s.tab.as_deref() == Some(self.tab.as_str())).cloned()
         };
-        // Through Fleetlayer where it runs Quietdeck's plugin, which delivers to the tab on this machine.
+        // Through Fleetlayer where it runs Quietdeck's plugin: to the tab on this machine, or to `<tab>@<node>` when
+        // the agent runs on another node (a runner on its own Unix user, say).
+        let local = !self.tab.contains('@');
         if let Some(sent) =
-            crate::fleetlayer::send(&crate::fleetlayer::Outgoing::of(&self.tab, &kind, &body, true)).await
+            crate::fleetlayer::send(&crate::fleetlayer::Outgoing::of(&self.tab, &kind, &body, local)).await
         {
             sent.map_err(|e| e.to_string())?;
             if let Some(s) = session {
