@@ -180,7 +180,6 @@ pub const OPERATIONS: &[Doc] = &[
     op("post", "/sessions/close", "close_session", "sessions", "Close a session"),
     op("post", "/sessions/interrupt", "interrupt_session", "sessions", "Interrupt a session"),
     op("get", "/who-has", "who_has", "sessions", "Which session has a thread, account or topic"),
-    op("post", "/msg", "msg_send", "messages", "Send a message to a session by address"),
     op("get", "/messages", "messages_read", "messages", "Read messages after the caller's last read, or after a message ID"),
     op("post", "/handoffs", "handoff_add", "messages", "A session writes a handoff about itself"),
     op("get", "/handoffs/{id}", "handoff_show", "messages", "One handoff"),

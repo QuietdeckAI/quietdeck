@@ -37,22 +37,25 @@ that holds what the person types while Claude is busy. An idle session starts a 
 its next tool round; a blocked one reads it once the person answers. `SendMessage` reaches only sessions of the same
 Unix user on the same machine.
 
-**Anywhere else, use `quietdeck msg send`.** That covers a session on another machine, a session under another Unix
-user, or any time `SendMessage` says a session isn't reachable:
+**Anywhere else, use `fleetlayer msg send`** (or `quietdeck msg send`, which does the same). That covers a session on
+another machine, a session under another Unix user, or any time `SendMessage` says a session isn't reachable.
+Messages between sessions are [Fleetlayer](with-fleetlayer.md)'s job, so the machine needs a Fleetlayer node; Quietdeck
+alone (solo, on a laptop) has no other sessions to message.
 
 ```sh
-quietdeck msg send --to "infra@build-server" "The migration is done. Rebase on main."
+fleetlayer msg send --to "infra@build-server" "The migration is done. Rebase on main."
 ```
 
-`--to` takes `<tab>@<machine>`, or a bare `<tab>` when only one machine has a tab of that name. The node on the
-receiving machine delivers it the way `SendMessage` does, through the session's socket, so it's queued and read at the
-next turn. It arrives with who sent it and how to answer:
+`--to` takes `<tab>@<machine>`, or a bare `<tab>` when only one machine has a tab of that name. Fleetlayer delivers it
+the way `SendMessage` does, through the session's socket, so it's queued and read at the next turn, and its access
+rules decide who may message whom. It arrives with who sent it and how to answer:
 
 ```text
-Message from billing (laptop) via Quietdeck:
+Message from billing (laptop) via Fleetlayer:
+
 The migration is done. Rebase on main.
 
-Reply with: quietdeck msg send --to "billing@laptop" "…"
+Reply with: fleetlayer msg send --to "billing@laptop" "…"
 ```
 
 So the receiver can answer straight back without looking anything up.

@@ -11,8 +11,6 @@ use quietdeck_types::api::{
 use quietdeck_types::card::{ActionRecord, ActionReport, Card, CardAdded, CardInput, CardResolution, Released};
 use quietdeck_types::decision::{ApproveAll, Approving, Decide, Inbox, ReportReceipt, StopResult, UndoBatch};
 use quietdeck_types::directory::{NodeRow, SessionRow, SessionStart, SessionStarted, SessionTarget, WhoHas};
-use quietdeck_types::node::Delivered;
-use quietdeck_types::relay::MsgSend;
 use quietdeck_types::rules::{MatchRequest, MatchResult, Rule, RuleInput, RuleStatusChange, RulesView};
 use quietdeck_types::timeline::{Comment, CommentAdd, History, TimelineAdd, TimelineEntry};
 use schemars::JsonSchema;
@@ -53,7 +51,6 @@ pub fn router() -> ApiRouter<AppState> {
         .api_route("/handoffs/{id}", get(handoff_show))
         .api_route("/handoffs/{id}/claim", post(handoff_claim))
         .api_route("/who-has", get(who_has))
-        .api_route("/msg", post(msg_send))
         .api_route("/timeline", post(timeline_add))
         .api_route("/history", get(history))
         .api_route("/messages", get(messages_read))
@@ -756,14 +753,6 @@ async fn who_has(
     Query(q): Query<SearchQuery>,
 ) -> AppResult<Json<WhoHas>> {
     Ok(Json(ops::who_has(&state, &q.q).await?))
-}
-
-async fn msg_send(
-    State(state): State<AppState>,
-    Agent(me): Agent,
-    Json(msg): Json<MsgSend>,
-) -> AppResult<Json<Delivered>> {
-    Ok(Json(ops::msg_send(&state, &me, msg).await?))
 }
 
 async fn timeline_add(

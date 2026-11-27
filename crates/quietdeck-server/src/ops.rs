@@ -10,8 +10,8 @@ use quietdeck_types::card::{
 };
 use quietdeck_types::decision::{ApproveAll, Approving, CardDecision, Decide, Inbox, ReportReceipt, StopResult};
 use quietdeck_types::directory::{HitSource, PartialSearch, SessionRow, TranscriptHit, WhoHas, WhoHasHit};
-use quietdeck_types::node::{DeckRequest, Delivered, TranscriptSearch};
-use quietdeck_types::relay::{DeliveryError, DeliveryKind, MsgSend};
+use quietdeck_types::node::{DeckRequest, TranscriptSearch};
+use quietdeck_types::relay::DeliveryKind;
 use quietdeck_types::rules::{
     MatchRequest, MatchResult, ProjectPolicy, Rule, RuleInput, RuleOffer, RuleStatus, RuleStatusChange, RulesView,
 };
@@ -289,20 +289,6 @@ pub async fn who_has(state: &AppState, query: &str) -> AppResult<WhoHas> {
     offline.sort();
     offline.dedup();
     Ok(WhoHas { query: query.to_string(), hits, offline_nodes: offline, partial })
-}
-
-pub async fn msg_send(state: &AppState, me: &SessionRef, msg: MsgSend) -> AppResult<Delivered> {
-    garde::Validate::validate(&msg).map_err(bad)?;
-    crate::relay::send(&state.db, &state.hub, &msg.to, DeliveryKind::Message { from: me.clone() }, msg.text)
-        .await
-        .map_err(|e| match e {
-            DeliveryError::SessionOffline { .. } | DeliveryError::NodeOffline { .. } => {
-                AppError::Offline(e.to_string())
-            }
-            DeliveryError::SessionNotFound { .. } => AppError::NotFound(e.to_string()),
-            DeliveryError::Ambiguous { .. } => AppError::BadRequest(e.to_string()),
-            DeliveryError::Failed { .. } => AppError::Unavailable(e.to_string()),
-        })
 }
 
 pub async fn timeline_add(state: &AppState, caller: &Caller, e: TimelineAdd) -> AppResult<TimelineEntry> {

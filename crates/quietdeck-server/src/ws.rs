@@ -260,9 +260,7 @@ async fn mint_for(state: &AppState, node: &str, session: Option<TokenSession>) -
 mod tests {
     use futures::{SinkExt, StreamExt};
     use quietdeck_types::directory::SessionInfo;
-    use quietdeck_types::node::{
-        DeckFrame, DeckRequest, Delivered, NodeFrame, NodeRequest, PROTOCOL_VERSION, Reply, RunnerInfo,
-    };
+    use quietdeck_types::node::{DeckFrame, DeckRequest, NodeFrame, NodeRequest, PROTOCOL_VERSION, RunnerInfo};
     use quietdeck_types::relay::DeliveryKind;
     use quietdeck_types::{ActionType, AgentKind, AgentStatus};
     use tokio_tungstenite::tungstenite::Message;
@@ -320,10 +318,10 @@ mod tests {
         assert_eq!(old, DeckFrame::Welcome { node: "n".into(), features: vec![] });
     }
 
-    /// A runner's relay to a session on its own node: the deck asks that node to deliver while the node's own
-    /// request is still open. Both must be answered.
+    /// The deck no longer relays a runner's forwards (they go through Fleetlayer's plugin): an older node that asks
+    /// gets a clear answer, and the deck asks nothing of the target's node.
     #[tokio::test]
-    async fn a_runner_relays_to_a_session_on_its_own_node() {
+    async fn the_deck_refuses_to_relay_for_a_runner() {
         let state = AppState::for_tests().await;
         let code = nodes::create_enrolment_code(&state.db).await.unwrap();
         let enrolled = nodes::enrol(&state.db, &code.code, "server").await.unwrap();
@@ -359,16 +357,12 @@ mod tests {
         let relay = NodeRequest::Relay { to: "target@server".into(), kind: DeliveryKind::Deck, body: "hello".into() };
         sink.send(text(&NodeFrame::Request { id: 7, request: relay })).await.unwrap();
 
-        let mut delivered = false;
         let answered = tokio::time::timeout(std::time::Duration::from_secs(10), async {
             while let Some(msg) = stream.next().await {
                 let Message::Text(t) = msg.unwrap() else { continue };
                 match serde_json::from_str::<DeckFrame>(&t).unwrap() {
-                    DeckFrame::Request { id, request: DeckRequest::Deliver { delivery } } => {
-                        assert_eq!(delivery.target.session_id.as_deref(), Some("s-target"));
-                        delivered = true;
-                        let reply = Reply::ok(&Delivered::Socket);
-                        sink.send(text(&NodeFrame::Response { id, reply })).await.unwrap();
+                    DeckFrame::Request { request: DeckRequest::Deliver { .. }, .. } => {
+                        panic!("the deck asked the node to deliver a relay it should refuse")
                     }
                     DeckFrame::Response { id: 7, reply } => return reply,
                     DeckFrame::Refused { reason } => panic!("refused: {reason}"),
@@ -378,8 +372,8 @@ mod tests {
             panic!("the deck closed the connection");
         })
         .await
-        .expect("the deck answers the relay while it waits on this node's delivery");
-        assert!(delivered);
-        assert!(answered.into_result::<serde_json::Value>().is_ok());
+        .expect("the deck answers the relay");
+        let e = answered.into_result::<serde_json::Value>().unwrap_err();
+        assert!(e.contains("no longer relays") && e.contains("fleetlayer-plugin"), "{e}");
     }
 }

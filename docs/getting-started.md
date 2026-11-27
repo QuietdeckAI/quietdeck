@@ -258,8 +258,10 @@ quietdeck sessions show <tab>@<machine> --timeline
 ```
 
 ```sh
-quietdeck msg send --to <tab>@<machine> "Hello from the other machine"
+fleetlayer msg send --to <tab>@<machine> "Hello from the other machine"
 ```
+
+Messages between sessions go through [Fleetlayer](guides/with-fleetlayer.md), so each machine needs its node.
 
 The message appears in that session at its next turn, with a line telling it how to answer. Messages to a session
 that isn't running fail at once and aren't kept; Quietdeck never queues messages between agents.

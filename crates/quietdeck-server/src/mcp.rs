@@ -16,7 +16,6 @@ use quietdeck_types::SessionRef;
 use quietdeck_types::api::Caller;
 use quietdeck_types::card::{ActionReport, CardInput, CardResolution};
 use quietdeck_types::directory::SessionTarget;
-use quietdeck_types::relay::MsgSend;
 use quietdeck_types::timeline::TimelineAdd;
 
 use crate::error::AppError;
@@ -294,18 +293,6 @@ impl Mcp {
             ops::who_has(&self.state, &args.q).await
         }
         .await;
-        tool_try!(r)
-    }
-
-    #[tool(description = "Send a message to a session on another machine (`tab` or `tab@node`). Fails at once when \
-        that session is offline (then find another way or try again later) or when no session has that name (then \
-        check `sessions`; the error suggests close names). Use SendMessage on the same machine.")]
-    async fn msg_send(
-        &self,
-        Parameters(msg): Parameters<MsgSend>,
-        ctx: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let r = async { ops::msg_send(&self.state, &self.agent(&ctx).await?, msg).await }.await;
         tool_try!(r)
     }
 

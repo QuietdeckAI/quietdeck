@@ -162,8 +162,8 @@ pub enum NodeRequest {
     ActionStart { action_id: i64 },
     /// The runner's results. Answers `Vec<ReportReceipt>`.
     ActionsReport { reports: Vec<ActionReport> },
-    /// The runner: pass a forward (or another delivery) to a session by address, through the relay. Answers
-    /// [`Delivered`].
+    /// Retired: the runner forwards through Fleetlayer's plugin, and the deck refuses this. Kept so a frame from an
+    /// older node still parses and gets that answer.
     Relay { to: String, kind: DeliveryKind, body: String },
     /// The runner: an approved `new_session` on whichever machine it names (flow 3.15). Answers
     /// [`crate::directory::SessionStarted`].
