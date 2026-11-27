@@ -658,6 +658,80 @@ exit $(cat "$dir/$op.exit" 2>/dev/null || echo 0)
         assert_eq!(std::fs::read_to_string(p.join("stdin")).unwrap(), "--not-a-flag\nThanks!");
     }
 
+    /// Real output from gog 0.46.0 against a personal Gmail account (27 November 2026), scrubbed: what each op reads
+    /// from it. The fixtures are in `fixtures/gog/`.
+    mod real_gog {
+        use super::*;
+
+        fn fixture(name: &str) -> Value {
+            let path = format!("{}/src/runner/fixtures/gog/{name}.json", env!("CARGO_MANIFEST_DIR"));
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
+        }
+
+        fn copy(dir: &std::path::Path, fixture_name: &str, as_op: &str) {
+            std::fs::write(dir.join(format!("{as_op}.json")), fixture(fixture_name).to_string()).unwrap();
+        }
+
+        #[tokio::test]
+        async fn history_and_profile() {
+            let dir = tempfile::tempdir().unwrap();
+            let p = dir.path();
+            copy(p, "history", "gmail_history");
+            copy(p, "messages_search", "gmail_messages_search");
+            // Every message the history names reads as the one raw fixture (its labels and thread).
+            for id in ["1a1fdeb3931f11b9", "1a1fdeb3f0eb86ba", "1a1fe18c6d392682", "1a21b61acd474ee0"] {
+                copy(p, "raw_minimal", &format!("raw_{id}"));
+            }
+            let gog = fake_gog(p);
+            let v = gog.call("history", &json!({"account": "alice@example.com", "since": "28605522"})).await.unwrap();
+            assert_eq!(v["historyId"], "28643311");
+            assert_eq!(v["nextPageToken"], "10454226333937819819", "a long history pages");
+            let added = v["history"][0]["messagesAdded"].as_array().unwrap();
+            assert_eq!(added.len(), 3);
+            assert_eq!(added[0]["message"]["threadId"], "1a1f37b62f43d035");
+            assert_eq!(added[0]["message"]["labelIds"], json!(["SENT"]));
+
+            let profile = gog.call("profile", &json!({"account": "alice@example.com"})).await.unwrap();
+            assert_eq!(profile, json!({"historyId": "28605522"}), "the newest message's historyId");
+        }
+
+        #[tokio::test]
+        async fn not_found_is_exit_5_with_the_error_on_stdout() {
+            let dir = tempfile::tempdir().unwrap();
+            let p = dir.path();
+            copy(p, "not_found", "gmail_history");
+            std::fs::write(p.join("gmail_history.exit"), "5").unwrap();
+            let e = fake_gog(p).call("history", &json!({"account": "alice@example.com", "since": "1"})).await;
+            assert!(e.unwrap_err().contains("404"), "an expired history ID starts again from now");
+        }
+
+        #[test]
+        fn messages_threads_labels_drafts_send_as_and_search() {
+            let m = unwrap_message(fixture("raw_metadata"));
+            assert_eq!(m["threadId"], "1a1f37b62f43d035");
+            let headers = m.pointer("/payload/headers").and_then(Value::as_array).unwrap();
+            assert!(headers.iter().any(|h| h["name"] == "Subject" && h["value"] == "Re: Subject 4"));
+
+            let t = normalize_thread(&fixture("thread_get"));
+            let msgs = t["messages"].as_array().unwrap();
+            assert_eq!(msgs.len(), 2);
+            assert!(
+                msgs.iter().all(|m| m["id"].is_string() && m["labelIds"].is_array() && m["internalDate"].is_string())
+            );
+            assert_eq!(t["id"], "1a1f37b62f43d035");
+
+            let l = normalize_labels(&fixture("labels"));
+            assert!(l["labels"].as_array().unwrap().iter().any(|x| x == &json!({"id": "Label_10", "name": "Label A"})));
+
+            assert_eq!(normalize_drafts(&fixture("drafts_empty")), json!({"drafts": []}));
+            assert_eq!(normalize_send_as(&fixture("sendas"))["sendAs"][0], json!({"sendAsEmail": "alice@example.com"}));
+
+            let i = normalize_inbox(&fixture("search"));
+            assert_eq!(i["threads"].as_array().unwrap().len(), 2);
+            assert!(i.get("nextPageToken").is_some(), "a page with more after it is partial");
+        }
+    }
+
     #[tokio::test]
     async fn a_missing_gog_says_so() {
         let gog = Gog { bin: "/nonexistent/gog".into() };

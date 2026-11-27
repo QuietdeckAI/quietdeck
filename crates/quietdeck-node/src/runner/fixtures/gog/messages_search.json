@@ -1,0 +1,21 @@
+{
+  "count": 1,
+  "has_more": true,
+  "messages": [
+    {
+      "id": "1a21b61acd474ee0",
+      "threadId": "1a21b61acd474ee0",
+      "date": "2026-11-27 17:35",
+      "internalDateIso": "2026-11-27T17:35:52+13:00",
+      "from": "Bob Example <bob@example.com>",
+      "subject": "Subject 1",
+      "labels": [
+        "UNREAD",
+        "IMPORTANT",
+        "CATEGORY_UPDATES",
+        "INBOX"
+      ]
+    }
+  ],
+  "nextPageToken": "01690668773795474411"
+}

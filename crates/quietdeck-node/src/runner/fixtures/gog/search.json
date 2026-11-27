@@ -1,0 +1,35 @@
+{
+  "count": 3,
+  "has_more": true,
+  "nextPageToken": "07207908568904717513",
+  "threads": [
+    {
+      "id": "1a21b61acd474ee0",
+      "date": "2026-11-27 17:35",
+      "internalDateIso": "2026-11-27T17:35:52+13:00",
+      "from": "Bob Example <bob@example.com>",
+      "subject": "Subject 1",
+      "labels": [
+        "UNREAD",
+        "IMPORTANT",
+        "CATEGORY_UPDATES",
+        "INBOX"
+      ],
+      "messageCount": 1
+    },
+    {
+      "id": "1a21b5fb62b73a19",
+      "date": "2026-11-27 17:59",
+      "internalDateIso": "2026-11-27T17:59:46+13:00",
+      "from": "Carol Example <carol@example.com>",
+      "subject": "Subject 2",
+      "labels": [
+        "UNREAD",
+        "CATEGORY_UPDATES",
+        "Label Q",
+        "INBOX"
+      ],
+      "messageCount": 1
+    }
+  ]
+}

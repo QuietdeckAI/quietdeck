@@ -1,0 +1,56 @@
+{
+  "historyId": "28605522",
+  "id": "1a1fbfaeb24d41ab",
+  "internalDate": "1795228887000",
+  "labelIds": [
+    "SENT"
+  ],
+  "payload": {
+    "mimeType": "text/plain",
+    "headers": [
+      {
+        "name": "From",
+        "value": "Alice Example <alice@example.com>"
+      },
+      {
+        "name": "To",
+        "value": "dave@example.com"
+      },
+      {
+        "name": "Subject",
+        "value": "Re: Subject 4"
+      },
+      {
+        "name": "In-Reply-To",
+        "value": "<msg1@example.com>"
+      },
+      {
+        "name": "References",
+        "value": "<msg1@example.com>"
+      },
+      {
+        "name": "MIME-Version",
+        "value": "1.0"
+      },
+      {
+        "name": "Content-Type",
+        "value": "text/plain; charset=\"UTF-8\""
+      },
+      {
+        "name": "Content-Transfer-Encoding",
+        "value": "base64"
+      },
+      {
+        "name": "Date",
+        "value": "Fri, 20 Nov 2026 18:41:27 -0800"
+      },
+      {
+        "name": "Message-Id",
+        "value": "<msg2@example.com>"
+      }
+    ]
+  },
+  "sizeEstimate": 865,
+  "snippet": "Snippet 2",
+  "threadId": "1a1f37b62f43d035"
+}
