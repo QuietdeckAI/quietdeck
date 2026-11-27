@@ -68,6 +68,17 @@ impl HeadlessConfig {
     pub fn check(&self) -> Result<(), String> {
         super::config::parse_duration(&self.turn_timeout)
             .map_err(|e| format!("runner.agent.headless.turn_timeout: {e}"))?;
+        // Codex can reach the node's socket only with its sandbox's network open, and has no per-command allowlist,
+        // so an email could make it send what it read anywhere (tested 27 November 2026, codex-cli 0.166.0).
+        let program = std::path::Path::new(&self.bin).file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if program.starts_with("codex") {
+            return Err(
+                "runner.agent.headless.bin: Codex can't be the triage agent yet: it reaches Quietdeck only with \
+                its sandbox's network open and can't be limited to the quietdeck command, so an email could make it \
+                send your mail anywhere (docs/solo-security.md). Use Claude Code"
+                    .into(),
+            );
+        }
         if let Some(t) = self.allowed_tools.iter().find(|t| too_wide(t)) {
             return Err(format!(
                 "runner.agent.headless.allowed_tools: {t} lets the agent run any command (or any quietdeck \
@@ -363,6 +374,15 @@ mod tests {
         let ok = HeadlessConfig { allowed_tools: vec!["Bash(quietdeck card:*)".into()], ..cfg("claude") };
         assert!(ok.check().is_ok());
         assert!(cfg("claude").check().is_ok(), "the default list passes");
+    }
+
+    #[test]
+    fn codex_is_refused_as_the_triage_agent() {
+        for bin in ["codex", "/opt/homebrew/bin/codex", "codex-cli"] {
+            let e = cfg(bin).check().unwrap_err();
+            assert!(e.contains("Codex can't be the triage agent yet"), "{bin}: {e}");
+        }
+        cfg("/usr/local/bin/claude").check().unwrap();
     }
 
     #[test]
