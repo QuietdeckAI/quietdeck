@@ -20,6 +20,15 @@ export default defineConfig({
       description: site.summary,
       logo: { src: "./src/assets/mark.svg", replacesTitle: false },
       favicon: "/favicon.svg",
+      // Privacy-friendly analytics by Plausible, on every docs page (the homepage has the same snippet in index.astro).
+      head: [
+        { tag: "script", attrs: { async: true, src: "https://pa.docspring.com/js/pa-WWnRAMt1H8HtDUKNOMPQh.js" } },
+        {
+          tag: "script",
+          content:
+            "window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()",
+        },
+      ],
       social: [{ icon: "github", label: "GitHub", href: repo }],
       // The API reference is generated from ../api/openapi.json (the repo's copy, so the site matches main), under /api/v1/.
       // scripts/sync-docs.mjs writes .openapi.json from it first (boolean schemas made renderable).
