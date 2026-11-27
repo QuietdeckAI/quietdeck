@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useAccount } from "@/components/AccountTabs";
 import { ApproveAllBar } from "@/components/ApproveAllBar";
+import { notify } from "@/lib/notes";
 import { changedKeys, ReportBody, ReportChatBox, reportDefaults, TriageNotes, triageNotes } from "@/components/Report";
 import { ReportMeta, ReportToasts, UpdatedAt } from "@/components/ReportMeta";
 import { SoloHealthStack } from "@/components/SoloHealth";
@@ -299,9 +300,16 @@ function ReportScreen({
     if (cards.length === 0) return null;
     setSingles((prev) => new Set([...prev, ...ids]));
     const a = await api<Approving>("/api/decisions/approve-all", { method: "POST", body: { cards, timeline: [], single: true } });
-    setApproved((prev) => ({ cards: new Set([...(prev?.cards ?? []), ...ids]), version: report.version }));
+    // Only what the deck took counts as approved; what it left alone stays, and says why.
+    const taken = a.cards.map(Number);
+    setSingles((prev) => new Set([...prev].filter((id) => !ids.includes(id) || taken.includes(id))));
+    setApproved((prev) => ({ cards: new Set([...(prev?.cards ?? []), ...taken]), version: report.version }));
+    if (a.skipped.length > 0) {
+      const reasons = a.skipped.map((s) => s.reason).filter((r, i, all) => all.indexOf(r) === i);
+      notify(`Left alone: ${reasons.join("; ")}`, { ms: 8000 });
+    }
     await qc.invalidateQueries({ queryKey: ["inbox"] });
-    return a;
+    return a.cards.length > 0 ? a : null;
   };
   const undoBatch = async (batch: string) => {
     await api("/api/decisions/undo", { method: "POST", body: { batch } });

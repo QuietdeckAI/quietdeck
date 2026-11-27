@@ -97,12 +97,12 @@ pub async fn approve_all_settling(
 
 /// Why Approve All leaves this card alone, if it does.
 async fn why_not(tx: &mut sqlx::SqliteConnection, d: &CardDecision, settle: i64) -> anyhow::Result<Option<String>> {
-    let row: Option<(i64, String, String, String, i64)> =
-        sqlx::query_as("SELECT version, state, section, input, updated_at FROM cards WHERE id = ?")
+    let row: Option<(i64, String, String, i64)> =
+        sqlx::query_as("SELECT version, state, section, updated_at FROM cards WHERE id = ?")
             .bind(d.card_id)
             .fetch_optional(&mut *tx)
             .await?;
-    let Some((version, state, section, input, updated_at)) = row else { return Ok(Some("no such card".into())) };
+    let Some((version, state, section, updated_at)) = row else { return Ok(Some("no such card".into())) };
     if version != d.version {
         return Ok(Some(format!("changed: version {version} is newer than the one on screen")));
     }
@@ -143,10 +143,8 @@ async fn why_not(tx: &mut sqlx::SqliteConnection, d: &CardDecision, settle: i64)
     if section == CardSection::Suggestion && d.text.is_none() && d.fields.is_none() {
         return Ok(Some("a suggestion: it's approved only on its own".into()));
     }
-    let input: quietdeck_types::card::CardInput = from_json(&input)?;
-    if section == CardSection::Actions && input.actions.is_empty() && d.text.is_none() && d.fields.is_none() {
-        return Ok(Some("nothing proposed and nothing typed".into()));
-    }
+    // A card that proposes no actions (a thread he keeps in his inbox, one only to read) is approved like any other
+    // and closes: after Approve All the Inbox is empty (Nathan, 27 Nov 2026).
     let pending: Option<(i64,)> = sqlx::query_as(
         "SELECT id FROM decisions WHERE card_id = ? AND card_version = ? AND released_at IS NULL \
          AND kind IN ('approve', 'edit', 'adjust') LIMIT 1",
@@ -999,6 +997,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn approving_a_default_closes_its_no_action_keep_in_inbox_cards() {
+        let db = crate::db::memory().await;
+        let fwd = post(&db, "t1").await;
+        // Staying in the inbox: posted under actions, with nothing to run (c_255 and c_256 on 27 Nov).
+        let mut evidence = input("t2", json!([]));
+        evidence.keep_in_inbox = true;
+        cards::add(&db, &agent(), &evidence, CardState::Open, None).await.unwrap();
+        // Posted again (version 2), as triage does when it rewrites a card.
+        let kept = cards::add(&db, &agent(), &evidence, CardState::Open, None).await.unwrap().card;
+        assert_eq!(kept.version, 2);
+        let req = ApproveAll { cards: vec![approve(&fwd), approve(&kept)], timeline: vec![], single: Some(true) };
+        let a = approve_all(&db, &req, 0).await.unwrap();
+        assert!(a.skipped.is_empty(), "{:?}", a.skipped);
+        release_due(&db).await.unwrap();
+        assert_eq!(cards::get(&db, kept.id).await.unwrap().unwrap().state, CardState::Done);
+        let open: Vec<i64> = cards::inbox(&db, None).await.unwrap().iter().map(|c| c.id).collect();
+        assert!(!open.contains(&kept.id), "{open:?}");
+    }
+
+    #[tokio::test]
     async fn the_deck_carries_out_watch_actions_itself_and_the_rest_go_to_the_agent() {
         let db = crate::db::memory().await;
         let watch = json!({"type": "watch", "account": "personal", "thread_id": "t1", "on": true});
@@ -1306,8 +1324,8 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(a.cards.is_empty());
-        assert_eq!(a.skipped.len(), 2);
+        assert_eq!(a.cards, vec![empty.id], "a card with nothing to run is approved, and closes");
+        assert_eq!(a.skipped.len(), 1);
     }
 
     #[tokio::test]
