@@ -47,4 +47,8 @@ The guide: https://quietdeck.ai/solo.md
 
 Solo is the smallest Quietdeck. The full one runs a deck on a server of your own and connects agents on every machine
 you use: forwards from email to the agent that owns the work, agents that message each other, and one place to approve
-what all of them propose: https://quietdeck.ai/getting-started.md
+what all of them propose. If you run your machines with Fleetlayer (https://fleetlayer.ai), Quietdeck works alongside it;
+you don't need it. Getting started: https://quietdeck.ai/getting-started.md
+
+How the parts fit together (cards, the report and its defaults, Approve All and undo, rules, leases):
+https://quietdeck.ai/concepts.md

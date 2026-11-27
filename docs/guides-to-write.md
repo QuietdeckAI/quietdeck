@@ -8,6 +8,9 @@ entry through only when its guide is in `docs/`.
 
 Drafts other sessions wrote for these are in `docs/drafts/`.
 
+Guides about running agents in general belong on Fleetlayer's site (fleetlayer.ai/guides/), agreed with the
+`fleetlayer docs` session on 27 November 2026; a struck entry says where its guide is. Quietdeck's guides link there.
+
 ## Running agents
 
 - **Moving a session to another machine.** Handoffs, the access manifest, `handoff claim`, closing the old session.
@@ -19,20 +22,20 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   a queue worker) are marked monitored, and the node pings a heartbeat URL while each runs, so Gatus, Healthchecks or
   Cronitor alerts when one stops; the rest can be closed any time. Agents propose it on a card and the person
   approves. Now: build plan (Nathan, 25 November). Not built yet.
-- **No trust prompts for agent sessions.** Claude Code keeps folder trust in `~/.claude.json`
+- ~~**No trust prompts for agent sessions.**~~ On Fleetlayer: https://fleetlayer.ai/guides/unattended-agents/. Claude Code keeps folder trust in `~/.claude.json`
   (`projects.<path>.hasTrustDialogAccepted`). Despite what we first thought, a trusted parent doesn't cover the folders
   inside it: Claude Code 2.1.332 prompted in `~/code/obsidian-livesync` on a Mac whose `/` and `~/code` were both
   trusted (27 November), so mark the exact folder every time. It never remembers the home folder, so sessions
   shouldn't start there: the node marks a new session's own folder trusted and moves a home-folder start to
   `~/Notes/Agents/<tab>`. Now: `crates/quietdeck-node/src/control.rs` (25 and 27 November).
-- **Every agent-facing command needs a timeout.** A CLI waiting on a socket or HTTP call with no limit hangs an
+- ~~**Every agent-facing command needs a timeout.**~~ On Fleetlayer: https://fleetlayer.ai/guides/unattended-agents/. A CLI waiting on a socket or HTTP call with no limit hangs an
   agent's turn forever when the other end restarts mid-request (a node restart during `msg send`, 25 November): the
   agent can't recover by itself. Quietdeck's CLI: 10 seconds for the local node, 3 to connect and 30 in all for the
   deck, 5 end to end for a message (the deck's delivery 4, a herdr prompt 3). Now: `crates/quietdeck-cli/src/client.rs`.
-- **Agent tools must work without a login session.** `sudo -u <user>` and cron jobs have no `XDG_RUNTIME_DIR`, so a
+- ~~**Agent tools must work without a login session.**~~ On Fleetlayer: https://fleetlayer.ai/guides/node-services/. `sudo -u <user>` and cron jobs have no `XDG_RUNTIME_DIR`, so a
   CLI that finds its daemon's socket through it fails for exactly the separate agent users (triage, talira). The CLI
   now falls back to `/run/user/<uid>/`. Now: `crates/quietdeck-cli/src/client.rs` (25 November).
-- **Sessions survive a reboot.** herdr resumes Claude Code sessions after a VM restart, with their conversation;
+- ~~**Sessions survive a reboot.**~~ On Fleetlayer: https://fleetlayer.ai/guides/node-services/. herdr resumes Claude Code sessions after a VM restart, with their conversation;
   background processes and the session's temporary scratchpad don't survive. Now: the agents VM restart, 25 November.
 - **Per-machine instructions.** A shared global instructions file for every machine, plus one file per machine
   (`CLAUDE.this-machine.md`, which the sync leaves out) for what holds only there: no browser, no Touch ID, how to
@@ -42,7 +45,7 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   November (build plan).
 - **Two scratchpads per agent.** A wiped one (`/tmp`, the session scratchpad) and a kept, synced one in the notes
   vault, named after the role. Now: Nathan's global instructions, "Agents' scratchpads: one wiped, one kept".
-- **Builds off the laptop.** Heavy Rust builds and tests on a build server (`scripts/on-dev`), heavy-build leases, why
+- ~~**Builds off the laptop.**~~ On Fleetlayer: https://fleetlayer.ai/guides/agents-building-software/. Heavy Rust builds and tests on a build server (`scripts/on-dev`), heavy-build leases, why
   a laptop's disk fills. Now: `AGENTS.md`, `docs/leases.md`.
 
 - **Continuous deployment without races.** CI builds the image and commits its digest to the infra repo with a
@@ -50,13 +53,13 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   only add during a rolling deploy, Argo CD backs up before and checks after. Why not an image updater (build order
   isn't commit order). Now: `deploy/README.md` "Continuous deployment", Talira's `internal-docs/deploying.md`.
 
-- **Agents driving your own browser.** One of the things people do most (Nathan, 25 November): any agent on any
+- ~~**Agents driving your own browser.**~~ On Fleetlayer: https://fleetlayer.ai/guides/browser/. One of the things people do most (Nathan, 25 November): any agent on any
   machine controls the person's real, signed-in Chrome, reusing its cookies, and asks them to sign in in a tab when
   needed. Playwright MCP's extension, its server on the Mac per session (tab groups keep sessions apart), reached over
   SSH or Tailscale SSH; later Quietdeck as the gate (allowlist, approvals, audit, kill switch), never as the pipe. Now:
   build plan "Your own browser, from any agent", `~/Notes/Agents/browser/chrome-control-research.md`.
 
-- **Agents messaging each other: never paste into a terminal.** An agent whose `SendMessage` failed (the target was on
+- ~~**Agents messaging each other: never paste into a terminal.**~~ Written: `docs/guides/agents-messaging.md`. An agent whose `SendMessage` failed (the target was on
   another machine, with Remote Control off) found the tab with `herdr machine list` and pasted its report in with
   `herdr agent prompt`. It landed in the middle of a message Nathan was typing and mangled it. Fix: agents use
   `SendMessage` on the same machine and `quietdeck msg send` across machines or when `SendMessage` says a session
@@ -64,7 +67,7 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   2026): it's only for sessions with no messaging socket. Now: Nathan's shared CLAUDE.md, "Messaging Nathan's herdr
   sessions" (26 November).
 
-- **Mirrored transcripts get summarised twice.** On a machine with one Unix user per agent, a root timer
+- ~~**Mirrored transcripts get summarised twice.**~~ On Fleetlayer: https://fleetlayer.ai/guides/day-to-day/. On a machine with one Unix user per agent, a root timer
   (`agents-mirror`, every 2 minutes) copies each agent user's Claude project into the main user's home, so its
   memory syncs and its transcripts reach the archive. Anything that sweeps the main user's `~/.claude/projects` then
   sees the other user's live transcript as its own, and summarised it under the wrong node, beside that user's own
@@ -73,7 +76,7 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
 
 ## The triage agent
 
-- **Giving an agent with no mail tools the mail itself.** Quietdeck solo's agent can only run quietdeck commands, so
+- ~~**Giving an agent with no mail tools the mail itself.**~~ Written: `docs/guides/headless-agent-one-cli.md`. Quietdeck solo's agent can only run quietdeck commands, so
   the runner reads each new message (gog's `--sanitize-content`: no HTML, no links) and puts it in the wake-up between
   `<email>` tags, each message cut at 3,000 characters, at most 25 per wake-up, headers flattened to one line with
   `<` and `>` replaced, and any `</email` in the text broken so it can't close its tag. The untrusted-input line goes
@@ -83,7 +86,7 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   which embeds only in release builds: a debug build reads `web/dist` from the build machine's disk at runtime, so a
   debug binary copied elsewhere shows "This build has no web app". Copy release builds. Found while setting up the
   solo toast QA (27 November).
-- **A local web app is not safe just because it's on localhost.** Quietdeck solo's deck has no passkeys, and any
+- ~~**A local web app is not safe just because it's on localhost.**~~ Written: `docs/guides/localhost-web-app.md`. Quietdeck solo's deck has no passkeys, and any
   page the person visits can post to `http://127.0.0.1:<port>` (CSRF: form posts and no-cors fetches carry no auth
   but still act) or read it through DNS rebinding. So the deck checks every request's Host against its own loopback
   address and port, signs a browser in only through a one-time link (`quietdeck-solo open`: 5 minutes, used up on
@@ -96,7 +99,7 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   its exec, and the kernel refuses to run a file open for writing (ETXTBSY). The runner retries a spawn briefly on
   that error, which also covers a CLI being upgraded in place. Now: `spawn` in
   `crates/quietdeck-node/src/runner/gog.rs` (27 November).
-- **A headless agent limited to one CLI.** For Quietdeck solo, each message is one `claude -p` turn on the same
+- ~~**A headless agent limited to one CLI.**~~ Written: `docs/guides/headless-agent-one-cli.md`. For Quietdeck solo, each message is one `claude -p` turn on the same
   conversation (`--resume=<id>`, the ID from `--output-format=json`'s result, kept in the state directory), the prompt
   on stdin. `--permission-mode=dontAsk` refuses whatever isn't allowed without a prompt nobody would answer,
   `--tools=Bash` with one `--allowedTools=Bash(quietdeck <subcommand>:*)` per triage subcommand leaves only those
@@ -122,10 +125,10 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
 - **The triage agent on its own Unix user and node.** It reads untrusted mail with permissions skipped, so no
   credentials or repos may share its user; its own node and herdr; how other sessions reach it. Now:
   `docs/drafts/homeserver-guides.md`, the homeserver repo's agents VM role.
-- **While you read the Inbox, nothing new lands.** Presence, held wake-ups, "while I'm reading" rules (RE2), toasts,
+- ~~**While you read the Inbox, nothing new lands.**~~ Written: `docs/guides/while-you-read.md`. Presence, held wake-ups, "while I'm reading" rules (RE2), toasts,
   Approve All's ten-second settle window. Now: `docs/getting-started.md` (a paragraph), commit 3b8de63. Needs a full
   guide with the reasoning: a page that changes under the person is how a wrong approval happens.
-- **Archiving in Gmail yourself keeps the report in step.** Mail archived or deleted on a phone or in the browser
+- ~~**Archiving in Gmail yourself keeps the report in step.**~~ Written: `docs/guides/archive-in-gmail.md`. Mail archived or deleted on a phone or in the browser
   leaves the inbox, the runner confirms each thread has really gone (every message, not one), the deck resolves the
   cards whose threads have all left, and the agent tidies the report, or marks it done with `quietdeck report done` so the
   Inbox says "All done." The history tool needs `labelRemoved` and `messageDeleted`. Now: `deploy/node.example.yaml`,
@@ -134,7 +137,7 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   Nathan set the `quietdeck triage` session's autocompact window to 300k tokens (25 November): it compacts sooner and
   each turn costs less. Set it when setting up a triage agent for someone. Now: the triage session's own settings
   (Nathan set it by hand; record the exact setting here when the setup is scripted).
-- **What plain code may read.** The runner reads headers, labels and snippets but never logs them; plain code is the
+- ~~**What plain code may read.**~~ Written: `docs/guides/headless-agent-one-cli.md`. The runner reads headers, labels and snippets but never logs them; plain code is the
   safe place to read untrusted text (no prompt injection), so "never read content" isn't a rule worth keeping.
   Now: this conversation (25 November), `crates/quietdeck-node/src/runner/mail.rs`.
 
@@ -147,7 +150,7 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   and approved by the person; retries and a fallback to triage. Now: the design sent to planning (25 November). Not
   built yet.
 
-- **Alerts go straight to the agent that owns them.** A webhook per sender (Alertmanager, Argo CD notifications,
+- ~~**Alerts go straight to the agent that owns them.**~~ Written: `docs/guides/alerts-to-owners.md`. A webhook per sender (Alertmanager, Argo CD notifications,
   Gatus), approved by the person, delivered to the owning session as outside data; the triage agent only folds a count
   into the report ("42 alerts about memory; talira infra handled them"), never a card per alert (Nathan, 25 November).
   An alert whose owner is offline falls back to triage. Now: `deploy/README.md` "Webhooks",
@@ -189,7 +192,7 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   `docs/drafts/homeserver-guides.md`.
 - **Dev servers on a remote machine.** Vite refuses host names it doesn't know (403), and `crypto.randomUUID` exists
   only on HTTPS pages or localhost; use the tailnet's full name and allow it. Now: this conversation (25 November).
-- **Reinstalling a launchd agent races.** `launchctl bootout` returns before the old job is gone; a `bootstrap`
+- ~~**Reinstalling a launchd agent races.**~~ On Fleetlayer: https://fleetlayer.ai/guides/node-services/. `launchctl bootout` returns before the old job is gone; a `bootstrap`
   straight after fails with "5: Input/output error" and leaves the service down. Wait until `launchctl print
   gui/<uid>/<label>` fails, then bootstrap, retrying a few times. Now: `crates/quietdeck-node/src/service.rs`
   (26 November), and Fleetlayer's `fleetlayer-node/src/service.rs`.

@@ -9,7 +9,7 @@
 // Run before `astro dev` and `astro build` (package.json does it). Generated files are gitignored.
 // Adapted from Fleetlayer's site (Apache 2.0, see NOTICE): `unpublished` takes folders, and the index names the site.
 
-import { readFile, writeFile, mkdir, rm, readdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rm, readdir, copyFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { site as SITE, pages as PAGES, repo as REPO } from "../site.config.mjs";
@@ -85,6 +85,12 @@ function rewriteLinks(body, file, toUrl) {
 async function main() {
   await rm(contentDir, { recursive: true, force: true });
   await mkdir(contentDir, { recursive: true });
+
+  // The installer lives at the repo root (one source); the site serves a copy at /install.sh.
+  await rm(join(publicDir, "install.sh"), { force: true });
+  await copyFile(join(repoDir, "install.sh"), join(publicDir, "install.sh")).catch((e) => {
+    if (e.code !== "ENOENT") throw e;
+  });
 
   const files = await walk(docsDir);
   const known = new Set(files.map(slugOf));
