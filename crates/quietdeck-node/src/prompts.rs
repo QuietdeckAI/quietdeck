@@ -3,7 +3,7 @@
 //! to approve) and tells the deck, which shows it on the Work tab as a form. When the session moves on, the deck is told
 //! the prompt is gone. Answers come back as [`quietdeck_types::node::DeckRequest::AnswerPrompt`] (link.rs).
 //!
-//! Only where Fleetlayer runs Quietdeck's plugin (with the `sessions.watch` grant) and the deck takes prompts.
+//! Only where Fleetlayer runs Quietdeck's plugin (with the `sessions.query` grant) and the deck takes prompts.
 
 use std::collections::HashMap;
 use std::sync::Arc;

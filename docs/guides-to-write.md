@@ -257,7 +257,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
 - **Documents, Work and the overseer.** How the Work tab is set up: a `work` document written by an overseer agent
   (`quietdeck-server documents-add --slug work --name Work --tab Work --kind work --writer overseer@<node>` in the deck's
   container, or Settings > Documents), the runner's `agent.tabs` listing the overseer, `session` in its eligible list,
-  Quietdeck's Fleetlayer plugin with `sessions.watch` and `session.answer` on each node whose prompts should show, and
+  Quietdeck's Fleetlayer plugin with `sessions.query` and `session.answer` on each node whose prompts should show, and
   the deck's `/healthz/overseer` in the uptime checker. Now: the overseer skill (`~/.claude/skills/overseer/SKILL.md`),
   `crates/quietdeck-server/src/overseer.rs`, `crates/quietdeck-types/src/document.rs` (28 November, the quietdeck work
   tab). The quietdeck docs tab is writing docs/work.md and docs/guides/overseer.md.
