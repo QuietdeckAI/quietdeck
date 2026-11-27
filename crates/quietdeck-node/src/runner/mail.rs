@@ -6,7 +6,7 @@
 //! off. After a wake-up, no other goes until the agent says its round is done; new mail meanwhile is counted and goes
 //! in the next one.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use jiff::Timestamp;
@@ -51,6 +51,16 @@ pub struct MailState {
     /// involved instead of hunting the inbox for it (Nathan, 25 Nov).
     #[serde(default)]
     pub sent: Vec<String>,
+    /// The last complete inbox listing per account (`mail_watch.inbox`), with the threads that arrived since. Kept in
+    /// memory only: after a restart the first listing is the new baseline.
+    #[serde(skip)]
+    pub inbox: BTreeMap<String, InboxListing>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InboxListing {
+    pub at: Timestamp,
+    pub threads: BTreeSet<String>,
 }
 
 impl MailState {
@@ -367,10 +377,75 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
             tracing::info!(account = %id, from = %start, to = %latest, new = seen.len(), "mail history moved on");
         }
         state.history.insert(id.clone(), latest);
+        if let Some(listing) = state.inbox.get_mut(id) {
+            // New mail joins the last listing, so it's noticed when it leaves before the next one.
+            for m in seen.iter().filter(|m| m.labels.iter().any(|l| l == "INBOX")) {
+                if let Some(t) = &m.thread_id {
+                    listing.threads.insert(t.clone());
+                }
+            }
+        }
+        if let Some(spec) = &watch.inbox {
+            for pair in inbox_left(watch, spec, tools, state, id, &acct).await {
+                if !left.contains(&pair) {
+                    left.push(pair);
+                }
+            }
+        }
         found.extend(seen);
         left_found.extend(left);
     }
     Checked { new: found, left: left_found }
+}
+
+/// Threads in the last complete inbox listing that aren't in this one, when a listing is due. Only two complete
+/// listings are compared: a listing that fails or stops part way changes nothing, so it can never report the whole
+/// inbox as gone.
+async fn inbox_left(
+    watch: &MailWatchConfig,
+    spec: &super::config::ToolSpec,
+    tools: &dyn Tools,
+    state: &mut MailState,
+    id: &str,
+    acct: &Value,
+) -> Vec<(String, String)> {
+    let every = super::config::parse_duration(&watch.inbox_every).unwrap_or(std::time::Duration::from_secs(300));
+    let now = Timestamp::now();
+    if let Some(last) = state.inbox.get(id)
+        && now.duration_since(last.at).unsigned_abs() < every
+    {
+        return vec![];
+    }
+    let listed = match render(&spec.input, &json!({"account": acct})) {
+        Ok(input) => tools.call(spec, input).await,
+        Err(e) => Err(e),
+    };
+    let v = match listed {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(account = %id, error = %e, "listing the inbox");
+            return vec![];
+        }
+    };
+    if v.get("nextPageToken").and_then(Value::as_str).is_some_and(|p| !p.is_empty()) {
+        tracing::warn!(account = %id, "the inbox listing stopped part way: keeping the last one");
+        return vec![];
+    }
+    let Some(list) = v.get("threads").and_then(Value::as_array) else {
+        tracing::warn!(account = %id, "the inbox listing has no threads list: keeping the last one");
+        return vec![];
+    };
+    let threads: BTreeSet<String> =
+        list.iter().filter_map(|t| t.get("id").and_then(Value::as_str)).map(str::to_string).collect();
+    let left = match state.inbox.get(id) {
+        Some(last) => last.threads.difference(&threads).map(|t| (id.to_string(), t.clone())).collect(),
+        None => vec![],
+    };
+    if !left.is_empty() {
+        tracing::info!(account = %id, left = left.len(), "threads left the inbox since the last listing");
+    }
+    state.inbox.insert(id.to_string(), InboxListing { at: now, threads });
+    left
 }
 
 async fn profile(watch: &MailWatchConfig, tools: &dyn Tools, acct: &Value) -> Result<String, String> {
@@ -382,6 +457,64 @@ async fn profile(watch: &MailWatchConfig, tools: &dyn Tools, acct: &Value) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runner::config::ToolSpec;
+
+    /// Answers each tool by its gog op from a queue of results.
+    struct Scripted(std::sync::Mutex<BTreeMap<String, std::collections::VecDeque<Result<Value, String>>>>);
+
+    #[async_trait::async_trait]
+    impl Tools for Scripted {
+        async fn call(&self, spec: &ToolSpec, _input: Value) -> Result<Value, String> {
+            let op = spec.gog.clone().unwrap_or_default();
+            self.0.lock().unwrap().get_mut(&op).and_then(|q| q.pop_front()).unwrap_or_else(|| Err(format!("no {op}")))
+        }
+    }
+
+    #[tokio::test]
+    async fn threads_leave_the_inbox_only_between_two_complete_listings() {
+        let mut cfg: RunnerConfig =
+            yaml_serde::from_str("agent: { tab: t }\nmail: gog\naccounts:\n  personal: { address: me@example.com }\n")
+                .unwrap();
+        cfg.apply_presets();
+        let watch = cfg.mail_watch.clone().unwrap();
+        let listing = |ids: &[&str]| Ok(json!({"threads": ids.iter().map(|i| json!({"id": i})).collect::<Vec<_>>()}));
+        let history = |ids: &[(&str, &str)]| {
+            Ok(json!({"historyId": "2", "history": [{"messagesAdded": ids.iter().map(|(m, t)|
+                json!({"message": {"id": m, "threadId": t, "labelIds": ["INBOX"]}})).collect::<Vec<_>>()}]}))
+        };
+        let mut q: BTreeMap<String, std::collections::VecDeque<Result<Value, String>>> = BTreeMap::new();
+        q.insert("history".into(), (0..5).map(|_| history(&[])).collect());
+        let tools = Scripted(std::sync::Mutex::new(q));
+        let mut state = MailState::default();
+        state.history.insert("personal".into(), "1".into());
+        let push = |tools: &Scripted, op: &str, v: Result<Value, String>| {
+            tools.0.lock().unwrap().entry(op.into()).or_default().push_back(v);
+        };
+        let age = |state: &mut MailState| {
+            let l = state.inbox.get_mut("personal").unwrap();
+            l.at -= jiff::SignedDuration::from_secs(600);
+        };
+
+        // The first listing is only a baseline.
+        push(&tools, "inbox", listing(&["t1", "t2", "t3"]));
+        assert!(check(&cfg, &watch, &tools, &mut state).await.left.is_empty());
+
+        // Not due yet: no listing.
+        assert!(check(&cfg, &watch, &tools, &mut state).await.left.is_empty());
+
+        // A failed listing and one that stopped part way change nothing.
+        age(&mut state);
+        push(&tools, "inbox", Err("boom".into()));
+        assert!(check(&cfg, &watch, &tools, &mut state).await.left.is_empty());
+        push(&tools, "inbox", Ok(json!({"threads": [], "nextPageToken": "p2"})));
+        assert!(check(&cfg, &watch, &tools, &mut state).await.left.is_empty());
+
+        // New mail joins the listing, so it's noticed when it leaves too.
+        tools.0.lock().unwrap().get_mut("history").unwrap().push_front(history(&[("m9", "t9")]));
+        push(&tools, "inbox", listing(&["t1", "t3"]));
+        let left = check(&cfg, &watch, &tools, &mut state).await.left;
+        assert_eq!(left, vec![("personal".to_string(), "t2".to_string()), ("personal".to_string(), "t9".to_string())]);
+    }
 
     #[test]
     fn counts_add_up_and_unknowns_stay_unknown() {

@@ -38,6 +38,21 @@ programs:
 # is an Executor app tool (`path`) or a command that reads JSON on stdin and prints JSON (`command`). In `input`,
 # ${...} names a value: account.address, account.<var>, action.<field>, card.<field>, board.<field>, and for the mail
 # watch history_id, page_token and message_id. See docs/executor.md.
+#
+# Without Executor: `mail: gog` runs the user's own gog CLI (github.com/steipete/gogcli), already signed in with
+# `gog auth add you@example.com --services gmail`, for every mail tool below that isn't set, so the runner section
+# needs only the agent and the accounts:
+#
+#   runner:
+#     enabled: true
+#     agent: { tab: email triage }
+#     mail: gog
+#     gog: { bin: /opt/homebrew/bin/gog }      # optional: gog on PATH
+#     accounts:
+#       personal: { address: you@example.com, label: Personal }
+#
+# gog's history has new messages only, so threads the person archives in Gmail themselves are found by listing the
+# inbox's thread IDs every mail_watch.inbox_every (5m) and comparing it with the last complete listing.
 runner:
   enabled: false
   agent: { tab: email triage }                  # gets wake-ups, hand-offs and error reports

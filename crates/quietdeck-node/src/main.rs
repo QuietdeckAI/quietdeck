@@ -208,7 +208,10 @@ async fn run() -> anyhow::Result<()> {
         let r = Arc::new(runner::Runner::new(
             cfg.clone(),
             Arc::new(runner::LinkDeck(node.clone())),
-            Arc::new(runner::ConfiguredTools::new(executor)),
+            Arc::new(match &cfg.gog {
+                Some(g) => runner::ConfiguredTools::new(executor).with_gog(g),
+                None => runner::ConfiguredTools::new(executor),
+            }),
             Arc::new(runner::LocalAgent { node: node.clone(), tab: cfg.agent.tab.clone() }),
             state.clone(),
         ));

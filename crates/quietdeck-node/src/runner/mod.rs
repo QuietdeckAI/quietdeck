@@ -11,6 +11,7 @@
 
 mod config;
 mod deck;
+mod gog;
 mod leases;
 mod mail;
 mod tools;

@@ -126,8 +126,11 @@ impl NodeConfig {
         let text = std::fs::read_to_string(path).map_err(|e| {
             anyhow::anyhow!("reading {}: {e} (enrol this machine with `quietdeck node enroll`)", path.display())
         })?;
-        let c: NodeConfig =
+        let mut c: NodeConfig =
             yaml_serde::from_str(&text).map_err(|e| anyhow::anyhow!("reading {}: {e}", path.display()))?;
+        if let Some(r) = &mut c.runner {
+            r.apply_presets();
+        }
         if c.node.token_file.is_some() && c.node.token_env.is_some() {
             anyhow::bail!("{}: set node.token_file or node.token_env, not both", path.display());
         }

@@ -16,6 +16,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
 use super::config::{ExecutorConfig, ToolSpec};
+use super::gog::{Gog, GogConfig};
 
 const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -100,29 +101,38 @@ pub fn render(template: &Value, ctx: &Value) -> Result<Value, String> {
     }
 }
 
-/// Executor and commands, as node.yaml configures them.
+/// Executor, commands and gog, as node.yaml configures them.
 pub struct ConfiguredTools {
     executor: Option<Executor>,
+    gog: Gog,
 }
 
 impl ConfiguredTools {
     pub fn new(executor: Option<(ExecutorConfig, String)>) -> ConfiguredTools {
         ConfiguredTools {
             executor: executor.map(|(config, token)| Executor { config, token, client: Mutex::new(None) }),
+            gog: Gog::new(&GogConfig::default()),
         }
+    }
+
+    /// Run gog from `runner.gog.bin` rather than `gog` on PATH.
+    pub fn with_gog(mut self, cfg: &GogConfig) -> ConfiguredTools {
+        self.gog = Gog::new(cfg);
+        self
     }
 }
 
 #[async_trait]
 impl Tools for ConfiguredTools {
     async fn call(&self, spec: &ToolSpec, input: Value) -> Result<Value, String> {
-        match (&spec.path, &spec.command) {
-            (Some(path), _) => {
+        match (&spec.path, &spec.command, &spec.gog) {
+            (Some(path), _, _) => {
                 let ex = self.executor.as_ref().ok_or("runner.executor isn't set")?;
                 ex.call(path, input).await
             }
-            (None, Some(command)) => run_command(command, &input).await,
-            (None, None) => Err("the tool names neither a path nor a command".into()),
+            (None, Some(command), _) => run_command(command, &input).await,
+            (None, None, Some(op)) => self.gog.call(op, &input).await,
+            (None, None, None) => Err("the tool names no path, command or gog op".into()),
         }
     }
 }
@@ -279,10 +289,10 @@ mod tests {
 
     #[tokio::test]
     async fn commands_take_json_on_stdin() {
-        let spec = ToolSpec { path: None, command: Some(vec!["cat".into()]), input: Value::Null };
+        let spec = ToolSpec { path: None, gog: None, command: Some(vec!["cat".into()]), input: Value::Null };
         let v = ConfiguredTools::new(None).call(&spec, json!({"a": 1})).await.unwrap();
         assert_eq!(v, json!({"a": 1}));
-        let spec = ToolSpec { path: None, command: Some(vec!["false".into()]), input: Value::Null };
+        let spec = ToolSpec { path: None, gog: None, command: Some(vec!["false".into()]), input: Value::Null };
         assert!(ConfiguredTools::new(None).call(&spec, json!({})).await.is_err());
     }
 }

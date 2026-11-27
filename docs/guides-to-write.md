@@ -73,6 +73,16 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
 
 ## The triage agent
 
+- **Mail through gog, without Executor.** For Quietdeck solo, `runner.mail: gog` runs the user's own gog CLI
+  (signed in with `gog auth add <address> --services gmail`) for every mail tool. Footguns: gog's `gmail history`
+  asks Gmail for new messages only and prints bare IDs (no labels, threads, archives or deletions), and gog has no
+  getProfile. So the runner reads each new message's labels with `gog gmail raw <id> --format minimal`, starts from
+  the newest message's historyId (never a backfill), and finds threads that left the inbox by comparing two complete
+  `gog gmail search --ids-only --all in:inbox` listings: a failed or partial listing changes nothing. gog's exit
+  codes are stable (5 not found, 4 sign-in needed), so errors are told apart by code, not by text. Every ID goes in
+  only if it looks like a Gmail ID and every value as `--flag=value`, so mail content can't become a flag, and a
+  draft's body goes on stdin. Now: `crates/quietdeck-node/src/runner/gog.rs` (27 November). Not yet run against a
+  real mailbox.
 - **The triage agent on its own Unix user and node.** It reads untrusted mail with permissions skipped, so no
   credentials or repos may share its user; its own node and herdr; how other sessions reach it. Now:
   `docs/drafts/homeserver-guides.md`, the homeserver repo's agents VM role.

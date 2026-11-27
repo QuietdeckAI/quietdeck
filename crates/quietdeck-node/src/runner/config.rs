@@ -18,6 +18,13 @@ pub struct RunnerConfig {
     pub agent: AgentConfig,
     #[serde(default)]
     pub executor: Option<ExecutorConfig>,
+    /// `gog`: the mail tools that aren't set run the user's own gog CLI (see [`super::gog`]). Set by hand, a tool
+    /// still wins.
+    #[serde(default)]
+    pub mail: Option<MailBackend>,
+    /// Where gog is, for `gog:` tools. Optional: `gog` on PATH.
+    #[serde(default)]
+    pub gog: Option<super::gog::GogConfig>,
     /// The mail accounts, by the account IDs the deck's config uses.
     #[serde(default)]
     pub accounts: BTreeMap<String, AccountConfig>,
@@ -49,6 +56,12 @@ pub struct RunnerConfig {
     /// Forwards, resumes, new sessions, leases and watches need no entry.
     #[serde(default)]
     pub tools: BTreeMap<String, ToolSpec>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MailBackend {
+    Gog,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -104,9 +117,18 @@ pub struct MailWatchConfig {
     /// minutes, for the Drafts tab; each new draft's headers come from `message`. Optional.
     #[serde(default)]
     pub drafts: Option<ToolSpec>,
+    /// Lists the IDs of every thread in the inbox (Gmail's `users.threads.list` shape: `threads[].id`, and a
+    /// `nextPageToken` only when the list stopped part way), every `inbox_every`. A thread in the last complete list
+    /// and missing from this one has left the inbox (archived, trashed or deleted), for a history tool that can't say
+    /// so itself (gog's). Optional.
+    #[serde(default)]
+    pub inbox: Option<ToolSpec>,
+    #[serde(default = "default_inbox_every")]
+    pub inbox_every: String,
 }
 
-/// One tool: an Executor app tool by path, or a command that reads the input as JSON on stdin and prints JSON. In
+/// One tool: an Executor app tool by path, a command that reads the input as JSON on stdin and prints JSON, or a
+/// gog op (`gog: archive`, see [`super::gog::OPS`]) that runs the user's gog CLI with the input's fields. In
 /// `input`, `${...}` names a value: `account.address`, `account.<var>`, `action.<field>`, `card.<field>` and, for
 /// the mail watch, `history_id` and `page_token`. A string that is only a placeholder takes the value's own type,
 /// and a missing value leaves the key out.
@@ -117,6 +139,8 @@ pub struct ToolSpec {
     pub path: Option<String>,
     #[serde(default)]
     pub command: Option<Vec<String>>,
+    #[serde(default)]
+    pub gog: Option<String>,
     #[serde(default)]
     pub input: serde_json::Value,
 }
@@ -143,11 +167,17 @@ pub struct GmailFiltersConfig {
 
 impl ToolSpec {
     pub fn describe(&self) -> String {
-        match (&self.path, &self.command) {
-            (Some(p), _) => p.clone(),
-            (None, Some(c)) => c.first().cloned().unwrap_or_default(),
-            (None, None) => "no tool".into(),
+        match (&self.path, &self.command, &self.gog) {
+            (Some(p), _, _) => p.clone(),
+            (None, Some(c), _) => c.first().cloned().unwrap_or_default(),
+            (None, None, Some(op)) => format!("gog {op}"),
+            (None, None, None) => "no tool".into(),
         }
+    }
+
+    /// The tool `runner.mail: gog` fills in for `op`.
+    pub fn gog(op: &str) -> ToolSpec {
+        ToolSpec { path: None, command: None, gog: Some(op.into()), input: super::gog::preset_input(op) }
     }
 }
 
@@ -157,6 +187,10 @@ fn default_call_tool() -> String {
 
 fn default_every() -> String {
     "30s".into()
+}
+
+fn default_inbox_every() -> String {
+    "5m".into()
 }
 
 /// Every type the runner has a handler for, or will: watches arrive with thread watches and leases with the lease
@@ -212,6 +246,41 @@ pub fn tool_key(a: &quietdeck_types::Action) -> String {
 }
 
 impl RunnerConfig {
+    /// Fill in what `runner.mail` names: for gog, every mail tool node.yaml doesn't set itself, and the mail watch
+    /// when there are accounts to watch. Run before [`RunnerConfig::check`].
+    pub fn apply_presets(&mut self) {
+        if self.mail != Some(MailBackend::Gog) {
+            return;
+        }
+        let fill = |slot: &mut Option<ToolSpec>, op: &str| {
+            if slot.is_none() {
+                *slot = Some(ToolSpec::gog(op));
+            }
+        };
+        fill(&mut self.thread, "thread");
+        fill(&mut self.send_as, "send_as");
+        fill(&mut self.labels, "labels");
+        for op in ["archive", "mark_read", "label", "draft"] {
+            self.tools.entry(op.into()).or_insert_with(|| ToolSpec::gog(op));
+        }
+        if self.mail_watch.is_none() && !self.accounts.is_empty() {
+            self.mail_watch = Some(MailWatchConfig {
+                every: default_every(),
+                profile: ToolSpec::gog("profile"),
+                history: ToolSpec::gog("history"),
+                message: None,
+                drafts: None,
+                inbox: None,
+                inbox_every: default_inbox_every(),
+            });
+        }
+        if let Some(m) = &mut self.mail_watch {
+            fill(&mut m.message, "message");
+            fill(&mut m.drafts, "drafts");
+            fill(&mut m.inbox, "inbox");
+        }
+    }
+
     /// The rules config can't break: replies always go through the agent, every tool names exactly one way to run
     /// it, and Executor tools need an Executor.
     pub fn check(&self) -> Result<(), String> {
@@ -240,6 +309,15 @@ impl RunnerConfig {
             }
         }
         let mut specs: Vec<(String, &ToolSpec)> = self.tools.iter().map(|(t, s)| (format!("tools.{t}"), s)).collect();
+        let watch_extras = self.mail_watch.as_ref().map(|m| [&m.message, &m.drafts, &m.inbox]);
+        for (name, s) in ["mail_watch.message", "mail_watch.drafts", "mail_watch.inbox"]
+            .into_iter()
+            .zip(watch_extras.into_iter().flatten())
+        {
+            if let Some(s) = s {
+                specs.push((name.to_string(), s));
+            }
+        }
         for (name, s) in [("send_as", &self.send_as), ("thread", &self.thread), ("labels", &self.labels)] {
             if let Some(s) = s {
                 specs.push((name.to_string(), s));
@@ -247,6 +325,7 @@ impl RunnerConfig {
         }
         if let Some(m) = &self.mail_watch {
             parse_duration(&m.every).map_err(|e| format!("runner.mail_watch.every: {e}"))?;
+            parse_duration(&m.inbox_every).map_err(|e| format!("runner.mail_watch.inbox_every: {e}"))?;
             specs.push(("mail_watch.profile".into(), &m.profile));
             specs.push(("mail_watch.history".into(), &m.history));
             if self.accounts.is_empty() {
@@ -254,14 +333,25 @@ impl RunnerConfig {
             }
         }
         for (name, s) in specs {
-            match (&s.path, &s.command) {
-                (Some(_), Some(_)) => return Err(format!("runner.{name}: set path or command, not both")),
-                (None, None) => return Err(format!("runner.{name}: set path (an Executor tool) or command")),
-                (None, Some(c)) if c.is_empty() => return Err(format!("runner.{name}: command is empty")),
-                (Some(_), None) if self.executor.is_none() => {
-                    return Err(format!("runner.{name} names an Executor tool, but runner.executor isn't set"));
-                }
-                _ => {}
+            let set = [s.path.is_some(), s.command.is_some(), s.gog.is_some()].iter().filter(|b| **b).count();
+            if set > 1 {
+                return Err(format!("runner.{name}: set one of path, command or gog"));
+            }
+            if set == 0 {
+                return Err(format!("runner.{name}: set path (an Executor tool), command or gog"));
+            }
+            if let Some(c) = &s.command
+                && c.is_empty()
+            {
+                return Err(format!("runner.{name}: command is empty"));
+            }
+            if s.path.is_some() && self.executor.is_none() {
+                return Err(format!("runner.{name} names an Executor tool, but runner.executor isn't set"));
+            }
+            if let Some(op) = &s.gog
+                && !super::gog::OPS.contains(&op.as_str())
+            {
+                return Err(format!("runner.{name}: gog has no op {op:?}; it takes {}", super::gog::OPS.join(", ")));
             }
         }
         if let Some(e) = &self.executor
@@ -306,7 +396,7 @@ mod tests {
         let c: RunnerConfig =
             yaml_serde::from_str(&format!("{}tools:\n  archive: {{ path: tools.x, command: [gog] }}\n", base()))
                 .unwrap();
-        assert!(c.check().unwrap_err().contains("not both"));
+        assert!(c.check().unwrap_err().contains("set one of path, command or gog"));
         let c: RunnerConfig =
             yaml_serde::from_str("agent: { tab: t }\ntools:\n  archive: { path: tools.google.gmail.modify }\n")
                 .unwrap();
@@ -341,6 +431,38 @@ mod tests {
             tool_key(&action(serde_json::json!({"type": "archive", "account": "a", "thread_id": "t"}))),
             "archive"
         );
+    }
+
+    #[test]
+    fn mail_gog_fills_every_mail_tool_and_keeps_what_is_set_by_hand() {
+        let mut c: RunnerConfig = yaml_serde::from_str(
+            "agent: { tab: t }\nmail: gog\naccounts:\n  personal: { address: me@example.com }\n\
+             tools:\n  archive: { command: [my-archive] }\n",
+        )
+        .unwrap();
+        c.apply_presets();
+        c.check().unwrap();
+        let w = c.mail_watch.as_ref().unwrap();
+        assert_eq!(w.history.gog.as_deref(), Some("history"));
+        assert_eq!(w.inbox.as_ref().unwrap().gog.as_deref(), Some("inbox"));
+        assert_eq!(c.thread.as_ref().unwrap().gog.as_deref(), Some("thread"));
+        assert_eq!(c.tools["archive"].command, Some(vec!["my-archive".to_string()]), "a tool set by hand stays");
+        assert_eq!(c.tools["draft"].gog.as_deref(), Some("draft"));
+        assert_eq!(c.tools["draft"].input["account"], "${account.address}", "the account comes from node.yaml");
+        assert!(c.executor.is_none(), "no Executor needed");
+
+        // Without `mail: gog` nothing is filled in, so Executor setups load exactly as before.
+        let mut c: RunnerConfig = yaml_serde::from_str(base()).unwrap();
+        c.apply_presets();
+        assert!(c.mail_watch.is_none() && c.thread.is_none() && c.tools.is_empty());
+    }
+
+    #[test]
+    fn gog_ops_are_checked() {
+        let c: RunnerConfig = yaml_serde::from_str("agent: { tab: t }\ntools:\n  archive: { gog: archiv }\n").unwrap();
+        assert!(c.check().unwrap_err().contains("gog has no op \"archiv\""));
+        let c: RunnerConfig = yaml_serde::from_str("agent: { tab: t }\ntools:\n  archive: { gog: archive }\n").unwrap();
+        c.check().unwrap();
     }
 
     #[test]
