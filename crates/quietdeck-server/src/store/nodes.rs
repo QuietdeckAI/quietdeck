@@ -78,6 +78,23 @@ pub async fn runner_info(db: &Db, node: &str) -> anyhow::Result<Option<RunnerInf
     row.and_then(|r| r.0).map(|s| from_json(&s)).transpose()
 }
 
+/// The node whose runner works for the agent `tab@node`: that node itself, or a runner node of its own.
+pub async fn runner_for_agent(db: &Db, node: &str, tab: &str) -> anyhow::Result<Option<(String, RunnerInfo)>> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT name, runner_info FROM nodes WHERE runner_info IS NOT NULL AND revoked_at IS NULL ORDER BY name = ? DESC",
+    )
+    .bind(node)
+    .fetch_all(db)
+    .await?;
+    for (name, info) in rows {
+        let info: RunnerInfo = from_json(&info)?;
+        if info.agent(&name) == (node.to_string(), tab.to_string()) {
+            return Ok(Some((name, info)));
+        }
+    }
+    Ok(None)
+}
+
 pub async fn list(db: &Db, hub: &Hub) -> anyhow::Result<Vec<NodeRow>> {
     type NodeRowDb = (String, Option<i64>, Option<String>, Option<String>);
     let rows: Vec<NodeRowDb> = sqlx::query_as(

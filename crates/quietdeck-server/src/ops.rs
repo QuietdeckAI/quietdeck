@@ -310,10 +310,9 @@ pub async fn timeline_add(state: &AppState, caller: &Caller, e: TimelineAdd) -> 
     let (source, posted_by) = match caller {
         Caller::Session { session } => (EntrySource::Agent, Some(session.clone())),
         Caller::Node { node } => {
-            let agent = crate::store::nodes::runner_info(&state.db, node).await?.map(|r| SessionRef {
-                node: node.clone(),
-                tab: r.agent_tab,
-                session_id: None,
+            let agent = crate::store::nodes::runner_info(&state.db, node).await?.map(|r| {
+                let (node, tab) = r.agent(node);
+                SessionRef { node, tab, session_id: None }
             });
             (EntrySource::Runner, agent)
         }

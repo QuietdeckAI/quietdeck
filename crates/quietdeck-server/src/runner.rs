@@ -10,7 +10,7 @@ use quietdeck_types::SessionRef;
 use quietdeck_types::action::Action;
 use quietdeck_types::api::{Changed, RoundStatus};
 use quietdeck_types::card::RunBy;
-use quietdeck_types::node::{DeckRequest, NodeRequest, Reply, RunnerInfo, SendAsCheck};
+use quietdeck_types::node::{DeckRequest, NodeRequest, Reply, SendAsCheck};
 
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
@@ -18,65 +18,54 @@ use crate::store::{decisions, nodes};
 
 const ASK_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// The node's runner, if it has one and it's connected now.
-async fn connected_runner(state: &AppState, node: &str) -> Option<RunnerInfo> {
-    if !state.hub.is_connected(node).await {
-        return None;
-    }
-    nodes::runner_info(&state.db, node).await.ok().flatten()
+/// The node whose runner works for the agent `tab@node`, when it's connected now: the agent's own node, or a runner
+/// kept on a node of its own.
+async fn connected_runner(state: &AppState, node: &str, tab: &str) -> Option<String> {
+    let (runner_node, _) = nodes::runner_for_agent(&state.db, node, tab).await.ok().flatten()?;
+    state.hub.is_connected(&runner_node).await.then_some(runner_node)
 }
 
-/// Decisions on `tab@node`'s cards were released: tell that node's runner, when it runs for that tab. False when
-/// there's no such runner or it didn't answer, so the agent is told instead.
+/// Decisions on `tab@node`'s cards were released: tell the runner that works for that agent. False when there's no
+/// such runner or it didn't answer, so the agent is told instead.
 pub async fn notify(state: &AppState, node: &str, tab: &str) -> bool {
-    match connected_runner(state, node).await {
-        Some(r) if r.agent_tab == tab => {
-            match state.hub.request(node, DeckRequest::DecisionsReleased, ASK_TIMEOUT).await {
-                Ok(reply) => reply.into_result::<()>().is_ok(),
-                Err(e) => {
-                    tracing::info!(%node, error = %e, "the runner didn't take its release: telling the agent");
-                    false
-                }
-            }
+    let Some(runner) = connected_runner(state, node, tab).await else { return false };
+    match state.hub.request(&runner, DeckRequest::DecisionsReleased, ASK_TIMEOUT).await {
+        Ok(reply) => reply.into_result::<()>().is_ok(),
+        Err(e) => {
+            tracing::info!(%runner, error = %e, "the runner didn't take its release: telling the agent");
+            false
         }
-        _ => false,
     }
 }
 
-/// `quietdeck round done` from `me`: the runner on its machine may send the next wake-up. Says whether a runner
+/// `quietdeck round done` from `me`: the runner that works for `me` may send the next wake-up. Says whether a runner
 /// was told.
 pub async fn round_done(state: &AppState, me: &SessionRef) -> AppResult<bool> {
-    match connected_runner(state, &me.node).await {
-        Some(r) if r.agent_tab == me.tab => {
-            let reply = state
-                .hub
-                .request(&me.node, DeckRequest::RoundDone, ASK_TIMEOUT)
-                .await
-                .map_err(|e| AppError::Conflict(format!("the runner on {} didn't answer: {e}", me.node)))?;
-            reply.into_result::<()>().map_err(AppError::Conflict)?;
-            Ok(true)
-        }
-        _ => Ok(false),
-    }
+    let Some(runner) = connected_runner(state, &me.node, &me.tab).await else { return Ok(false) };
+    let reply = state
+        .hub
+        .request(&runner, DeckRequest::RoundDone, ASK_TIMEOUT)
+        .await
+        .map_err(|e| AppError::Conflict(format!("the runner on {runner} didn't answer: {e}")))?;
+    reply.into_result::<()>().map_err(AppError::Conflict)?;
+    Ok(true)
 }
 
 /// `quietdeck round status` from `me`: the mail watch of the runner on its machine, when it runs for `me`.
 pub async fn round_status(state: &AppState, me: &SessionRef) -> AppResult<RoundStatus> {
-    match connected_runner(state, &me.node).await {
-        Some(r) if r.agent_tab == me.tab => {
-            let reply = state
-                .hub
-                .request(&me.node, DeckRequest::RoundStatus, ASK_TIMEOUT)
-                .await
-                .map_err(|e| AppError::Conflict(format!("the runner on {} didn't answer: {e}", me.node)))?;
-            reply.into_result::<RoundStatus>().map_err(AppError::Conflict)
-        }
-        _ => Ok(RoundStatus { runner: false, waiting: false, woke_at: None, checked_at: None, accounts: vec![] }),
-    }
+    let Some(runner) = connected_runner(state, &me.node, &me.tab).await else {
+        return Ok(RoundStatus { runner: false, waiting: false, woke_at: None, checked_at: None, accounts: vec![] });
+    };
+    let reply = state
+        .hub
+        .request(&runner, DeckRequest::RoundStatus, ASK_TIMEOUT)
+        .await
+        .map_err(|e| AppError::Conflict(format!("the runner on {runner} didn't answer: {e}")))?;
+    reply.into_result::<RoundStatus>().map_err(AppError::Conflict)
 }
 
 /// A draft or reply posted on a card names a `from` address. With a runner on the posting machine, it must be one
-/// the account can send as, from the runner's send-as list. Without one (or with it offline), the skill checks
+/// the account can send as, from the send-as list of the runner that works for the poster. Without one (or with it offline), the skill checks
 /// through its own access, and the runner checks again before it sends anything.
 pub async fn check_send_as(state: &AppState, me: &SessionRef, actions: &[Action]) -> AppResult<()> {
     let composes = actions.iter().filter_map(|a| match a {
@@ -84,15 +73,13 @@ pub async fn check_send_as(state: &AppState, me: &SessionRef, actions: &[Action]
         _ => None,
     });
     for c in composes {
-        if connected_runner(state, &me.node).await.is_none() {
-            return Ok(());
-        }
+        let Some(runner) = connected_runner(state, &me.node, &me.tab).await else { return Ok(()) };
         let req = DeckRequest::SendAs { account: c.account.clone(), from: c.from.clone() };
-        let check = match state.hub.request(&me.node, req, ASK_TIMEOUT).await {
+        let check = match state.hub.request(&runner, req, ASK_TIMEOUT).await {
             Ok(reply) => match reply.into_result::<SendAsCheck>() {
                 Ok(check) => check,
                 Err(e) => {
-                    tracing::info!(node = %me.node, error = %e, "send-as check unavailable: the runner checks again");
+                    tracing::info!(%runner, error = %e, "send-as check unavailable: the runner checks again");
                     return Ok(());
                 }
             },
@@ -151,7 +138,8 @@ async fn answer_inner(state: &AppState, node: &str, request: NodeRequest) -> App
     let Some(info) = nodes::runner_info(&state.db, node).await? else {
         return Err(AppError::Forbidden(format!("{node} has no runner switched on")));
     };
-    let agent = SessionRef { node: node.to_string(), tab: info.agent_tab.clone(), session_id: None };
+    let (agent_node, agent_tab) = info.agent(node);
+    let agent = SessionRef { node: agent_node, tab: agent_tab, session_id: None };
     let caller = quietdeck_types::api::Caller::Node { node: node.to_string() };
     Ok(match request {
         NodeRequest::MintToken { .. } | NodeRequest::MessagesIngest { .. } => {
@@ -211,12 +199,13 @@ mod tests {
     use quietdeck_types::ActionType;
     use quietdeck_types::card::{ActionRecord, ActionReport, ActionResult, CardInput, CardState, Released};
     use quietdeck_types::decision::{ApproveAll, CardDecision};
-    use quietdeck_types::node::Handoff;
+    use quietdeck_types::node::{Handoff, RunnerInfo};
     use serde_json::json;
 
     async fn with_runner(state: &AppState, node: &str, tab: &str) {
-        sqlx::query("INSERT INTO nodes (name, token_hash, created_at) VALUES (?, 'x', 0)")
+        sqlx::query("INSERT INTO nodes (name, token_hash, created_at) VALUES (?, ?, 0)")
             .bind(node)
+            .bind(format!("hash-{node}"))
             .execute(&state.db)
             .await
             .unwrap();
@@ -272,6 +261,31 @@ mod tests {
         let c = crate::store::cards::get(&state.db, card).await.unwrap().unwrap();
         assert_eq!(c.state, CardState::Done);
         assert_eq!(c.action_records[0].run_by, Some(quietdeck_types::card::RunBy::Runner));
+    }
+
+    #[tokio::test]
+    async fn a_runner_on_a_node_of_its_own_works_for_its_agent_elsewhere() {
+        let state = AppState::for_tests().await;
+        // The agent posts from "server"; its runner lives on "server-runner", under a user the agent can't read.
+        with_runner(&state, "server-runner", "email triage@server").await;
+        let card = approved_card(&state, "email triage").await;
+        let taken: Vec<Released> = ok(answer(&state, "server-runner", NodeRequest::RunnerTake).await);
+        assert_eq!(taken.len(), 1, "it takes the agent's cards");
+        assert_eq!(taken[0].card.id, card);
+        let found = nodes::runner_for_agent(&state.db, "server", "email triage").await.unwrap();
+        assert_eq!(found.map(|(n, _)| n).as_deref(), Some("server-runner"));
+        // A plain tab still means the runner's own node.
+        with_runner(&state, "laptop", "email triage").await;
+        let taken: Vec<Released> = ok(answer(&state, "laptop", NodeRequest::RunnerTake).await);
+        assert!(taken.is_empty(), "laptop's runner works for email triage@laptop, not @server");
+    }
+
+    #[test]
+    fn the_agent_is_on_the_runners_node_unless_named() {
+        let info = |t: &str| RunnerInfo { eligible: vec![], agent_tab: t.into(), accounts: vec![] };
+        assert_eq!(info("triage").agent("n1"), ("n1".to_string(), "triage".to_string()));
+        assert_eq!(info("email triage@n2").agent("n1"), ("n2".to_string(), "email triage".to_string()));
+        assert_eq!(info("odd@").agent("n1"), ("n1".to_string(), "odd@".to_string()));
     }
 
     #[tokio::test]

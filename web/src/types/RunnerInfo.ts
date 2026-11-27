@@ -6,6 +6,7 @@ import type { ActionType } from "./ActionType";
  */
 export type RunnerInfo = { eligible: Array<ActionType>, 
 /**
- * The session that gets wake-ups, hand-offs and error reports.
+ * The session that gets wake-ups, hand-offs and error reports: a tab on the runner's own node, or
+ * `<tab>@<node>` for an agent on another node (a runner kept under a Unix user the agent can't read).
  */
 agent_tab: string, accounts: Array<string>, };

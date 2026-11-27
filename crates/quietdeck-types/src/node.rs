@@ -102,9 +102,20 @@ pub enum NodeFrame {
 #[ts(export)]
 pub struct RunnerInfo {
     pub eligible: Vec<ActionType>,
-    /// The session that gets wake-ups, hand-offs and error reports.
+    /// The session that gets wake-ups, hand-offs and error reports: a tab on the runner's own node, or
+    /// `<tab>@<node>` for an agent on another node (a runner kept under a Unix user the agent can't read).
     pub agent_tab: String,
     pub accounts: Vec<String>,
+}
+
+impl RunnerInfo {
+    /// The agent this runner works for, as (node, tab), given the runner's own node.
+    pub fn agent(&self, runner_node: &str) -> (String, String) {
+        match self.agent_tab.rsplit_once('@') {
+            Some((tab, node)) if !tab.is_empty() && !node.is_empty() => (node.to_string(), tab.to_string()),
+            _ => (runner_node.to_string(), self.agent_tab.clone()),
+        }
+    }
 }
 
 /// Deck → node.
