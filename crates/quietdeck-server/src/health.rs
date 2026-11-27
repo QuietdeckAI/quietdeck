@@ -66,7 +66,13 @@ pub async fn report(state: &AppState, now: i64) -> anyhow::Result<(bool, Value)>
             }
             None => problems.push("no complete mail check reported since the deck started".into()),
         }
-        let waiting = oldest_waiting(&state.db, &agent_node, &agent_tab).await?;
+        // The oldest approved action waiting on any of its agents' cards.
+        let mut waiting: Option<i64> = None;
+        for (n, t) in info.agents(&name) {
+            if let Some(at) = oldest_waiting(&state.db, &n, &t).await? {
+                waiting = Some(waiting.map_or(at, |w| w.min(at)));
+            }
+        }
         if let Some(at) = waiting.filter(|at| now - at > ACTION_STALE_MS) {
             problems.push(format!("an approved action has waited since {} ({} min)", iso(at), (now - at) / 60_000));
         }
@@ -74,6 +80,7 @@ pub async fn report(state: &AppState, now: i64) -> anyhow::Result<(bool, Value)>
         runners.push(json!({
             "node": name,
             "agent": format!("{agent_tab}@{agent_node}"),
+            "agents": info.agents(&name).iter().map(|(n, t)| format!("{t}@{n}")).collect::<Vec<_>>(),
             "connected": connected,
             "mail_ok_at": mail_ok_at.map(iso),
             "oldest_waiting_action_since": waiting.map(iso),
@@ -106,7 +113,8 @@ mod tests {
             .execute(&state.db)
             .await
             .unwrap();
-        let info = RunnerInfo { eligible: vec![], agent_tab: "triage@box".into(), accounts: vec![] };
+        let info =
+            RunnerInfo { eligible: vec![], agent_tab: "triage@box".into(), accounts: vec![], agent_tabs: vec![] };
         crate::store::nodes::hello(&state.db, "box-runner", "test", Some(&info)).await.unwrap();
         let now = now_ms();
         let fresh = RunnerHealth { mail_ok_at: Timestamp::from_millisecond(now - 60_000).ok(), ..Default::default() };

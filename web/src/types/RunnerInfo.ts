@@ -9,4 +9,9 @@ export type RunnerInfo = { eligible: Array<ActionType>,
  * The session that gets wake-ups, hand-offs and error reports: a tab on the runner's own node, or
  * `<tab>@<node>` for an agent on another node (a runner kept under a Unix user the agent can't read).
  */
-agent_tab: string, accounts: Array<string>, };
+agent_tab: string, accounts: Array<string>, 
+/**
+ * Every agent the runner works for, `agent_tab` first: it carries out their approved cards and hands each card
+ * it can't back to the agent that posted it. Empty from a node older than the list: `agent_tab` alone.
+ */
+agent_tabs: Array<string>, };

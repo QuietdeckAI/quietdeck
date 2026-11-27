@@ -154,6 +154,7 @@ struct FakeDeck {
     /// How many relays answer "no session named" before one goes through.
     relay_misses: StdMutex<u32>,
     health: StdMutex<Vec<quietdeck_types::node::RunnerHealth>>,
+    closed: StdMutex<Vec<String>>,
 }
 
 #[async_trait]
@@ -218,6 +219,10 @@ impl DeckApi for FakeDeck {
         }
         self.relayed.lock().unwrap().push((to, body));
         Ok(Delivered::Orchestrator)
+    }
+    async fn close_session(&self, session: String) -> Result<(), String> {
+        self.closed.lock().unwrap().push(session);
+        Ok(())
     }
     async fn start_session(&self, spec: SessionStart) -> Result<SessionStarted, String> {
         if !*self.starts.lock().unwrap() {
@@ -542,6 +547,37 @@ async fn a_draft_from_an_address_the_account_cant_send_as_is_refused_before_exec
     assert!(h.calls_to("tools.google.gmail.draft").is_empty());
     let check = h.runner.send_as_check("personal", "ALIAS@example.com").await.unwrap();
     assert!(check.allowed, "addresses compare without case");
+}
+
+#[tokio::test]
+async fn an_overseers_session_actions_run_and_what_it_cant_goes_back_to_the_overseer() {
+    let to = json!({"node": "laptop", "tab": "search", "session_id": null});
+    let overseer = json!({"posted_by": {"node": "agents", "tab": "overseer", "session_id": null}});
+    let session_card = released(
+        1,
+        json!([
+            {"type": "session", "op": "message", "to": to, "text": "Ship it after lunch"},
+            {"type": "session", "op": "wrap_up", "to": to},
+            {"type": "session", "op": "close", "to": to}
+        ]),
+        overseer.clone(),
+    );
+    let archive = json!([{"type": "label", "account": "personal", "thread_id": "t2", "add": ["Later"]}]);
+    let h = harness(vec![session_card, released(2, archive, overseer)], "eligible: [session, archive]\n").await;
+    let other = Arc::new(FakeAgent::default());
+    let inbox: Arc<dyn AgentInbox> = other.clone();
+    let runner = h.runner.with_others(vec![("overseer@agents".into(), inbox)]);
+    let out = runner.process().await.unwrap();
+    assert_eq!(out.done, 3, "{:?}", h.deck.reports.lock().unwrap());
+    let relayed = h.deck.relayed.lock().unwrap().clone();
+    assert_eq!(relayed.len(), 2);
+    assert!(relayed.iter().all(|(t, _)| t == "search@laptop"));
+    assert!(relayed[0].1.ends_with("Ship it after lunch"), "{}", relayed[0].1);
+    assert!(relayed[1].1.contains("wrap-up"), "{}", relayed[1].1);
+    assert_eq!(*h.deck.closed.lock().unwrap(), vec!["search@laptop".to_string()]);
+    // The label isn't runner-eligible: the overseer hears about it, the triage agent doesn't.
+    assert!(other.told.lock().unwrap().iter().any(|(_, b)| b.contains("Subject 2")));
+    assert!(h.agent.told.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

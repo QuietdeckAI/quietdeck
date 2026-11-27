@@ -43,5 +43,11 @@ export function actionLine(a: Action): { verb: string; detail?: string } {
     }
     case "watch":
       return { verb: a.on ? "Watch this thread" : "Stop watching this thread" };
+    case "session":
+      return a.op === "message"
+        ? { verb: `Message ${sessionName(a.to)}`, detail: a.text ?? undefined }
+        : a.op === "wrap_up"
+          ? { verb: `Wrap up ${sessionName(a.to)}`, detail: a.text ?? undefined }
+          : { verb: `Close ${sessionName(a.to)}` };
   }
 }

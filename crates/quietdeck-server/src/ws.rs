@@ -337,7 +337,12 @@ mod tests {
         req.headers_mut().insert("Authorization", format!("Bearer {}", enrolled.token).parse().unwrap());
         let (ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
         let (mut sink, mut stream) = ws.split();
-        let runner = RunnerInfo { eligible: vec![ActionType::Forward], agent_tab: "triage".into(), accounts: vec![] };
+        let runner = RunnerInfo {
+            eligible: vec![ActionType::Forward],
+            agent_tab: "triage".into(),
+            accounts: vec![],
+            agent_tabs: vec![],
+        };
         sink.send(text(&NodeFrame::Hello { protocol: PROTOCOL_VERSION, version: "t".into(), runner: Some(runner) }))
             .await
             .unwrap();

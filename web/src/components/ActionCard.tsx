@@ -114,6 +114,8 @@ function actionShort(a: Action): string {
       return `lease ${a.kind}`;
     case "watch":
       return a.on ? "watch" : "stop watching";
+    case "session":
+      return a.op === "message" ? `message ${a.to.tab}` : a.op === "wrap_up" ? `wrap up ${a.to.tab}` : `close ${a.to.tab}`;
   }
 }
 

@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use quietdeck_types::action::{Action, StoryOp};
+use quietdeck_types::action::{Action, SessionOp, SessionRef, StoryOp};
 use quietdeck_types::card::{ActionRecord, ActionReport, ActionResult, ActionStatus, DecisionKind, Released};
 use quietdeck_types::directory::SessionStart;
 use quietdeck_types::node::{Handoff, RunnerInfo, SendAsCheck};
@@ -69,6 +69,7 @@ impl RunnerHandle {
             eligible: cfg.eligible.clone(),
             agent_tab: cfg.agent.tab.clone(),
             accounts: cfg.accounts.keys().cloned().collect(),
+            agent_tabs: std::iter::once(cfg.agent.tab.clone()).chain(cfg.agent.tabs.iter().cloned()).collect(),
         }
     }
 }
@@ -78,6 +79,9 @@ pub struct Runner {
     deck: Arc<dyn DeckApi>,
     tools: Arc<dyn Tools>,
     agent: Arc<dyn AgentInbox>,
+    /// The other agents it works for (`runner.agent.tabs`), each as written there: a card one of them posted goes
+    /// back to it when the runner can't carry it out.
+    others: Vec<(String, Arc<dyn AgentInbox>)>,
     mail_state_path: PathBuf,
     mail: Mutex<MailState>,
     send_as: Mutex<HashMap<String, (Instant, Vec<String>)>>,
@@ -216,7 +220,7 @@ const FORWARD_WAIT_STEP: std::time::Duration = std::time::Duration::from_secs(3)
 
 /// Action types the runner carries out through the deck and the orchestrator rather than a configured tool.
 fn built_in(t: ActionType) -> bool {
-    matches!(t, ActionType::Forward | ActionType::Resume | ActionType::NewSession)
+    matches!(t, ActionType::Forward | ActionType::Resume | ActionType::NewSession | ActionType::Session)
 }
 
 fn released_actions(r: &Released) -> Vec<&ActionRecord> {
@@ -238,6 +242,9 @@ fn describe(a: &Action) -> &'static str {
         Action::NewSession { .. } => "New session",
         Action::Lease { .. } => "Lease",
         Action::Watch { .. } => "Watch",
+        Action::Session { op: SessionOp::Message, .. } => "Message session",
+        Action::Session { op: SessionOp::WrapUp, .. } => "Wrap up session",
+        Action::Session { op: SessionOp::Close, .. } => "Close session",
     }
 }
 
@@ -256,6 +263,7 @@ impl Runner {
             deck,
             tools,
             agent,
+            others: vec![],
             mail_state_path,
             mail,
             send_as: Mutex::default(),
@@ -264,6 +272,27 @@ impl Runner {
             last_held: Default::default(),
             draft_cache: Default::default(),
         }
+    }
+
+    /// The other agents it works for, each with its inbox.
+    pub fn with_others(mut self, others: Vec<(String, Arc<dyn AgentInbox>)>) -> Self {
+        self.others = others;
+        self
+    }
+
+    /// Where a card's hand-offs and failures go: the agent that posted it, when it's one of the others; else the main
+    /// agent.
+    fn agent_for(&self, posted_by: &SessionRef) -> &Arc<dyn AgentInbox> {
+        self.others
+            .iter()
+            .find(|(spec, _)| match spec.rsplit_once('@') {
+                Some((tab, node)) if !tab.is_empty() && !node.is_empty() => {
+                    tab == posted_by.tab && node == posted_by.node
+                }
+                _ => spec == &posted_by.tab,
+            })
+            .map(|(_, a)| a)
+            .unwrap_or(&self.agent)
     }
 
     fn account_ctx(&self, id: &str) -> Option<Value> {
@@ -550,6 +579,24 @@ impl Runner {
                 let s = self.deck.start_session(spec).await?;
                 Ok(serde_json::to_value(s).unwrap_or(Value::Null))
             }
+            Action::Session { op, to, text } => {
+                let address = to.address();
+                match op {
+                    SessionOp::Close => {
+                        self.deck.close_session(address.clone()).await?;
+                        Ok(json!({"closed": address}))
+                    }
+                    SessionOp::Message | SessionOp::WrapUp => {
+                        let body = match (op, text) {
+                            (SessionOp::WrapUp, None) => quietdeck_types::action::WRAP_UP_TEXT.to_string(),
+                            (_, Some(t)) => format!("From the deck's owner, approved on the Work tab: {t}"),
+                            (_, None) => return Err("a message needs its text".into()),
+                        };
+                        let delivered = self.deck.relay(address.clone(), DeliveryKind::Deck, body).await?;
+                        Ok(json!({op.as_str(): address, "delivered": delivered}))
+                    }
+                }
+            }
             Action::Reply(_) | Action::Watch { .. } | Action::Lease { .. } => {
                 Err(format!("the runner doesn't carry out {}", a.action_type()))
             }
@@ -635,27 +682,31 @@ impl Runner {
         out.handed = handoffs.iter().map(|h| (h.decision_id, h.reason.clone())).collect();
         // Hand-offs go to the agent first, so it works on them while the runner carries out the rest (a batch of
         // archives can take a minute), instead of waiting for the whole batch.
-        if !handoffs.is_empty() {
-            let n = handoffs.len();
-            let reasons: Vec<String> = handoffs
-                .iter()
-                .filter_map(|h| {
-                    let r = taken.iter().find(|r| r.decision.id == h.decision_id)?;
-                    Some(format!("'{}' ({})", r.card.input.subject, h.reason))
-                })
-                .collect();
+        // Each agent hears about its own cards only.
+        let mut by_agent: Vec<(SessionRef, Vec<String>)> = vec![];
+        for h in &handoffs {
+            let Some(r) = taken.iter().find(|r| r.decision.id == h.decision_id) else { continue };
+            let line = format!("'{}' ({})", r.card.input.subject, h.reason);
+            match by_agent.iter_mut().find(|(p, _)| p.node == r.card.posted_by.node && p.tab == r.card.posted_by.tab) {
+                Some((_, lines)) => lines.push(line),
+                None => by_agent.push((r.card.posted_by.clone(), vec![line])),
+            }
+        }
+        for (posted_by, reasons) in by_agent {
+            let n = reasons.len();
             let body = format!(
                 "{n} card{} handed to you: {}. Take {} with `quietdeck decisions take`.",
                 if n == 1 { "" } else { "s" },
                 reasons.join("; "),
                 if n == 1 { "it" } else { "them" }
             );
-            match self.agent.tell(DeliveryKind::Handoff, body).await {
-                Ok(()) => tracing::info!(cards = n, "handed cards to the triage agent"),
+            match self.agent_for(&posted_by).tell(DeliveryKind::Handoff, body).await {
+                Ok(()) => tracing::info!(cards = n, agent = %posted_by.address(), "handed cards to their agent"),
                 Err(e) => tracing::info!(error = %e, "the agent will find its hand-offs with `decisions take`"),
             }
         }
-        let mut failures: Vec<String> = Vec::new();
+        // Failures, by the agent whose card failed.
+        let mut failures: Vec<(SessionRef, String)> = Vec::new();
         let mut attempted = 0usize;
         for r in taken.iter().filter(|r| held.contains(&r.decision.id)) {
             out.claimed.push(r.decision.id);
@@ -688,12 +739,15 @@ impl Runner {
                     }
                     Err(error) => {
                         out.failed += 1;
-                        failures.push(format!(
-                            "{} of '{}' ({}): {error}. Card c_{} is waiting with Retry.",
-                            describe(&rec.action),
-                            r.card.input.subject,
-                            self.cfg.account_label(&r.card.input.account),
-                            r.card.id
+                        failures.push((
+                            r.card.posted_by.clone(),
+                            format!(
+                                "{} of '{}' ({}): {error}. Card c_{} is waiting with Retry.",
+                                describe(&rec.action),
+                                r.card.input.subject,
+                                self.cfg.account_label(&r.card.input.account),
+                                r.card.id
+                            ),
                         ));
                         reports.push(ActionReport { action_id: rec.id, result: ActionResult::Failed { error } });
                     }
@@ -705,9 +759,17 @@ impl Runner {
                 tracing::warn!(error = %e, card = r.card.id, "reporting results to the deck");
             }
         }
-        if !failures.is_empty() {
-            let body = format!("Runner: {} of {attempted} failed. {}", failures.len(), failures.join(" "));
-            if let Err(e) = self.agent.tell(DeliveryKind::RunnerReport, body).await {
+        let mut posters: Vec<SessionRef> = vec![];
+        for (p, _) in &failures {
+            if !posters.iter().any(|x| x.node == p.node && x.tab == p.tab) {
+                posters.push(p.clone());
+            }
+        }
+        for p in posters {
+            let mine: Vec<&str> =
+                failures.iter().filter(|(x, _)| x.node == p.node && x.tab == p.tab).map(|(_, f)| f.as_str()).collect();
+            let body = format!("Runner: {} of {attempted} failed. {}", mine.len(), mine.join(" "));
+            if let Err(e) = self.agent_for(&p).tell(DeliveryKind::RunnerReport, body).await {
                 tracing::info!(error = %e, "the agent will see the failures on the deck");
             }
         }

@@ -99,7 +99,7 @@ pub async fn runner_for_agent(db: &Db, node: &str, tab: &str) -> anyhow::Result<
     .await?;
     for (name, info) in rows {
         let info: RunnerInfo = from_json(&info)?;
-        if info.agent(&name) == (node.to_string(), tab.to_string()) {
+        if info.agents(&name).contains(&(node.to_string(), tab.to_string())) {
             return Ok(Some((name, info)));
         }
     }

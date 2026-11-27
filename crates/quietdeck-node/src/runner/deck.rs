@@ -25,6 +25,10 @@ pub trait DeckApi: Send + Sync {
     async fn report(&self, reports: Vec<ActionReport>) -> Result<Vec<ReportReceipt>, String>;
     async fn relay(&self, to: String, kind: DeliveryKind, body: String) -> Result<Delivered, String>;
     async fn start_session(&self, spec: SessionStart) -> Result<SessionStarted, String>;
+    /// An approved close of `tab@node`, through the deck. A deck that can't is refused.
+    async fn close_session(&self, _session: String) -> Result<(), String> {
+        Err("this deck doesn't close sessions for the runner".into())
+    }
     async fn resume_session(
         &self,
         node: String,
@@ -115,6 +119,9 @@ impl DeckApi for LinkDeck {
     }
     async fn start_session(&self, spec: SessionStart) -> Result<SessionStarted, String> {
         self.ask(NodeRequest::StartSession { spec }, START).await
+    }
+    async fn close_session(&self, session: String) -> Result<(), String> {
+        self.ask(NodeRequest::CloseSession { session }, START).await
     }
     async fn resume_session(
         &self,

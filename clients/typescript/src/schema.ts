@@ -1792,6 +1792,13 @@ export interface components {
             thread_id: string;
             /** @constant */
             type: "watch";
+        } | {
+            op: components["schemas"]["SessionOp"];
+            /** @default null */
+            text?: string | null;
+            to: components["schemas"]["SessionRef"];
+            /** @constant */
+            type: "session";
         };
         /** @description An action as stored on a card version. */
         ActionRecord: {
@@ -1841,7 +1848,7 @@ export interface components {
          * @description An action's type alone: the `type` tag, the names `runner.eligible` and project policies use.
          * @enum {string}
          */
-        ActionType: "archive" | "mark_read" | "label" | "forward" | "draft" | "reply" | "story" | "task" | "calendar" | "resume" | "new_session" | "lease" | "watch";
+        ActionType: "archive" | "mark_read" | "label" | "forward" | "draft" | "reply" | "story" | "task" | "calendar" | "resume" | "new_session" | "lease" | "watch" | "session";
         /**
          * @description Which harness runs the session.
          * @enum {string}
@@ -3376,6 +3383,8 @@ export interface components {
             /** @default null */
             until?: string | null;
         };
+        /** @description What to do with another session, approved from the Work tab. */
+        SessionOp: "message" | "wrap_up" | "close";
         /** @description A session by its tab, on a node. `session_id` pins one conversation when the tab has been reused. */
         SessionRef: {
             node: string;

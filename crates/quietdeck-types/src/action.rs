@@ -108,6 +108,33 @@ pub enum TaskOp {
     Done,
 }
 
+/// What to do with another session, approved from the Work tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum SessionOp {
+    /// Pass the person's words on (`text`).
+    Message,
+    /// Ask it to run its wrap-up: the end-of-session sweep for loose ends. `text` replaces the default request.
+    WrapUp,
+    /// Close it.
+    Close,
+}
+
+impl SessionOp {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SessionOp::Message => "message",
+            SessionOp::WrapUp => "wrap_up",
+            SessionOp::Close => "close",
+        }
+    }
+}
+
+/// What a wrap-up action asks, when it doesn't say.
+pub const WRAP_UP_TEXT: &str = "Approved on the deck's Work tab: run your wrap-up now (the `wrap-up-session` skill, or \
+                                your own end-of-session sweep for loose ends) and leave its result in this session.";
+
 /// One proposed action. The `type` tag is also the name `runner.eligible` uses.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema, Validate)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -237,6 +264,16 @@ pub enum Action {
         #[garde(skip)]
         on: bool,
     },
+    /// Message, wrap up or close another session (the Work tab's session actions).
+    Session {
+        #[garde(skip)]
+        op: SessionOp,
+        #[garde(dive)]
+        to: SessionRef,
+        #[serde(default)]
+        #[garde(inner(length(min = 1, max = 20_000)))]
+        text: Option<String>,
+    },
 }
 
 /// An action's type alone: the `type` tag, the names `runner.eligible` and project policies use.
@@ -257,10 +294,11 @@ pub enum ActionType {
     NewSession,
     Lease,
     Watch,
+    Session,
 }
 
 impl ActionType {
-    pub const ALL: [ActionType; 13] = [
+    pub const ALL: [ActionType; 14] = [
         ActionType::Archive,
         ActionType::MarkRead,
         ActionType::Label,
@@ -274,6 +312,7 @@ impl ActionType {
         ActionType::NewSession,
         ActionType::Lease,
         ActionType::Watch,
+        ActionType::Session,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -291,6 +330,7 @@ impl ActionType {
             ActionType::NewSession => "new_session",
             ActionType::Lease => "lease",
             ActionType::Watch => "watch",
+            ActionType::Session => "session",
         }
     }
 
@@ -321,6 +361,7 @@ impl Action {
             Action::NewSession { .. } => ActionType::NewSession,
             Action::Lease { .. } => ActionType::Lease,
             Action::Watch { .. } => ActionType::Watch,
+            Action::Session { .. } => ActionType::Session,
         }
     }
 
@@ -350,6 +391,9 @@ impl Action {
             Action::Task { op: TaskOp::Create, title: None, .. } => Err("task: create needs a title".into()),
             Action::Task { op: TaskOp::Update | TaskOp::Done, story_id: None, .. } => {
                 Err("task: update and done need the task's story_id".into())
+            }
+            Action::Session { op: SessionOp::Message, text: None, .. } => {
+                Err("session: a message needs its text".into())
             }
             _ => Ok(()),
         }

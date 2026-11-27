@@ -106,15 +106,36 @@ pub struct RunnerInfo {
     /// `<tab>@<node>` for an agent on another node (a runner kept under a Unix user the agent can't read).
     pub agent_tab: String,
     pub accounts: Vec<String>,
+    /// Every agent the runner works for, `agent_tab` first: it carries out their approved cards and hands each card
+    /// it can't back to the agent that posted it. Empty from a node older than the list: `agent_tab` alone.
+    #[serde(default)]
+    pub agent_tabs: Vec<String>,
+}
+
+/// `tab@node` as (node, tab), or a plain tab on `runner_node`.
+fn parse_agent(spec: &str, runner_node: &str) -> (String, String) {
+    match spec.rsplit_once('@') {
+        Some((tab, node)) if !tab.is_empty() && !node.is_empty() => (node.to_string(), tab.to_string()),
+        _ => (runner_node.to_string(), spec.to_string()),
+    }
 }
 
 impl RunnerInfo {
-    /// The agent this runner works for, as (node, tab), given the runner's own node.
+    /// The agent that gets wake-ups and the mail watch's reports, as (node, tab), given the runner's own node.
     pub fn agent(&self, runner_node: &str) -> (String, String) {
-        match self.agent_tab.rsplit_once('@') {
-            Some((tab, node)) if !tab.is_empty() && !node.is_empty() => (node.to_string(), tab.to_string()),
-            _ => (runner_node.to_string(), self.agent_tab.clone()),
+        parse_agent(&self.agent_tab, runner_node)
+    }
+
+    /// Every agent it works for, as (node, tab), the main one first.
+    pub fn agents(&self, runner_node: &str) -> Vec<(String, String)> {
+        let mut out = vec![self.agent(runner_node)];
+        for spec in &self.agent_tabs {
+            let a = parse_agent(spec, runner_node);
+            if !out.contains(&a) {
+                out.push(a);
+            }
         }
+        out
     }
 }
 
@@ -171,6 +192,8 @@ pub enum NodeRequest {
     /// The runner: an approved `resume` of one session by its ID, on the machine it ran on. Answers
     /// [`crate::directory::SessionStarted`].
     ResumeSession { node: String, session_id: String, tab: String, cwd: String },
+    /// The runner: an approved `session` close of `tab@node`. Answers `()`.
+    CloseSession { session: String },
     /// A node that reads a chat source (Matrix): new messages for the deck to keep. Any node may send it; the deck
     /// keeps each message once, by room and ID. Answers [`crate::message::MessagesStored`].
     MessagesIngest { messages: Vec<crate::message::IncomingMessage> },

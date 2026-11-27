@@ -249,7 +249,12 @@ mod tests {
             .execute(&state.db)
             .await
             .unwrap();
-        let info = quietdeck_types::node::RunnerInfo { eligible: vec![], agent_tab: "triage".into(), accounts: vec![] };
+        let info = quietdeck_types::node::RunnerInfo {
+            eligible: vec![],
+            agent_tab: "triage".into(),
+            accounts: vec![],
+            agent_tabs: vec![],
+        };
         crate::store::nodes::hello(&state.db, "box", "test", Some(&info)).await.unwrap();
         let triage =
             Caller::Session { session: SessionRef { node: "box".into(), tab: "triage".into(), session_id: None } };

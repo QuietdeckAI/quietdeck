@@ -70,6 +70,11 @@ pub struct AgentConfig {
     /// The agent's tab, or its name when it's headless. Where Fleetlayer runs Quietdeck's plugin it can be
     /// `<tab>@<node>`, an agent on another node (the runner on a Unix user of its own).
     pub tab: String,
+    /// Other agents the runner works for, each a tab or `<tab>@<node>`: it carries out their approved cards too
+    /// (an overseer's session actions), and hands each card it can't back to the agent that posted it. Wake-ups and
+    /// the mail watch stay `tab`'s.
+    #[serde(default)]
+    pub tabs: Vec<String>,
     /// Run the agent as one `claude -p` turn per message, resuming the same conversation, instead of pasting into a
     /// tab. See [`super::headless`].
     #[serde(default)]
@@ -310,6 +315,9 @@ impl RunnerConfig {
         }
         if self.agent.tab.trim().is_empty() {
             return Err("runner.agent.tab is empty".into());
+        }
+        if self.agent.tabs.iter().any(|t| t.trim().is_empty()) {
+            return Err("runner.agent.tabs has an empty entry".into());
         }
         if let Some(h) = &self.agent.headless {
             h.check()?;

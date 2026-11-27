@@ -174,20 +174,31 @@ async fn answer_inner(state: &AppState, node: &str, request: NodeRequest) -> App
     let Some(info) = nodes::runner_info(&state.db, node).await? else {
         return Err(AppError::Forbidden(format!("{node} has no runner switched on")));
     };
-    let (agent_node, agent_tab) = info.agent(node);
-    let agent = SessionRef { node: agent_node, tab: agent_tab, session_id: None };
+    // Every agent it works for: it takes their cards, and acts on each card as the agent that posted it.
+    let agents: Vec<SessionRef> =
+        info.agents(node).into_iter().map(|(node, tab)| SessionRef { node, tab, session_id: None }).collect();
     let caller = quietdeck_types::api::Caller::Node { node: node.to_string() };
     Ok(match request {
         NodeRequest::MintToken { .. } | NodeRequest::MessagesIngest { .. } => {
             unreachable!("answered by the node connection")
         }
-        NodeRequest::RunnerTake => Reply::ok(&decisions::runner_take(&state.db, &agent).await?),
+        NodeRequest::RunnerTake => {
+            let mut all = vec![];
+            for agent in &agents {
+                all.extend(decisions::runner_take(&state.db, agent).await?);
+            }
+            Reply::ok(&all)
+        }
         NodeRequest::RunnerSort { claims, handoffs } => {
-            let held = decisions::runner_sort(&state.db, &agent, &claims, &handoffs).await?;
+            let mut held = vec![];
+            for agent in &agents {
+                held.extend(decisions::runner_sort(&state.db, agent, &claims, &handoffs).await?);
+            }
             state.changed(Changed::Cards);
             Reply::ok(&held)
         }
         NodeRequest::ActionStart { action_id } => {
+            let agent = poster_of(state, &agents, action_id).await?;
             let a = decisions::start(&state.db, &agent, RunBy::Runner, action_id).await?;
             state.changed(Changed::Cards);
             Reply::ok(&a)
@@ -196,9 +207,22 @@ async fn answer_inner(state: &AppState, node: &str, request: NodeRequest) -> App
             if reports.is_empty() || reports.len() > 500 {
                 return Err(AppError::BadRequest("report 1 to 500 actions at a time".into()));
             }
-            let r = decisions::report(&state.db, &agent, RunBy::Runner, &reports).await?;
+            // In the order given, each as the agent whose card it's on.
+            let mut out = Vec::with_capacity(reports.len());
+            for r in reports {
+                let agent = match poster_of(state, &agents, r.action_id).await {
+                    Ok(a) => a,
+                    Err(_) => agents[0].clone(),
+                };
+                out.extend(decisions::report(&state.db, &agent, RunBy::Runner, std::slice::from_ref(&r)).await?);
+            }
             state.changed(Changed::Cards);
-            Reply::ok(&r)
+            Reply::ok(&out)
+        }
+        NodeRequest::CloseSession { session } => {
+            let target = quietdeck_types::directory::SessionTarget { session };
+            crate::control::close(state, &caller, target).await?;
+            Reply::ok(&())
         }
         NodeRequest::Relay { to, kind, body } => {
             match crate::relay::send(&state.db, &state.hub, &to, kind, body).await {
@@ -229,6 +253,22 @@ async fn answer_inner(state: &AppState, node: &str, request: NodeRequest) -> App
     })
 }
 
+/// The agent whose card an action is on, when the runner works for it.
+async fn poster_of(state: &AppState, agents: &[SessionRef], action_id: i64) -> AppResult<SessionRef> {
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT c.posted_node, c.posted_tab FROM actions a JOIN cards c ON c.id = a.card_id WHERE a.id = ?",
+    )
+    .bind(action_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some((node, tab)) = row else { return Err(AppError::NotFound(format!("no action {action_id}"))) };
+    agents.iter().find(|a| a.node == node && a.tab == tab).cloned().ok_or_else(|| {
+        AppError::Forbidden(format!(
+            "action {action_id} is on a card {tab}@{node} posted, and this runner doesn't work for it"
+        ))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,15 +285,21 @@ mod tests {
             .execute(&state.db)
             .await
             .unwrap();
-        let info = RunnerInfo { eligible: vec![ActionType::Archive], agent_tab: tab.into(), accounts: vec![] };
+        let info = RunnerInfo {
+            eligible: vec![ActionType::Archive],
+            agent_tab: tab.into(),
+            accounts: vec![],
+            agent_tabs: vec![],
+        };
         nodes::hello(&state.db, node, "test", Some(&info)).await.unwrap();
     }
 
     async fn approved_card(state: &AppState, tab: &str) -> i64 {
         let me = SessionRef { node: "server".into(), tab: tab.into(), session_id: None };
-        let input: CardInput = serde_json::from_value(json!({"account": "personal", "thread_key": "t1",
+        let thread = if tab == "triage" { "t1".to_string() } else { format!("t-{tab}") };
+        let input: CardInput = serde_json::from_value(json!({"account": "personal", "thread_key": thread,
             "subject": "Invoice", "summary": "s", "section": "actions", "reason": "r",
-            "actions": [{"type": "archive", "account": "personal", "thread_id": "t1"}]}))
+            "actions": [{"type": "archive", "account": "personal", "thread_id": thread}]}))
         .unwrap();
         let card = crate::store::cards::add(&state.db, &me, &input, CardState::Open, None).await.unwrap().card;
         let d = CardDecision {
@@ -270,6 +316,57 @@ mod tests {
         card.id
     }
 
+    /// A runner shared by two agents takes both agents' approved cards, and acts on each card as the agent that posted
+    /// it; a third agent's card stays out of its reach.
+    #[tokio::test]
+    async fn a_shared_runner_works_for_every_agent_in_its_list() {
+        let state = AppState::for_tests().await;
+        sqlx::query("INSERT INTO nodes (name, token_hash, created_at) VALUES ('runner-box', 'h', 0)")
+            .execute(&state.db)
+            .await
+            .unwrap();
+        let info = RunnerInfo {
+            eligible: vec![ActionType::Archive],
+            agent_tab: "triage@server".into(),
+            accounts: vec![],
+            agent_tabs: vec!["triage@server".into(), "overseer@server".into()],
+        };
+        nodes::hello(&state.db, "runner-box", "test", Some(&info)).await.unwrap();
+        let triage = approved_card(&state, "triage").await;
+        let overseer = approved_card(&state, "overseer").await;
+        let other = approved_card(&state, "someone else").await;
+        assert_eq!(nodes::runner_for_agent(&state.db, "server", "overseer").await.unwrap().unwrap().0, "runner-box");
+        assert!(nodes::runner_for_agent(&state.db, "server", "someone else").await.unwrap().is_none());
+        let taken: Vec<Released> = match answer(&state, "runner-box", NodeRequest::RunnerTake).await {
+            Reply::Ok { value } => serde_json::from_value(value).unwrap(),
+            Reply::Err { error } => panic!("{error}"),
+        };
+        let mut cards: Vec<i64> = taken.iter().map(|r| r.card.id).collect();
+        cards.sort_unstable();
+        assert_eq!(cards, vec![triage, overseer], "not c_{other}");
+        let claims: Vec<i64> = taken.iter().map(|r| r.decision.id).collect();
+        let held: Vec<i64> =
+            match answer(&state, "runner-box", NodeRequest::RunnerSort { claims: claims.clone(), handoffs: vec![] })
+                .await
+            {
+                Reply::Ok { value } => serde_json::from_value(value).unwrap(),
+                Reply::Err { error } => panic!("{error}"),
+            };
+        assert_eq!(held.len(), 2);
+        let action = taken.iter().find(|r| r.card.id == overseer).unwrap().actions[0].id;
+        match answer(&state, "runner-box", NodeRequest::ActionStart { action_id: action }).await {
+            Reply::Ok { .. } => {}
+            Reply::Err { error } => panic!("{error}"),
+        }
+        let report = ActionReport { action_id: action, result: ActionResult::Done { outcome: None } };
+        match answer(&state, "runner-box", NodeRequest::ActionsReport { reports: vec![report] }).await {
+            Reply::Ok { .. } => {}
+            Reply::Err { error } => panic!("{error}"),
+        }
+        let card = crate::store::cards::get(&state.db, overseer).await.unwrap().unwrap();
+        assert_eq!(card.state, CardState::Done);
+    }
+
     /// On a drafts-only solo deck, an archive card is refused when posted with a hint, and the same card with no
     /// actions is taken and closes once approved, so nothing approved fails.
     #[tokio::test]
@@ -280,7 +377,12 @@ mod tests {
             .execute(&state.db)
             .await
             .unwrap();
-        let info = RunnerInfo { eligible: vec![ActionType::Draft], agent_tab: "email triage".into(), accounts: vec![] };
+        let info = RunnerInfo {
+            eligible: vec![ActionType::Draft],
+            agent_tab: "email triage".into(),
+            accounts: vec![],
+            agent_tabs: vec![],
+        };
         nodes::hello(&state.db, "solo", "test", Some(&info)).await.unwrap();
         let me = SessionRef { node: "solo".into(), tab: "email triage".into(), session_id: None };
         let with_archive: CardInput = serde_json::from_value(json!({"account": "personal", "thread_key": "t1",
@@ -364,7 +466,7 @@ mod tests {
 
     #[test]
     fn the_agent_is_on_the_runners_node_unless_named() {
-        let info = |t: &str| RunnerInfo { eligible: vec![], agent_tab: t.into(), accounts: vec![] };
+        let info = |t: &str| RunnerInfo { eligible: vec![], agent_tab: t.into(), accounts: vec![], agent_tabs: vec![] };
         assert_eq!(info("triage").agent("n1"), ("n1".to_string(), "triage".to_string()));
         assert_eq!(info("email triage@n2").agent("n1"), ("n2".to_string(), "email triage".to_string()));
         assert_eq!(info("odd@").agent("n1"), ("n1".to_string(), "odd@".to_string()));

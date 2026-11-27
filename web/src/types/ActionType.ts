@@ -3,4 +3,4 @@
 /**
  * An action's type alone: the `type` tag, the names `runner.eligible` and project policies use.
  */
-export type ActionType = "archive" | "mark_read" | "label" | "forward" | "draft" | "reply" | "story" | "task" | "calendar" | "resume" | "new_session" | "lease" | "watch";
+export type ActionType = "archive" | "mark_read" | "label" | "forward" | "draft" | "reply" | "story" | "task" | "calendar" | "resume" | "new_session" | "lease" | "watch" | "session";

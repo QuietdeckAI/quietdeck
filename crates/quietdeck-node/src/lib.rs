@@ -138,24 +138,37 @@ pub async fn run(config: NodeConfig, opts: RunOptions) -> anyhow::Result<()> {
             Some(e) => Some((e.clone(), runner::executor_token(e)?)),
             None => None,
         };
-        let r = Arc::new(runner::Runner::new(
-            cfg.clone(),
-            Arc::new(runner::LinkDeck(node.clone())),
-            Arc::new(match &cfg.gog {
-                Some(g) => runner::ConfiguredTools::new(executor).with_gog(g),
-                None => runner::ConfiguredTools::new(executor),
-            }),
-            match &cfg.agent.headless {
-                Some(h) => Arc::new(runner::HeadlessAgent::spawn(
-                    h.clone(),
-                    cfg.agent.tab.clone(),
-                    state.clone(),
-                    node.headless_turns.clone(),
-                )) as Arc<dyn runner::AgentInbox>,
-                None => Arc::new(runner::LocalAgent { node: node.clone(), tab: cfg.agent.tab.clone() }),
-            },
-            state.clone(),
-        ));
+        let r = Arc::new(
+            runner::Runner::new(
+                cfg.clone(),
+                Arc::new(runner::LinkDeck(node.clone())),
+                Arc::new(match &cfg.gog {
+                    Some(g) => runner::ConfiguredTools::new(executor).with_gog(g),
+                    None => runner::ConfiguredTools::new(executor),
+                }),
+                match &cfg.agent.headless {
+                    Some(h) => Arc::new(runner::HeadlessAgent::spawn(
+                        h.clone(),
+                        cfg.agent.tab.clone(),
+                        state.clone(),
+                        node.headless_turns.clone(),
+                    )) as Arc<dyn runner::AgentInbox>,
+                    None => Arc::new(runner::LocalAgent { node: node.clone(), tab: cfg.agent.tab.clone() }),
+                },
+                state.clone(),
+            )
+            .with_others(
+                cfg.agent
+                    .tabs
+                    .iter()
+                    .map(|t| {
+                        let inbox: Arc<dyn runner::AgentInbox> =
+                            Arc::new(runner::LocalAgent { node: node.clone(), tab: t.clone() });
+                        (t.clone(), inbox)
+                    })
+                    .collect(),
+            ),
+        );
         // A headless agent has no tab for the orchestrator to report: the node lists it itself, so the deck can reach it.
         if let Some(session) = r.headless_session() {
             node.sessions.lock().await.push(session);

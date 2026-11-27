@@ -26,6 +26,7 @@ export const ACTION_WORD: Record<ActionType, string> = {
   new_session: "New session",
   lease: "Lease",
   watch: "Watch",
+  session: "Session",
 };
 
 const TARGETED: ActionType[] = ["forward", "resume", "new_session"];
