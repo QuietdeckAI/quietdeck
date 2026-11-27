@@ -61,6 +61,9 @@ pub struct MailState {
     /// the next wake-up carries it.
     #[serde(default)]
     pub mail_text: Vec<String>,
+    /// New mail that didn't fit in a wake-up, oldest first: it goes in the next ones, a full wake-up at a time.
+    #[serde(default)]
+    pub mail_backlog: Vec<Waiting>,
     /// The last complete inbox listing per account (`mail_watch.inbox`), with the threads that arrived since. Kept in
     /// memory only: after a restart the first listing is the new baseline.
     #[serde(skip)]
@@ -197,6 +200,12 @@ impl MailState {
                 quietdeck_types::relay::UNTRUSTED_LINE,
                 self.mail_text.join("\n\n")
             ));
+            if !self.mail_backlog.is_empty() {
+                text.push_str(&format!(
+                    "\n\n{} more new emails didn't fit in this message: they come in the next ones.",
+                    self.mail_backlog.len()
+                ));
+            }
         }
         if !self.handled.is_empty() {
             let parts: Vec<String> = self
@@ -261,6 +270,14 @@ fn history_id(v: &Value) -> Option<String> {
 /// Gmail answers an expired history ID with HTTP 404.
 fn expired(error: &str) -> bool {
     error.contains("404")
+}
+
+/// A new message waiting for a wake-up with room for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Waiting {
+    pub account: String,
+    pub id: String,
+    pub thread_id: Option<String>,
 }
 
 /// A message the history says arrived in the inbox or was sent.

@@ -690,6 +690,21 @@ impl Runner {
     pub async fn check_mail(&self) {
         let Some(watch) = &self.cfg.mail_watch else { return };
         let mut state = self.mail.lock().await;
+        // Mail that didn't fit in the last wake-up goes in this one, once that one has gone.
+        if watch.message_text.is_some() && state.mail_text.is_empty() && !state.mail_backlog.is_empty() {
+            let n = state.mail_backlog.len().min(MAIL_TEXT_MAX);
+            let batch: Vec<mail::Waiting> = state.mail_backlog.drain(..n).collect();
+            for w in batch {
+                let m = mail::NewMail {
+                    account: w.account.clone(),
+                    id: w.id,
+                    thread_id: w.thread_id,
+                    labels: vec!["INBOX".into()],
+                };
+                state.mail_text.push(self.mail_block(watch, &m).await);
+                state.add(&w.account, Some(1));
+            }
+        }
         let checked = mail::check(&self.cfg, watch, self.tools.as_ref(), &mut state).await;
         let new = checked.new;
         self.threads_moved(&new, checked.left).await;
@@ -704,18 +719,17 @@ impl Runner {
                     if is_sent && !in_inbox {
                         // The person's own mail: not new mail to triage, and no wake-up of its own (Nathan, 25 Nov).
                         state.sent.push(sent_line(&self.cfg.account_label(&m.account), &f, meta.as_ref()));
+                    } else if watch.message_text.is_some() && state.mail_text.len() >= MAIL_TEXT_MAX {
+                        // A full wake-up already: this one waits for a later one, text and all.
+                        state.mail_backlog.push(mail::Waiting {
+                            account: m.account.clone(),
+                            id: m.id.clone(),
+                            thread_id: m.thread_id.clone(),
+                        });
                     } else {
                         facts.push((m.account.clone(), f));
                         if watch.message_text.is_some() {
-                            if state.mail_text.len() < MAIL_TEXT_MAX {
-                                state.mail_text.push(self.mail_block(watch, m).await);
-                            } else if state.mail_text.len() == MAIL_TEXT_MAX {
-                                state.mail_text.push(
-                                    "<more>Further new mail isn't included here, to keep this message short: it \
-                                     comes in later wake-ups once these are triaged.</more>"
-                                        .into(),
-                                );
-                            }
+                            state.mail_text.push(self.mail_block(watch, m).await);
                         }
                     }
                     if is_sent && let Some(meta) = meta {

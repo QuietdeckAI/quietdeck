@@ -742,6 +742,51 @@ async fn the_wakeup_carries_the_new_mail_when_the_runner_can_read_it() {
     assert!(second.contains("message=\"m2\"") && !second.contains("message=\"m1\""), "{second}");
 }
 
+/// More new mail than one wake-up carries: the rest waits, text and all, and comes in the next one.
+#[tokio::test]
+async fn mail_that_doesnt_fit_in_one_wakeup_comes_in_the_next() {
+    let head = Arc::new(StdMutex::new(100u64));
+    let added: Added = Arc::default();
+    let (url, _) = executor(feed(head.clone(), added.clone())).await;
+    let dir = tempfile::tempdir().unwrap();
+    let agent = Arc::new(FakeAgent::default());
+    let mut cfg = config(&url, "");
+    cfg.mail_watch.as_mut().unwrap().message_text = Some(super::config::ToolSpec {
+        path: None,
+        command: Some(vec![
+            "sh".into(),
+            "-c".into(),
+            r#"cat >/dev/null; printf '{"subject":"Hi","body":"Hello"}'"#.into(),
+        ]),
+        gog: None,
+        input: serde_json::json!({"id": "${message_id}"}),
+    });
+    let tools = ConfiguredTools::new(Some((cfg.executor.clone().unwrap(), "t".into())));
+    let runner =
+        Runner::new(cfg, Arc::new(FakeDeck::default()), Arc::new(tools), agent.clone(), dir.path().to_path_buf());
+    runner.check_mail().await;
+    {
+        let ids: Vec<&'static str> = (1..=27).map(|i| &*Box::leak(format!("m{i:02}").into_boxed_str())).collect();
+        let mut a = added.lock().unwrap();
+        for (n, id) in ids.into_iter().enumerate() {
+            a.push((101 + n as u64, id, "INBOX"));
+        }
+    }
+    *head.lock().unwrap() = 127;
+    runner.check_mail().await;
+    let first = agent.told.lock().unwrap()[0].1.clone();
+    assert!(first.starts_with("New mail: 25 Personal."), "{}", &first[..80]);
+    assert_eq!(first.matches("<email ").count(), 25);
+    assert!(first.contains("2 more new emails didn't fit in this message"), "the rest is named");
+
+    runner.check_mail().await;
+    let told = agent.told.lock().unwrap().clone();
+    assert_eq!(told.len(), 2, "the rest wakes the agent again");
+    assert!(told[1].1.starts_with("New mail: 2 Personal."), "{}", &told[1].1[..60]);
+    assert!(told[1].1.contains("message=\"m26\"") && told[1].1.contains("message=\"m27\""));
+    assert!(!told[1].1.contains("didn't fit"));
+}
+
 #[tokio::test]
 async fn while_the_person_reads_only_what_the_deck_lets_through_wakes_the_agent() {
     let head = Arc::new(StdMutex::new(100u64));
