@@ -38,6 +38,11 @@ from the handlers by aide, so every route must be visible to it:
 - Path parameters are named structs: `Path(Id { id }): Path<Id>` (also `TextId`, `NodeName`). A bare `Path<i64>`
   drops the parameter from the spec. Query structs and body types derive `JsonSchema`.
 - Within v1, change the API only additively (`api/README.md`); raise `API_VERSION`'s minor version when you add.
+- Older nodes and CLIs stay in the field for days, and some types they read refuse unknown fields
+  (`#[serde(deny_unknown_fields)]`: `SenderAuth`, `CardInput`, actions). A new field the deck sends back on one of
+  them breaks every older CLI at once. On 28 November 2026 `sender_auth.spf_pass` stopped triage posting cards until
+  its node was updated. Make such a field `Option` with `skip_serializing_if = "Option::is_none"`, and roll out a
+  node-bin before anything sets it.
 - Run `scripts/on-dev test`, which rewrites `api/openapi.json`, and commit it: CI fails when it differs from the code.
   Then `pnpm install && pnpm generate` in `clients/typescript` and commit `src/schema.ts` (and `API_VERSION` in
   `src/index.ts` when the spec's version moved): CI checks that too.
