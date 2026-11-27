@@ -142,6 +142,12 @@ metadata:
     notifications.argoproj.io/subscribe.on-sync-failed.quietdeck: ""
 ```
 
+### GitHub
+
+For CI results on a branch, Fleetlayer's GitHub endpoint reads GitHub's payload and routes each run to the session
+subscribed to that `owner/repo@branch`: see Fleetlayer's [CI results guide](https://fleetlayer.ai/guides/ci-results/),
+which also covers the email route through a triage agent.
+
 ### Anything else
 
 A `generic` endpoint takes any JSON or text. The event's line is the first of these fields that has a value: `title`,
