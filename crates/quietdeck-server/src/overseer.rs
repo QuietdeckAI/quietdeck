@@ -1,6 +1,6 @@
 //! The overseer watch: the deck wakes the agent that writes a Work document when one of the person's sessions needs a
 //! look. A session that went idle (and stayed idle two minutes) or is blocked on a prompt is named once per change (a
-//! new status time: idle and done at the same moment are one change), a
+//! new status time, and for an idle session, work since it was last named: done to idle isn't new work), a
 //! few at a time in one message, and a session is named at most once every five minutes. A session that went idle more
 //! than six hours ago (or got blocked more than three days ago) stops counting, so a new watch doesn't wake its agent
 //! for everything that was already there. Left out: the overseer itself, the writers of other documents, the agents runners work for (the
@@ -61,6 +61,13 @@ pub async fn tick(state: &AppState, now: i64) -> anyhow::Result<()> {
     .bind(now)
     .execute(&state.db)
     .await?;
+    // Seen working since it was named: its next idle is new work.
+    sqlx::query(
+        "UPDATE overseer_told SET worked = 1 WHERE worked = 0 AND EXISTS (SELECT 1 FROM sessions s \
+         WHERE s.node = overseer_told.node AND s.session_id = overseer_told.session_id AND s.status = 'working')",
+    )
+    .execute(&state.db)
+    .await?;
     let writers: Vec<(String, String)> = sqlx::query_as(
         "SELECT writer_node, writer_tab FROM documents WHERE kind = 'work' AND removed_at IS NULL \
          AND writer_node IS NOT NULL AND writer_tab IS NOT NULL",
@@ -88,7 +95,7 @@ pub async fn tick(state: &AppState, now: i64) -> anyhow::Result<()> {
                     sqlx::query(
                         "INSERT INTO overseer_told (node, session_id, status, status_changed_at, told_at) \
                          VALUES (?, ?, ?, ?, ?) ON CONFLICT (node, session_id) DO UPDATE SET status = excluded.status, \
-                         status_changed_at = excluded.status_changed_at, told_at = excluded.told_at",
+                         status_changed_at = excluded.status_changed_at, told_at = excluded.told_at, worked = 0",
                     )
                     .bind(&c.node)
                     .bind(&c.session_id)
@@ -141,7 +148,8 @@ pub async fn changes_for(state: &AppState, node: &str, tab: &str, now: i64) -> a
            AND (s.status = 'blocked' OR NOT EXISTS (SELECT 1 FROM session_marks m WHERE m.node = s.node \
                 AND m.tab = s.tab AND (m.until IS NULL OR m.until > ?1))) \
            AND NOT EXISTS (SELECT 1 FROM overseer_told t WHERE t.node = s.node AND t.session_id = s.session_id \
-                AND (t.status_changed_at = s.status_changed_at OR t.told_at > ?1 - ?6)) \
+                AND (t.status_changed_at = s.status_changed_at OR t.told_at > ?1 - ?6 \
+                     OR (s.status IN ('idle', 'done') AND t.status IN ('idle', 'done') AND t.worked = 0))) \
          ORDER BY s.status = 'blocked' DESC, s.status_changed_at",
     )
     .bind(now)
@@ -306,7 +314,7 @@ mod tests {
         assert!(message(&first, now).contains("`onboarding@laptop` is blocked on a prompt"));
         // Told: not again for the same change.
         for c in &first {
-            sqlx::query("INSERT INTO overseer_told VALUES (?, ?, ?, ?, ?)")
+            sqlx::query("INSERT INTO overseer_told (node, session_id, status, status_changed_at, told_at) VALUES (?, ?, ?, ?, ?)")
                 .bind(&c.node)
                 .bind(&c.session_id)
                 .bind(&c.status)
@@ -320,8 +328,13 @@ mod tests {
         // idle to done at the same moment (herdr reports both) isn't a new change.
         sqlx::query("UPDATE sessions SET status = 'done' WHERE session_id = 's1'").execute(&state.db).await.unwrap();
         assert!(changes_for(&state, "laptop", "overseer", now).await.unwrap().is_empty());
-        // search worked again and went idle: a new change.
+        // done, then idle a few minutes later (seen in herdr): no new work, not named.
         session(&state, "s1", "search", "idle", now - 3 * 60_000).await;
+        assert!(changes_for(&state, "laptop", "overseer", now).await.unwrap().is_empty());
+        // It works again (a tick sees it), then goes idle: a new change.
+        session(&state, "s1", "search", "working", now - 2 * 60_000).await;
+        sqlx::query("UPDATE overseer_told SET worked = 1 WHERE session_id = 's1'").execute(&state.db).await.unwrap();
+        session(&state, "s1", "search", "idle", now - 3 * 60_000 + 1).await;
         assert_eq!(tabs(changes_for(&state, "laptop", "overseer", now).await.unwrap()), vec!["search"]);
     }
 
