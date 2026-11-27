@@ -99,6 +99,7 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
             (None, None) => None,
         },
         stopping: stop_rx.clone(),
+        runner_health: Arc::default(),
     };
     if env.dev_trust_local {
         tracing::warn!("QUIETDECK_DEV_TRUST_LOCAL is on: every browser request counts as the signed-in owner");

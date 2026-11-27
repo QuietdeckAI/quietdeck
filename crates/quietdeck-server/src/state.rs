@@ -32,7 +32,11 @@ pub struct AppState {
     pub fleetlayer: Option<Arc<crate::fleetlayer::Client>>,
     /// True once the deck is stopping (SIGTERM): long-lived connections close.
     pub stopping: tokio::sync::watch::Receiver<bool>,
+    /// Each node's last [`quietdeck_types::node::RunnerHealth`], and when it came. In memory only.
+    pub runner_health: Arc<std::sync::Mutex<RunnerHealthByNode>>,
 }
+
+pub type RunnerHealthByNode = std::collections::HashMap<String, (quietdeck_types::node::RunnerHealth, jiff::Timestamp)>;
 
 /// Resolves once the deck is stopping. A sender that's gone (nothing will ever say stop) never resolves.
 pub async fn until_stopping(mut rx: tokio::sync::watch::Receiver<bool>) {
@@ -66,6 +70,7 @@ impl AppState {
             hooks_public_url: Some("https://hooks.example.com".into()),
             fleetlayer: None,
             stopping: tokio::sync::watch::channel(false).1,
+            runner_health: Arc::default(),
         }
     }
 }

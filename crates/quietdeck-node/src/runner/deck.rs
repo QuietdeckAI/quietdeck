@@ -57,12 +57,25 @@ pub trait DeckApi: Send + Sync {
     ) -> Result<Vec<quietdeck_types::mail::LeftCard>, String> {
         Ok(vec![])
     }
+    /// The runner's health, after each mail check. A deck that doesn't take it is never sent it.
+    async fn health(&self, _health: quietdeck_types::node::RunnerHealth) {}
 }
 
 #[async_trait]
 pub trait AgentInbox: Send + Sync {
     /// Put a message in front of the agent now, or fail: nothing is queued.
     async fn tell(&self, kind: DeliveryKind, body: String) -> Result<(), String>;
+    /// How the agent's last turns went, when the runner runs them itself (headless): (last good turn, last failure
+    /// since then with its error). None for an agent in a tab.
+    fn turns(&self) -> Option<AgentTurns> {
+        None
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AgentTurns {
+    pub ok_at: Option<jiff::Timestamp>,
+    pub failed: Option<(jiff::Timestamp, String)>,
 }
 
 /// The deck, through this node's connection.
@@ -121,6 +134,11 @@ impl DeckApi for LinkDeck {
         back: Vec<quietdeck_types::mail::LeftThread>,
     ) -> Result<Vec<quietdeck_types::mail::LeftCard>, String> {
         self.ask(NodeRequest::ThreadsLeftInbox { left, back }, ASK).await
+    }
+    async fn health(&self, health: quietdeck_types::node::RunnerHealth) {
+        if self.0.link.deck_supports(quietdeck_types::node::FEATURE_RUNNER_HEALTH) {
+            self.0.link.push(quietdeck_types::node::NodeFrame::RunnerHealth { health }).await;
+        }
     }
 }
 

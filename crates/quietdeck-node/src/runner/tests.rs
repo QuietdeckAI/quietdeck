@@ -153,10 +153,14 @@ struct FakeDeck {
     starts: StdMutex<bool>,
     /// How many relays answer "no session named" before one goes through.
     relay_misses: StdMutex<u32>,
+    health: StdMutex<Vec<quietdeck_types::node::RunnerHealth>>,
 }
 
 #[async_trait]
 impl DeckApi for FakeDeck {
+    async fn health(&self, health: quietdeck_types::node::RunnerHealth) {
+        self.health.lock().unwrap().push(health);
+    }
     async fn hold_check(&self, items: Vec<ItemFacts>) -> Result<Vec<HoldVerdict>, String> {
         let lets = self.lets.lock().unwrap();
         Ok(items
@@ -652,6 +656,39 @@ async fn the_mail_watch_wakes_for_each_new_batch_and_resumes_after_a_restart() {
     assert_eq!(agent.told.lock().unwrap().len(), 2);
     let paths: HashSet<String> = calls.lock().unwrap().iter().map(|(p, _)| p.clone()).collect();
     assert_eq!(paths, HashSet::from([PROFILE.to_string(), HISTORY.to_string()]));
+}
+
+/// An agent whose turns the runner runs, as a headless one.
+struct TurningAgent(AgentTurns);
+
+#[async_trait]
+impl AgentInbox for TurningAgent {
+    async fn tell(&self, _: DeliveryKind, _: String) -> Result<(), String> {
+        Ok(())
+    }
+    fn turns(&self) -> Option<AgentTurns> {
+        Some(self.0.clone())
+    }
+}
+
+#[tokio::test]
+async fn each_check_tells_the_deck_how_the_mail_watch_and_the_agent_are_doing() {
+    let head = Arc::new(StdMutex::new(100u64));
+    let (url, _) = executor(feed(head.clone(), Arc::default())).await;
+    let dir = tempfile::tempdir().unwrap();
+    let deck = Arc::new(FakeDeck::default());
+    let failed_at = jiff::Timestamp::now();
+    let agent = Arc::new(TurningAgent(AgentTurns { ok_at: None, failed: Some((failed_at, "claude exited".into())) }));
+    let cfg = config(&url, "");
+    let tools = ConfiguredTools::new(Some((cfg.executor.clone().unwrap(), "t".into())));
+    let runner = Runner::new(cfg, deck.clone(), Arc::new(tools), agent, dir.path().to_path_buf());
+    runner.check_mail().await;
+    runner.check_mail().await;
+    let h = deck.health.lock().unwrap().last().cloned().unwrap();
+    assert!(h.mail_ok_at.is_some() && h.mail_ok_at == h.mail_checked_at, "{h:?}");
+    assert_eq!(h.agent_failed_at, Some(failed_at));
+    assert_eq!(h.agent_error.as_deref(), Some("claude exited"));
+    assert_eq!(deck.health.lock().unwrap().len(), 2, "after every check");
 }
 
 #[tokio::test]

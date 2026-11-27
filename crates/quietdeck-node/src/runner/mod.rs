@@ -37,7 +37,7 @@ use tokio::sync::{Mutex, mpsc};
 use tokio::time::Instant;
 
 pub use config::RunnerConfig;
-pub use deck::{AgentInbox, DeckApi, LinkDeck, LocalAgent};
+pub use deck::{AgentInbox, AgentTurns, DeckApi, LinkDeck, LocalAgent};
 pub use headless::HeadlessAgent;
 use mail::MailState;
 pub use tools::{ConfiguredTools, Tools};
@@ -721,6 +721,16 @@ impl Runner {
         }
         self.wake_if_due(&mut state).await;
         state.save(&self.mail_state_path);
+        let turns = self.agent.turns();
+        let health = quietdeck_types::node::RunnerHealth {
+            mail_ok_at: state.ok_at,
+            mail_checked_at: state.checked_at,
+            agent_ok_at: turns.as_ref().and_then(|t| t.ok_at),
+            agent_failed_at: turns.as_ref().and_then(|t| t.failed.as_ref().map(|f| f.0)),
+            agent_error: turns.and_then(|t| t.failed.map(|f| f.1)),
+        };
+        drop(state);
+        self.deck.health(health).await;
     }
 
     /// Threads the person archived or deleted in Gmail themselves, and threads that came back with new mail: each

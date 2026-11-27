@@ -19,7 +19,7 @@ use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 
-use super::deck::AgentInbox;
+use super::deck::{AgentInbox, AgentTurns};
 
 /// Messages waiting for the next turn. More than this and the runner hears the agent is behind.
 const QUEUE: usize = 32;
@@ -88,6 +88,7 @@ struct SavedSession {
 pub struct HeadlessAgent {
     tab: String,
     tx: mpsc::Sender<String>,
+    turns: Arc<std::sync::Mutex<AgentTurns>>,
 }
 
 impl HeadlessAgent {
@@ -107,8 +108,9 @@ impl HeadlessAgent {
             tab: tab.clone(),
             registry,
         };
-        tokio::spawn(turns.run(rx));
-        HeadlessAgent { tab, tx }
+        let status = Arc::new(std::sync::Mutex::new(AgentTurns::default()));
+        tokio::spawn(turns.run(rx, status.clone()));
+        HeadlessAgent { tab, tx, turns: status }
     }
 }
 
@@ -126,6 +128,10 @@ impl AgentInbox for HeadlessAgent {
             mpsc::error::TrySendError::Full(_) => format!("{} is {QUEUE} messages behind", self.tab),
             mpsc::error::TrySendError::Closed(_) => format!("{}'s turn loop has stopped", self.tab),
         })
+    }
+
+    fn turns(&self) -> Option<AgentTurns> {
+        Some(self.turns.lock().expect("agent turns").clone())
     }
 }
 
@@ -171,16 +177,24 @@ struct TurnResult {
 }
 
 impl Turns {
-    async fn run(self, mut rx: mpsc::Receiver<String>) {
+    async fn run(self, mut rx: mpsc::Receiver<String>, status: Arc<std::sync::Mutex<AgentTurns>>) {
         while let Some(first) = rx.recv().await {
             let mut batch = vec![first];
             while let Ok(more) = rx.try_recv() {
                 batch.push(more);
             }
             let prompt = batch.join("\n\n");
-            match self.turn(&prompt).await {
-                Ok(()) => {}
-                Err(e) => tracing::warn!(error = %e, messages = batch.len(), "the headless agent's turn failed"),
+            let result = self.turn(&prompt).await;
+            let mut st = status.lock().expect("agent turns");
+            match result {
+                Ok(()) => {
+                    st.ok_at = Some(jiff::Timestamp::now());
+                    st.failed = None;
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, messages = batch.len(), "the headless agent's turn failed");
+                    st.failed = Some((jiff::Timestamp::now(), e));
+                }
             }
         }
     }

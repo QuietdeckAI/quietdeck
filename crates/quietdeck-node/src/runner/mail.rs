@@ -33,6 +33,9 @@ pub struct MailState {
     pub since: BTreeMap<String, Timestamp>,
     #[serde(default)]
     pub checked_at: Option<Timestamp>,
+    /// The last check in which every account was read.
+    #[serde(default)]
+    pub ok_at: Option<Timestamp>,
     #[serde(default)]
     pub woke_at: Option<Timestamp>,
     /// New chat messages since the last wake-up (Matrix and the like), per room as "source\troom name". The deck
@@ -269,7 +272,9 @@ pub struct Checked {
 pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tools, state: &mut MailState) -> Checked {
     let mut found = vec![];
     let mut left_found: Vec<(String, String)> = vec![];
-    state.checked_at = Some(Timestamp::now());
+    let started = Timestamp::now();
+    state.checked_at = Some(started);
+    let mut all_read = true;
     for (id, account) in &cfg.accounts {
         let acct = json!({"id": id, "address": account.address, "label": cfg.account_label(id)});
         let mut acct = acct;
@@ -283,7 +288,10 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
                     state.history.insert(id.clone(), h);
                     state.since.insert(id.clone(), Timestamp::now());
                 }
-                Err(e) => tracing::warn!(account = %id, error = %e, "reading the mailbox's history ID"),
+                Err(e) => {
+                    all_read = false;
+                    tracing::warn!(account = %id, error = %e, "reading the mailbox's history ID");
+                }
             }
             continue;
         };
@@ -371,6 +379,7 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
             }
         }
         if failed {
+            all_read = false;
             continue;
         }
         if latest != start {
@@ -394,6 +403,9 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
         }
         found.extend(seen);
         left_found.extend(left);
+    }
+    if all_read {
+        state.ok_at = Some(started);
     }
     Checked { new: found, left: left_found }
 }
@@ -468,6 +480,25 @@ mod tests {
             let op = spec.gog.clone().unwrap_or_default();
             self.0.lock().unwrap().get_mut(&op).and_then(|q| q.pop_front()).unwrap_or_else(|| Err(format!("no {op}")))
         }
+    }
+
+    #[tokio::test]
+    async fn a_check_counts_as_good_only_when_every_account_was_read() {
+        let mut cfg: RunnerConfig =
+            yaml_serde::from_str("agent: { tab: t }\nmail: gog\naccounts:\n  personal: { address: me@example.com }\n")
+                .unwrap();
+        cfg.apply_presets();
+        let watch = cfg.mail_watch.clone().unwrap();
+        let mut q: BTreeMap<String, std::collections::VecDeque<Result<Value, String>>> = BTreeMap::new();
+        q.insert("history".into(), [Err("gog isn't signed in".into()), Ok(json!({"historyId": "2"}))].into());
+        q.insert("inbox".into(), [Ok(json!({"threads": []}))].into());
+        let tools = Scripted(std::sync::Mutex::new(q));
+        let mut state = MailState::default();
+        state.history.insert("personal".into(), "1".into());
+        check(&cfg, &watch, &tools, &mut state).await;
+        assert!(state.checked_at.is_some() && state.ok_at.is_none(), "a failed account isn't a good check");
+        check(&cfg, &watch, &tools, &mut state).await;
+        assert_eq!(state.ok_at, state.checked_at);
     }
 
     #[tokio::test]
