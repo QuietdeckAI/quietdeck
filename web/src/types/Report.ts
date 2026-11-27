@@ -25,4 +25,8 @@ changes: Array<ReportChange>,
  * The agent said nothing on it waits for the person any more (`quietdeck report done`): the Inbox shows "All
  * done." until the agent edits it or starts the next one.
  */
-finished: boolean, };
+finished: boolean, 
+/**
+ * The document it's on (`GET /documents`); 1 is the Inbox.
+ */
+document_id: number, };

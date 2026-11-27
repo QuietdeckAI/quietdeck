@@ -45,6 +45,69 @@ pub struct Report {
     /// done." until the agent edits it or starts the next one.
     #[serde(default)]
     pub finished: bool,
+    /// The document it's on (`GET /documents`); 1 is the Inbox.
+    #[serde(default = "inbox_id")]
+    pub document_id: i64,
+}
+
+fn inbox_id() -> i64 {
+    crate::document::INBOX_ID
+}
+
+/// A Work document's FYI part without its items: the lines under its `# FYI` (or `## FYI`) heading that are list items,
+/// with their continuation lines, up to the next heading of that level or higher, or a `---` rule. The heading and
+/// any other text stay. None when there's nothing to clear.
+pub fn fyi_cleared(markdown: &str) -> Option<String> {
+    let mut out: Vec<&str> = Vec::new();
+    let mut level: Option<usize> = None;
+    let mut in_item = false;
+    let mut removed = false;
+    for line in markdown.split('\n') {
+        let trimmed = line.trim_start();
+        let hashes = trimmed.chars().take_while(|c| *c == '#').count();
+        let heading = hashes > 0 && trimmed[hashes..].starts_with(' ');
+        if heading {
+            let title = trimmed[hashes..].trim().trim_end_matches(':');
+            if title.eq_ignore_ascii_case("fyi") || title.to_ascii_lowercase().starts_with("fyi ") {
+                level = Some(hashes);
+                in_item = false;
+                out.push(line);
+                continue;
+            }
+            if level.is_some_and(|l| hashes <= l) {
+                level = None;
+            }
+        }
+        if level.is_some() && line.trim() == "---" {
+            level = None;
+        }
+        if level.is_some() {
+            let indent = line.len() - trimmed.len();
+            let item = indent == 0
+                && (trimmed.starts_with("- ") || trimmed.starts_with("* ") || numbered_item_width(trimmed).is_some());
+            if item {
+                in_item = true;
+                removed = true;
+                continue;
+            }
+            if in_item && indent > 0 && !trimmed.is_empty() {
+                continue;
+            }
+            if !trimmed.is_empty() {
+                in_item = false;
+            }
+        }
+        out.push(line);
+    }
+    if !removed {
+        return None;
+    }
+    // No run of blank lines where the items were.
+    let mut joined = out.join("\n");
+    while joined.contains("\n\n\n") {
+        joined = joined.replace("\n\n\n", "\n\n");
+    }
+    Some(joined)
 }
 
 /// `quietdeck report set`: the whole report, as the agent wants it now.
@@ -403,6 +466,18 @@ mod tests {
         let group = "1. **One:** text.\n   <Default cards=\"c_1\">Archive</Default>\n\n\
                      <Default id=\"keep\" cards=\"c_6 c_7\">Keep in inbox</Default>\n";
         assert_eq!(item_defaults_indented(group), group);
+    }
+
+    #[test]
+    fn the_fyi_part_is_cleared_and_everything_else_stays() {
+        let md = "# Needs you\n\n1. **enterprise:** PR #12 waits for review.\n\n## FYI\n\n- `ci` finished: green.\n\
+                  - `docs` shipped the guide\n  with screenshots.\n\nKept text.\n\n# Later\n\n- stays\n";
+        assert_eq!(
+            fyi_cleared(md).unwrap(),
+            "# Needs you\n\n1. **enterprise:** PR #12 waits for review.\n\n## FYI\n\nKept text.\n\n# Later\n\n- stays\n"
+        );
+        assert_eq!(fyi_cleared("# Needs you\n\n- a\n"), None);
+        assert_eq!(fyi_cleared("# FYI\n\nNothing new.\n"), None);
     }
 
     #[test]

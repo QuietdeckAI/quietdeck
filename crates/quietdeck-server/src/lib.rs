@@ -6,6 +6,7 @@ pub mod auth;
 pub mod config;
 pub mod control;
 pub mod db;
+pub mod documents;
 pub mod error;
 pub mod events;
 pub mod fleetlayer;

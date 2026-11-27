@@ -4,9 +4,9 @@ import type { Changed } from "@/types/Changed";
 
 /** Which queries each kind of change makes stale. */
 const STALE: Record<Changed, string[][]> = {
-  cards: [["inbox"], ["later"], ["history"], ["mail-badges"]],
+  cards: [["inbox"], ["later"], ["history"], ["mail-badges"], ["work"]],
   timeline: [["inbox"], ["history"]],
-  sessions: [["sessions"]],
+  sessions: [["sessions"], ["work"]],
   settings: [["settings"], ["info"]],
   nodes: [["nodes"], ["hooks"]],
   rules: [["rules"], ["reading-rules"], ["inbox"]],
@@ -14,6 +14,8 @@ const STALE: Record<Changed, string[][]> = {
   pings: [["pings"], ["watches"]],
   push: [["push"]],
   mail: [["mail"], ["mail-badges"]],
+  documents: [["documents"], ["work"]],
+  session_marks: [["session-marks"], ["work"]],
   all: [[]],
 };
 

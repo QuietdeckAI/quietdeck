@@ -328,6 +328,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The documents, in order, with the tab each sits under */
+        get: operations["documents_list"];
+        put?: never;
+        /** Add a document */
+        post: operations["documents_add"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Rename a document, move it, or change who writes it */
+        patch: operations["documents_edit"];
+        trace?: never;
+    };
+    "/api/v1/documents/{id}/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Remove a document (not the Inbox) */
+        post: operations["documents_remove"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/events": {
         parameters: {
             query?: never;
@@ -1154,6 +1206,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/report/fyi/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear a Work document's FYI list */
+        post: operations["report_fyi_clear"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/report/replies": {
         parameters: {
             query?: never;
@@ -1285,6 +1354,41 @@ export interface paths {
         put?: never;
         /** Archive, restore or move a rule */
         post: operations["rule_status"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/session-marks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The owner's marks on sessions: ignored, parked */
+        get: operations["session_marks_list"];
+        put?: never;
+        /** Ignore a session, or park it (until a time) */
+        post: operations["session_marks_set"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/session-marks/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Take a mark off a session */
+        post: operations["session_marks_remove"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2122,7 +2226,7 @@ export interface components {
          * @description One message on the event stream (`GET /api/v1/events`): what changed, so it refetches that. Never the data
          *     itself.
          */
-        Changed: ("cards" | "timeline" | "sessions" | "settings" | "nodes" | "rules" | "leases") | "pings" | "push" | "mail" | "all";
+        Changed: ("cards" | "timeline" | "sessions" | "settings" | "nodes" | "rules" | "leases") | "pings" | "push" | "mail" | "documents" | "session_marks" | "all";
         /** @description A message the deck keeps. */
         ChannelMessage: {
             body: string;
@@ -2251,6 +2355,72 @@ export interface components {
         };
         /** @description Answers for deliveries and searches. */
         Delivered: "socket" | "orchestrator" | "headless";
+        Document: {
+            /** Format: int64 */
+            id: number;
+            kind: components["schemas"]["DocumentKind"];
+            /** @description What the person calls it, shown as its sub-tab: free text. */
+            name: string;
+            /**
+             * Format: int64
+             * @description Its order among the documents, lowest first; top-level tabs follow their first document.
+             */
+            position: number;
+            /** @description Its name in URLs and `?doc=`: `inbox`, `work`, `docspring`. */
+            slug: string;
+            /** @description The top-level tab it sits under: free text ("Inbox", "Work"). */
+            tab: string;
+            /**
+             * @description The agent that writes it: an agent's report commands go to the document it writes. None: any agent may (the
+             *     Inbox, as before documents).
+             */
+            writer_node?: string | null;
+            writer_tab?: string | null;
+        };
+        /** @description A new document (Settings, or `POST /documents`). */
+        DocumentAdd: {
+            kind: components["schemas"]["DocumentKind"];
+            name: string;
+            /**
+             * Format: int64
+             * @default null
+             */
+            position?: number | null;
+            slug: string;
+            tab: string;
+            /**
+             * @description The agent that writes it (both or neither).
+             * @default null
+             */
+            writer_node?: string | null;
+            /** @default null */
+            writer_tab?: string | null;
+        };
+        /** @description A change to a document: only the fields given change. `clear_writer` makes it writable by any agent. */
+        DocumentEdit: {
+            /**
+             * @description Any agent may write it from now on.
+             * @default null
+             */
+            clear_writer?: boolean | null;
+            /** @default null */
+            name?: string | null;
+            /**
+             * Format: int64
+             * @default null
+             */
+            position?: number | null;
+            /** @default null */
+            tab?: string | null;
+            /**
+             * @description A new writer (both or neither).
+             * @default null
+             */
+            writer_node?: string | null;
+            /** @default null */
+            writer_tab?: string | null;
+        };
+        DocumentKind: "inbox" | "work";
         Enabled: {
             enabled: boolean;
         };
@@ -2561,6 +2731,7 @@ export interface components {
         MailSeen: {
             kind: components["schemas"]["MailKind"];
         };
+        MarkKind: "ignored" | "parked";
         /** @description `quietdeck rules match`: may this card be carried out without the person? */
         MatchRequest: {
             card: components["schemas"]["CardInput"];
@@ -2854,6 +3025,12 @@ export interface components {
              */
             changes?: components["schemas"]["ReportChange"][];
             created_at: string;
+            /**
+             * Format: int64
+             * @description The document it's on (`GET /documents`); 1 is the Inbox.
+             * @default 1
+             */
+            document_id?: number;
             /**
              * @description The agent said nothing on it waits for the person any more (`quietdeck report done`): the Inbox shows "All
              *     done." until the agent edits it or starts the next one.
@@ -3171,6 +3348,33 @@ export interface components {
             state?: components["schemas"]["LinkState"] | null;
             title?: string | null;
             url: string;
+        };
+        /** @description The person's mark on a session. */
+        SessionMark: {
+            at: string;
+            mark: components["schemas"]["MarkKind"];
+            node: string;
+            /** @description What it's about, in the person's words or the entry's headline, for the Parked list. */
+            note?: string | null;
+            tab: string;
+            /** @description A parked session comes back on its own at this time (snoozed); None: until unparked. */
+            until?: string | null;
+        };
+        /** @description Take a mark off. */
+        SessionMarkRemove: {
+            mark: components["schemas"]["MarkKind"];
+            node: string;
+            tab: string;
+        };
+        /** @description Set a mark (it replaces the same kind of mark on that session). */
+        SessionMarkSet: {
+            mark: components["schemas"]["MarkKind"];
+            node: string;
+            /** @default null */
+            note?: string | null;
+            tab: string;
+            /** @default null */
+            until?: string | null;
         };
         /** @description A session by its tab, on a node. `session_id` pins one conversation when the tab has been reused. */
         SessionRef: {
@@ -4027,7 +4231,9 @@ export interface operations {
     };
     chat_reply: {
         parameters: {
-            query?: never;
+            query?: {
+                doc?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4233,6 +4439,142 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description An error, with its message. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    documents_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"][];
+                };
+            };
+            /** @description An error, with its message. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    documents_add: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description A new document (Settings, or `POST /documents`). */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "kind": "work",
+                 *       "name": "Work",
+                 *       "slug": "work",
+                 *       "tab": "Work",
+                 *       "writer_node": "laptop",
+                 *       "writer_tab": "overseer"
+                 *     }
+                 */
+                "application/json": components["schemas"]["DocumentAdd"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
+                };
+            };
+            /** @description An error, with its message. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    documents_edit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** @description A change to a document: only the fields given change. `clear_writer` makes it writable by any agent. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentEdit"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
+                };
+            };
+            /** @description An error, with its message. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    documents_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description An error, with its message. */
             default: {
@@ -4528,6 +4870,7 @@ export interface operations {
         parameters: {
             query?: {
                 account?: string;
+                doc?: string;
             };
             header?: never;
             path?: never;
@@ -5749,7 +6092,9 @@ export interface operations {
     };
     report_show: {
         parameters: {
-            query?: never;
+            query?: {
+                doc?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5777,7 +6122,9 @@ export interface operations {
     };
     report_set: {
         parameters: {
-            query?: never;
+            query?: {
+                doc?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5843,7 +6190,9 @@ export interface operations {
     };
     report_answers_take: {
         parameters: {
-            query?: never;
+            query?: {
+                doc?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5909,7 +6258,9 @@ export interface operations {
     };
     report_chat: {
         parameters: {
-            query?: never;
+            query?: {
+                doc?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5943,7 +6294,9 @@ export interface operations {
     };
     report_done: {
         parameters: {
-            query?: never;
+            query?: {
+                doc?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5969,9 +6322,41 @@ export interface operations {
             };
         };
     };
+    report_fyi_clear: {
+        parameters: {
+            query?: {
+                doc?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Report"] | null;
+                };
+            };
+            /** @description An error, with its message. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     report_reply: {
         parameters: {
-            query?: never;
+            query?: {
+                doc?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -6249,6 +6634,100 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Rule"];
+                };
+            };
+            /** @description An error, with its message. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    session_marks_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionMark"][];
+                };
+            };
+            /** @description An error, with its message. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    session_marks_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Set a mark (it replaces the same kind of mark on that session). */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionMarkSet"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionMark"][];
+                };
+            };
+            /** @description An error, with its message. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    session_marks_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Take a mark off. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionMarkRemove"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionMark"][];
                 };
             };
             /** @description An error, with its message. */

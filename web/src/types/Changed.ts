@@ -4,4 +4,4 @@
  * One message on the event stream (`GET /api/v1/events`): what changed, so it refetches that. Never the data
  * itself.
  */
-export type Changed = "cards" | "timeline" | "sessions" | "settings" | "nodes" | "rules" | "leases" | "pings" | "push" | "mail" | "all";
+export type Changed = "cards" | "timeline" | "sessions" | "settings" | "nodes" | "rules" | "leases" | "pings" | "push" | "mail" | "documents" | "session_marks" | "all";

@@ -456,13 +456,19 @@ mod tests {
         crate::reports::set(
             &state,
             &me,
+            &crate::reports::inbox(&state.db).await.unwrap(),
             quietdeck_types::report::ReportSet { markdown: "# Inbox\n".into(), base: None, new: true, change: None },
         )
         .await
         .unwrap();
-        assert!(crate::reports::done(&state).await.is_err(), "c_{c} still waits");
+        assert!(
+            crate::reports::done(&state, &crate::reports::inbox(&state.db).await.unwrap()).await.is_err(),
+            "c_{c} still waits"
+        );
         threads_left(&state, &[left("t1")], &[]).await.unwrap();
-        crate::reports::done(&state).await.unwrap();
-        assert!(crate::reports::current(&state.db).await.unwrap().unwrap().finished);
+        crate::reports::done(&state, &crate::reports::inbox(&state.db).await.unwrap()).await.unwrap();
+        assert!(
+            crate::reports::current(&state.db, quietdeck_types::document::INBOX_ID).await.unwrap().unwrap().finished
+        );
     }
 }

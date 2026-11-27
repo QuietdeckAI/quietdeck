@@ -88,6 +88,9 @@ enum Command {
     },
     /// Chat with the person in the Inbox: `chat reply` answers what they wrote in the chat box, as a toast on the page.
     Chat {
+        /// The document whose chat it answers (its slug). Left out: the document you write, else the Inbox.
+        #[arg(long, global = true)]
+        doc: Option<String>,
         #[command(subcommand)]
         command: ChatCommand,
     },
@@ -158,9 +161,17 @@ enum Command {
     /// `<Ask id="budget">How much can I spend?</Ask>` is a question panel: he answers in words in its own thread,
     /// you reply there (`report reply budget "…"`), and Approve All passes it by.
     Report {
+        /// The document (its slug, from `quietdeck documents`). Left out: the document you write, else the Inbox.
+        #[arg(long, global = true)]
+        doc: Option<String>,
         #[command(subcommand)]
         command: ReportCommand,
     },
+    /// The documents agents write (the Inbox, Work...), with the tab each sits under and who writes it.
+    Documents,
+    /// The person's marks on sessions: the ones they ignore (leave them out of Work unless blocked on a prompt) and
+    /// the ones they parked (leave their entries alone until the time given, or until unparked).
+    Marks,
     /// Your pings: `pings feedback` picks up the person's "Don't ping for this again" on them.
     Pings {
         #[command(subcommand)]
@@ -608,6 +619,14 @@ fn parse_agent(s: &str) -> Result<quietdeck_types::AgentKind, String> {
         .map_err(|_| format!("{s:?} isn't an agent: claude or codex"))
 }
 
+/// `?doc=<slug>` for the report routes, or nothing.
+fn doc_query(doc: &Option<String>) -> String {
+    match doc.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+        Some(d) => format!("?doc={}", d.replace(|c: char| !c.is_ascii_alphanumeric() && c != '-', "")),
+        None => String::new(),
+    }
+}
+
 fn read_arg(s: &str) -> anyhow::Result<String> {
     if s == "-" {
         let mut buf = String::new();
@@ -837,10 +856,11 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 }
             }
         }
-        Command::Chat { command: ChatCommand::Reply { text } } => {
+        Command::Chat { doc, command: ChatCommand::Reply { text } } => {
             let c = Client::connect().await?;
+            let path = format!("/api/chat/reply{}", doc_query(&doc));
             let r: serde_json::Value =
-                c.post("/api/chat/reply", &quietdeck_types::report::ChatReply { text: read_arg(&text)? }).await?;
+                c.post(&path, &quietdeck_types::report::ChatReply { text: read_arg(&text)? }).await?;
             print::out(json, &r, |_| "Shown on the Inbox page.".to_string())
         }
         Command::Msg { command: MsgCommand::Send { to, text } } => {
@@ -884,11 +904,22 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             let p: quietdeck_types::timeline::Ping = c.post("/api/pings", &req).await?;
             print::out(json, &p, |p| format!("Ping {}: {}", p.id, p.result.as_deref().unwrap_or("recorded")))
         }
-        Command::Report { command } => {
+        Command::Documents => {
             let c = Client::connect().await?;
+            let r: Vec<quietdeck_types::document::Document> = c.get("/api/documents", &[]).await?;
+            print::out(json, &r, |r| print::documents(r))
+        }
+        Command::Marks => {
+            let c = Client::connect().await?;
+            let r: Vec<quietdeck_types::document::SessionMark> = c.get("/api/session-marks", &[]).await?;
+            print::out(json, &r, |r| print::marks(r))
+        }
+        Command::Report { doc, command } => {
+            let c = Client::connect().await?;
+            let q = doc_query(&doc);
             match command {
                 ReportCommand::Show { markdown } => {
-                    let r: Option<quietdeck_types::report::Report> = c.get("/api/report", &[]).await?;
+                    let r: Option<quietdeck_types::report::Report> = c.get(&format!("/api/report{q}"), &[]).await?;
                     if markdown {
                         let Some(r) = r else {
                             anyhow::bail!("no report yet: write one with `quietdeck report set <file>`")
@@ -900,22 +931,22 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                     print::out(json, &r, |r| print::report(r.as_ref()))
                 }
                 ReportCommand::Done => {
-                    let r: serde_json::Value = c.post("/api/report/done", &serde_json::json!({})).await?;
+                    let r: serde_json::Value = c.post(&format!("/api/report/done{q}"), &serde_json::json!({})).await?;
                     print::out(json, &r, |_| "Report done: the Inbox says \"All done.\"".to_string())
                 }
                 ReportCommand::Set { file, base, new, change } => {
                     let req = quietdeck_types::report::ReportSet { markdown: read_file_arg(&file)?, base, new, change };
-                    let r: quietdeck_types::report::Report = c.post("/api/report", &req).await?;
+                    let r: quietdeck_types::report::Report = c.post(&format!("/api/report{q}"), &req).await?;
                     print::out(json, &r, print::report_saved)
                 }
                 ReportCommand::Reply { to, text } => {
                     let req = quietdeck_types::report::ReportReply { to, text: read_arg(&text)? };
-                    let r: quietdeck_types::report::Report = c.post("/api/report/replies", &req).await?;
+                    let r: quietdeck_types::report::Report = c.post(&format!("/api/report/replies{q}"), &req).await?;
                     print::out(json, &r, |_| "Replied in the thread.".to_string())
                 }
                 ReportCommand::Answers => {
                     let r: Vec<quietdeck_types::report::ReportAnswer> =
-                        c.post("/api/report/answers/take", &serde_json::json!({})).await?;
+                        c.post(&format!("/api/report/answers/take{q}"), &serde_json::json!({})).await?;
                     print::out(json, &r, |r| print::report_answers(r))
                 }
             }

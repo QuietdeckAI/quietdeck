@@ -36,7 +36,7 @@ use crate::{api, passkeys};
 
 /// `info.version`: the minor version goes up with each additive change, the patch version with fixes to the
 /// description alone. A breaking change is a new `/api/v2`, never a new major version of v1.
-pub const API_VERSION: &str = "1.0.0";
+pub const API_VERSION: &str = "1.1.0";
 
 /// The versioned prefix the spec describes.
 pub const V1: &str = "/api/v1";
@@ -173,6 +173,13 @@ pub const TAGS: &[(&str, &str)] = &[
          setting off they answer 404.",
     ),
     (
+        "documents",
+        "Documents are the pages agents write and the owner reads, each under a top-level tab: the Inbox (kind \
+         `inbox`) on every deck, and others such as a Work page about the owner's agents (kind `work`). An agent's \
+         report commands go to the document it writes; `?doc=<slug>` picks one. Session marks are the owner's \
+         records about sessions: ignored, or parked until a time.",
+    ),
+    (
         "presence",
         "Whether the owner is reading the Inbox in the default web app, so the runner holds new items meanwhile \
          (`x-quietdeck-ui: presence`).",
@@ -287,6 +294,14 @@ pub const OPERATIONS: &[Doc] = &[
     ui("report", "post", "/report/replies", "report_reply", "report", "The triage agent replies in the report"),
     ui("report", "post", "/chat/reply", "chat_reply", "report", "The triage agent replies in the report's chat"),
     ui("report", "get", "/report/snapshots/{id}", "report_snapshot", "report", "An earlier version of the report"),
+    ui("report", "post", "/report/fyi/clear", "report_fyi_clear", "report", "Clear a Work document's FYI list"),
+    op("get", "/documents", "documents_list", "documents", "The documents, in order, with the tab each sits under"),
+    op("post", "/documents", "documents_add", "documents", "Add a document"),
+    op("patch", "/documents/{id}", "documents_edit", "documents", "Rename a document, move it, or change who writes it"),
+    op("post", "/documents/{id}/remove", "documents_remove", "documents", "Remove a document (not the Inbox)"),
+    op("get", "/session-marks", "session_marks_list", "documents", "The owner's marks on sessions: ignored, parked"),
+    op("post", "/session-marks", "session_marks_set", "documents", "Ignore a session, or park it (until a time)"),
+    op("post", "/session-marks/remove", "session_marks_remove", "documents", "Take a mark off a session"),
     ui("presence", "post", "/presence", "presence_beat", "presence", "The Inbox page's heartbeat while the owner reads"),
     ui("presence", "post", "/presence/release", "presence_release", "presence", "The owner stopped reading"),
 ];
@@ -511,6 +526,18 @@ pub fn examples() -> Vec<(&'static str, &'static str, Value)> {
                     { "type": "label", "account": "work", "thread_id": "18c2f0a9d4e7b311", "add": ["Receipts"] },
                     { "type": "archive", "account": "work", "thread_id": "18c2f0a9d4e7b311" }
                 ]
+            }),
+        ),
+        (
+            "/documents",
+            "post",
+            json!({
+                "slug": "work",
+                "name": "Work",
+                "tab": "Work",
+                "kind": "work",
+                "writer_node": "laptop",
+                "writer_tab": "overseer"
             }),
         ),
         (
@@ -789,7 +816,7 @@ mod tests {
             quietdeck_types::SessionRef { node: "laptop".into(), tab: "triage".into(), session_id: Some("s1".into()) };
         let report =
             quietdeck_types::report::ReportSet { markdown: "# Inbox".into(), base: None, new: true, change: None };
-        crate::reports::set(&state, &session, report).await.unwrap();
+        crate::reports::set(&state, &session, &crate::reports::inbox(&state.db).await.unwrap(), report).await.unwrap();
         let (router, _) = routes(state.clone());
         let app = router.with_state(state.clone());
         let get = |uri: &str| axum::http::Request::get(uri).body(axum::body::Body::empty()).unwrap();
@@ -806,7 +833,7 @@ mod tests {
         }
         // Not a report route: still routed.
         assert_eq!(app.oneshot(get("/api/v1/inbox")).await.unwrap().status(), 401);
-        assert!(crate::reports::current(&state.db).await.unwrap().is_none());
+        assert!(crate::reports::current(&state.db, quietdeck_types::document::INBOX_ID).await.unwrap().is_none());
         let inbox = crate::ops::inbox(&state, None).await.unwrap();
         assert!(inbox.report.is_none() && inbox.finished_cards.is_empty());
     }
@@ -827,6 +854,10 @@ mod tests {
                     garde::Validate::validate(&all).unwrap();
                 }
                 "/decisions/undo" => drop(serde_json::from_value::<UndoBatch>(example).unwrap()),
+                "/documents" => {
+                    let add: quietdeck_types::document::DocumentAdd = serde_json::from_value(example).unwrap();
+                    garde::Validate::validate(&add).unwrap();
+                }
                 other => panic!("no check for the {other} example"),
             }
         }

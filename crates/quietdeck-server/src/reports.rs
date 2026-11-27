@@ -12,6 +12,8 @@ use quietdeck_types::report::{
     ReportSnapshotSummary, default_cards, default_keys, defaults_changed,
 };
 
+use quietdeck_types::document::{Document, DocumentKind, INBOX_ID};
+
 use crate::db::{Db, now_ms, ts};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
@@ -27,6 +29,7 @@ struct ReportRow {
     created_at: i64,
     updated_at: i64,
     finished_at: Option<i64>,
+    document_id: i64,
 }
 
 #[derive(sqlx::FromRow)]
@@ -74,13 +77,25 @@ fn kind_str(k: AnswerKind) -> &'static str {
     }
 }
 
-async fn open_row(db: &Db) -> AppResult<Option<ReportRow>> {
-    Ok(sqlx::query_as(
-        "SELECT id, version, markdown, posted_node, posted_tab, posted_session_id, created_at, updated_at, \
-         finished_at FROM reports WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1",
-    )
+const ROW: &str = "SELECT id, version, markdown, posted_node, posted_tab, posted_session_id, created_at, updated_at, \
+                   finished_at, document_id FROM reports";
+
+/// A document's open report.
+async fn open_row(db: &Db, doc: i64) -> AppResult<Option<ReportRow>> {
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "{ROW} WHERE closed_at IS NULL AND document_id = ? ORDER BY id DESC LIMIT 1"
+    )))
+    .bind(doc)
     .fetch_optional(db)
     .await?)
+}
+
+/// An open report by its ID, whichever document it's on.
+async fn open_row_by_id(db: &Db, id: i64) -> AppResult<Option<ReportRow>> {
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!("{ROW} WHERE closed_at IS NULL AND id = ?")))
+        .bind(id)
+        .fetch_optional(db)
+        .await?)
 }
 
 /// The report the Inbox shows, with its answers.
@@ -94,11 +109,44 @@ pub async fn enabled(db: &Db) -> anyhow::Result<bool> {
 /// What the report's routes answer while it's off.
 pub const OFF: &str = "this deck has no report (Settings: report is off): use the cards and decisions";
 
-pub async fn current(db: &Db) -> AppResult<Option<Report>> {
+pub async fn current(db: &Db, doc: i64) -> AppResult<Option<Report>> {
     if !enabled(db).await? {
         return Ok(None);
     }
-    let Some(r) = open_row(db).await? else { return Ok(None) };
+    let Some(r) = open_row(db, doc).await? else { return Ok(None) };
+    from_row(db, r).await.map(Some)
+}
+
+/// The cards that belong to a document when no default names them: on a document with a writer, the open cards its
+/// writer posted; on the Inbox, every open card but those the writers of other documents posted.
+async fn open_cards_of(db: &Db, doc: i64) -> AppResult<Vec<i64>> {
+    let d = crate::documents::get(db, doc).await?;
+    let rows: Vec<(i64,)> = match (&d.writer_node, &d.writer_tab) {
+        (Some(node), Some(tab)) => {
+            sqlx::query_as(
+                "SELECT id FROM cards WHERE state IN ('open', 'handed_off', 'failed') AND section != 'sent' \
+                 AND posted_node = ? AND posted_tab = ? ORDER BY id",
+            )
+            .bind(node)
+            .bind(tab)
+            .fetch_all(db)
+            .await?
+        }
+        _ => {
+            sqlx::query_as(
+                "SELECT id FROM cards c WHERE state IN ('open', 'handed_off', 'failed') AND section != 'sent' \
+                 AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.removed_at IS NULL AND d.id != ? \
+                 AND d.writer_node = c.posted_node AND d.writer_tab = c.posted_tab) ORDER BY id",
+            )
+            .bind(doc)
+            .fetch_all(db)
+            .await?
+        }
+    };
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
+async fn from_row(db: &Db, r: ReportRow) -> AppResult<Report> {
     let answers: Vec<AnswerRow> = sqlx::query_as(
         "SELECT id, report_version, control, kind, about, value, answered_at, picked_up_at, cards \
          FROM report_answers WHERE report_id = ? ORDER BY id",
@@ -107,13 +155,9 @@ pub async fn current(db: &Db) -> AppResult<Option<Report>> {
     .fetch_all(db)
     .await?;
     let (named, _) = default_cards(&r.markdown);
-    let open: Vec<(i64,)> = sqlx::query_as(
-        "SELECT id FROM cards WHERE state IN ('open', 'handed_off', 'failed') AND section != 'sent' ORDER BY id",
-    )
-    .fetch_all(db)
-    .await?;
-    let cards_not_in_report = open.into_iter().map(|(id,)| id).filter(|id| !named.contains(id)).collect();
-    Ok(Some(Report {
+    let cards_not_in_report =
+        open_cards_of(db, r.document_id).await?.into_iter().filter(|id| !named.contains(id)).collect();
+    Ok(Report {
         id: r.id,
         version: r.version,
         // Reports saved before the deck fixed item Defaults on the way in (27 Nov 2026) are fixed on the way out.
@@ -125,12 +169,14 @@ pub async fn current(db: &Db) -> AppResult<Option<Report>> {
         cards_not_in_report,
         changes: changes(db, r.id).await?,
         finished: r.finished_at.is_some(),
-    }))
+        document_id: r.document_id,
+    })
 }
 
 /// `quietdeck report set`: replace the report's text, from the version the agent last saw.
-pub async fn set(state: &AppState, me: &SessionRef, mut req: ReportSet) -> AppResult<Report> {
+pub async fn set(state: &AppState, me: &SessionRef, doc: &Document, mut req: ReportSet) -> AppResult<Report> {
     req.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
+    crate::documents::may_write(doc, me)?;
     // An item's Default written flush left is moved inside its item, so the Inbox never draws it as a group's.
     req.markdown = quietdeck_types::report::item_defaults_indented(&req.markdown);
     let (ids, mut problems) = default_cards(&req.markdown);
@@ -146,16 +192,26 @@ pub async fn set(state: &AppState, me: &SessionRef, mut req: ReportSet) -> AppRe
             }
         }
     }
-    problems.extend(archive_all_problems(&state.db, &req.markdown).await?);
+    if doc.kind == DocumentKind::Inbox {
+        problems.extend(archive_all_problems(&state.db, &req.markdown).await?);
+    }
     if !problems.is_empty() {
         return Err(AppError::BadRequest(format!("the report's <Default> tags: {}", problems.join("; "))));
     }
     let now = now_ms();
     let mut tx = state.db.begin().await?;
-    let open: Option<(i64, i64, String)> =
-        sqlx::query_as("SELECT id, version, markdown FROM reports WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1")
-            .fetch_optional(&mut *tx)
-            .await?;
+    let open: Option<(i64, i64, String)> = sqlx::query_as(
+        "SELECT id, version, markdown FROM reports WHERE closed_at IS NULL AND document_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(doc.id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if req.new && open.is_some() && doc.kind == DocumentKind::Work {
+        return Err(AppError::BadRequest(format!(
+            "the {} document is kept up to date, never replaced: edit it with --base (no --new)",
+            doc.name
+        )));
+    }
     // What changed, for the person's toast and Approve All's settle window.
     let before = match (&open, req.new) {
         (Some((_, _, md)), false) => md.clone(),
@@ -166,15 +222,16 @@ pub async fn set(state: &AppState, me: &SessionRef, mut req: ReportSet) -> AppRe
     match (open, req.new) {
         (Some((id, _)), true) => {
             sqlx::query("UPDATE reports SET closed_at = ? WHERE id = ?").bind(now).bind(id).execute(&mut *tx).await?;
-            insert(&mut tx, me, &req.markdown, now).await?;
+            insert(&mut tx, me, doc.id, &req.markdown, now).await?;
         }
-        (None, _) => insert(&mut tx, me, &req.markdown, now).await?,
+        (None, _) => insert(&mut tx, me, doc.id, &req.markdown, now).await?,
         (Some((id, version)), false) => {
             if req.base != Some(version) {
                 return Err(AppError::Conflict(format!(
-                    "the report is at version {version}{}: run `quietdeck report show`, make your edit to that text \
+                    "the report is at version {version}{}: run `quietdeck report show{}`, make your edit to that text \
                      and send it with --base {version}",
-                    req.base.map(|b| format!(", not {b}")).unwrap_or_default()
+                    req.base.map(|b| format!(", not {b}")).unwrap_or_default(),
+                    if doc.id == INBOX_ID { String::new() } else { format!(" --doc {}", doc.slug) }
                 )));
             }
             sqlx::query(
@@ -191,10 +248,12 @@ pub async fn set(state: &AppState, me: &SessionRef, mut req: ReportSet) -> AppRe
             .await?;
         }
     }
-    let (report_id, version): (i64, i64) =
-        sqlx::query_as("SELECT id, version FROM reports WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1")
-            .fetch_one(&mut *tx)
-            .await?;
+    let (report_id, version): (i64, i64) = sqlx::query_as(
+        "SELECT id, version FROM reports WHERE closed_at IS NULL AND document_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(doc.id)
+    .fetch_one(&mut *tx)
+    .await?;
     let cards = worked_out.as_ref().map(|w| w.0.clone()).unwrap_or_default();
     let summary = req.change.clone().or_else(|| worked_out.map(|w| w.1));
     if let Some(summary) = summary {
@@ -209,7 +268,54 @@ pub async fn set(state: &AppState, me: &SessionRef, mut req: ReportSet) -> AppRe
     }
     tx.commit().await?;
     state.changed(Changed::Cards);
-    current(&state.db).await?.ok_or_else(|| AppError::Unavailable("the report vanished".into()))
+    current(&state.db, doc.id).await?.ok_or_else(|| AppError::Unavailable("the report vanished".into()))
+}
+
+/// The document an open report is on.
+pub async fn document_of(db: &Db, report_id: i64) -> AppResult<Option<Document>> {
+    match open_row_by_id(db, report_id).await? {
+        Some(r) => Ok(Some(crate::documents::get(db, r.document_id).await?)),
+        None => Ok(None),
+    }
+}
+
+/// The Inbox document.
+pub async fn inbox(db: &Db) -> AppResult<Document> {
+    crate::documents::get(db, INBOX_ID).await
+}
+
+/// A Work document's "Archive all" on its FYI part (and Approve All there): the FYI items go, as a new version, and the
+/// agent sees it on its next `report show`. Answers 0 when there was nothing to clear.
+pub async fn fyi_clear(state: &AppState, doc: &Document) -> AppResult<Option<Report>> {
+    if doc.kind != DocumentKind::Work {
+        return Err(AppError::BadRequest(format!("the {} document has no FYI part to clear", doc.name)));
+    }
+    let Some(r) = open_row(&state.db, doc.id).await? else { return Ok(None) };
+    let Some(cleared) = quietdeck_types::report::fyi_cleared(&r.markdown) else { return Ok(None) };
+    let now = now_ms();
+    let mut tx = state.db.begin().await?;
+    let done = sqlx::query(
+        "UPDATE reports SET markdown = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?",
+    )
+    .bind(&cleared)
+    .bind(now)
+    .bind(r.id)
+    .bind(r.version)
+    .execute(&mut *tx)
+    .await?;
+    if done.rows_affected() == 0 {
+        return Err(AppError::Conflict("the document changed: read it again, then clear".into()));
+    }
+    sqlx::query("INSERT INTO report_changes (report_id, version, summary, cards, at) VALUES (?, ?, ?, '[]', ?)")
+        .bind(r.id)
+        .bind(r.version + 1)
+        .bind("Cleared the FYI list")
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    state.changed(Changed::Cards);
+    current(&state.db, doc.id).await
 }
 
 /// The archive part's `archive-all` Default may name only cards whose sole action is an archive (or marking read):
@@ -252,13 +358,20 @@ async fn archive_all_problems(db: &Db, markdown: &str) -> AppResult<Vec<String>>
 /// `quietdeck report done`: nothing on the report waits for the person any more, so the Inbox shows "All done." (its
 /// bar and chat stay) until the agent edits it or starts the next report. Refused while a card still waits: "All
 /// done." would hide it.
-pub async fn done(state: &AppState) -> AppResult<()> {
+pub async fn done(state: &AppState, doc: &Document) -> AppResult<()> {
+    let mine = open_cards_of(&state.db, doc.id).await?;
     let waiting: Vec<(i64,)> = sqlx::query_as(
         "SELECT id FROM cards WHERE state IN ('open', 'handed_off', 'failed', 'approved', 'executing', 'revising') \
          AND section != 'sent' ORDER BY id",
     )
     .fetch_all(&state.db)
     .await?;
+    // Approved and running cards aren't open, so they count for the Inbox as before; on another document, only its own.
+    let waiting: Vec<(i64,)> = if doc.id == INBOX_ID || mine.is_empty() {
+        waiting.into_iter().filter(|(id,)| doc.id == INBOX_ID || mine.contains(id)).collect()
+    } else {
+        waiting.into_iter().filter(|(id,)| mine.contains(id)).collect()
+    };
     if !waiting.is_empty() {
         let ids = waiting.iter().map(|(id,)| format!("c_{id}")).collect::<Vec<_>>().join(", ");
         return Err(AppError::Conflict(format!(
@@ -266,11 +379,13 @@ pub async fn done(state: &AppState) -> AppResult<()> {
         )));
     }
     let now = now_ms();
-    let r = sqlx::query("UPDATE reports SET finished_at = ?, updated_at = ? WHERE closed_at IS NULL")
-        .bind(now)
-        .bind(now)
-        .execute(&state.db)
-        .await?;
+    let r =
+        sqlx::query("UPDATE reports SET finished_at = ?, updated_at = ? WHERE closed_at IS NULL AND document_id = ?")
+            .bind(now)
+            .bind(now)
+            .bind(doc.id)
+            .execute(&state.db)
+            .await?;
     if r.rows_affected() == 0 {
         return Err(AppError::NotFound("there's no report: start one with `quietdeck report set --new`".into()));
     }
@@ -303,15 +418,17 @@ async fn changes(db: &Db, report_id: i64) -> AppResult<Vec<quietdeck_types::read
 
 /// `quietdeck chat reply`: the agent answers the person's chat in the Inbox, shown as a toast on the page. For an
 /// answer that isn't a change to the report or a card (those show anyway).
-pub async fn chat_reply(state: &AppState, text: &str) -> AppResult<()> {
+pub async fn chat_reply(state: &AppState, doc: &Document, text: &str) -> AppResult<()> {
     let text = text.trim();
     if text.is_empty() || text.chars().count() > 2000 {
         return Err(AppError::BadRequest("a reply is 1 to 2000 characters".into()));
     }
-    let Some((report_id, version)): Option<(i64, i64)> =
-        sqlx::query_as("SELECT id, version FROM reports WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1")
-            .fetch_optional(&state.db)
-            .await?
+    let Some((report_id, version)): Option<(i64, i64)> = sqlx::query_as(
+        "SELECT id, version FROM reports WHERE closed_at IS NULL AND document_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(doc.id)
+    .fetch_optional(&state.db)
+    .await?
     else {
         return Err(AppError::NotFound("there's no report for the reply to show on".into()));
     };
@@ -328,10 +445,10 @@ pub async fn chat_reply(state: &AppState, text: &str) -> AppResult<()> {
     Ok(())
 }
 
-async fn insert(tx: &mut sqlx::SqliteConnection, me: &SessionRef, markdown: &str, now: i64) -> AppResult<()> {
+async fn insert(tx: &mut sqlx::SqliteConnection, me: &SessionRef, doc: i64, markdown: &str, now: i64) -> AppResult<()> {
     sqlx::query(
-        "INSERT INTO reports (markdown, posted_node, posted_tab, posted_session_id, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO reports (markdown, posted_node, posted_tab, posted_session_id, created_at, updated_at, \
+         document_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(markdown)
     .bind(&me.node)
@@ -339,6 +456,7 @@ async fn insert(tx: &mut sqlx::SqliteConnection, me: &SessionRef, markdown: &str
     .bind(&me.session_id)
     .bind(now)
     .bind(now)
+    .bind(doc)
     .execute(&mut *tx)
     .await?;
     Ok(())
@@ -347,12 +465,10 @@ async fn insert(tx: &mut sqlx::SqliteConnection, me: &SessionRef, markdown: &str
 /// An answer from the Inbox: kept, and sent to the agent at once when its session is running.
 pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
     a.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
-    let Some(r) = open_row(&state.db).await? else {
-        return Err(AppError::NotFound("there's no report to answer".into()));
-    };
-    if r.id != a.report_id {
+    let Some(r) = open_row_by_id(&state.db, a.report_id).await? else {
         return Err(AppError::Conflict("the agent has started a new report: answer on that one".into()));
-    }
+    };
+    let doc = r.document_id;
     let value = a.value.trim();
     if value.is_empty() {
         return Err(AppError::BadRequest("the answer is empty".into()));
@@ -459,16 +575,18 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
         }
     }
     state.changed(Changed::Cards);
-    current(&state.db).await?.ok_or_else(|| AppError::Unavailable("the report vanished".into()))
+    current(&state.db, doc).await?.ok_or_else(|| AppError::Unavailable("the report vanished".into()))
 }
 
 /// `quietdeck report answers`: what the agent hasn't had yet, each once.
-pub async fn take_answers(state: &AppState) -> AppResult<Vec<ReportAnswer>> {
+pub async fn take_answers(state: &AppState, doc: &Document) -> AppResult<Vec<ReportAnswer>> {
     let rows: Vec<AnswerRow> = sqlx::query_as(
         "UPDATE report_answers SET picked_up_at = ? WHERE picked_up_at IS NULL \
+         AND report_id IN (SELECT id FROM reports WHERE document_id = ?) \
          RETURNING id, report_version, control, kind, about, value, answered_at, picked_up_at, cards",
     )
     .bind(now_ms())
+    .bind(doc.id)
     .fetch_all(&state.db)
     .await?;
     let mut out: Vec<ReportAnswer> = rows.into_iter().map(ReportAnswer::from).collect();
@@ -482,9 +600,9 @@ pub async fn take_answers(state: &AppState) -> AppResult<Vec<ReportAnswer>> {
 /// `quietdeck report reply`: the agent's answer in a default's thread. `to` is the default's key as its messages
 /// carry it, or a card it names (`c_12`, kept as `cards:c_12`: the Inbox puts it in the thread of whichever default
 /// names that card).
-pub async fn reply(state: &AppState, req: ReportReply) -> AppResult<Report> {
+pub async fn reply(state: &AppState, doc: &Document, req: ReportReply) -> AppResult<Report> {
     req.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
-    let Some(r) = open_row(&state.db).await? else {
+    let Some(r) = open_row(&state.db, doc.id).await? else {
         return Err(AppError::NotFound("there's no report to reply on".into()));
     };
     let to = req.to.trim();
@@ -517,17 +635,25 @@ pub async fn reply(state: &AppState, req: ReportReply) -> AppResult<Report> {
     .execute(&state.db)
     .await?;
     state.changed(Changed::Cards);
-    current(&state.db).await?.ok_or_else(|| AppError::Unavailable("the report vanished".into()))
+    current(&state.db, doc.id).await?.ok_or_else(|| AppError::Unavailable("the report vanished".into()))
 }
 
 /// The chat box: the words go to the report's agent now, or fail at once when it isn't running. Nothing is kept.
-pub async fn chat(state: &AppState, c: ReportChat) -> AppResult<Delivered> {
+pub async fn chat(state: &AppState, doc: &Document, c: ReportChat) -> AppResult<Delivered> {
     c.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
-    let Some(r) = open_row(&state.db).await? else {
-        return Err(AppError::NotFound("no triage agent has written a report yet, so there's nobody to tell".into()));
+    // A document with a writer reaches it even before its first report.
+    let to = match (open_row(&state.db, doc.id).await?, &doc.writer_node, &doc.writer_tab) {
+        (_, Some(node), Some(tab)) => format!("{tab}@{node}"),
+        (Some(r), _, _) => format!("{}@{}", r.posted_tab, r.posted_node),
+        (None, _, _) => {
+            return Err(AppError::NotFound("no agent has written this document yet, so there's nobody to tell".into()));
+        }
     };
-    let to = format!("{}@{}", r.posted_tab, r.posted_node);
-    let body = format!("From the Inbox's chat box: {}", c.text.trim());
+    let body = if doc.id == INBOX_ID {
+        format!("From the Inbox's chat box: {}", c.text.trim())
+    } else {
+        format!("From the chat box under the {} document: {}", doc.name, c.text.trim())
+    };
     crate::relay::send(&state.db, &state.hub, &to, DeliveryKind::Deck, body).await.map_err(|e| match e {
         DeliveryError::SessionOffline { .. } | DeliveryError::NodeOffline { .. } => {
             AppError::Offline(format!("{to} isn't running, so it didn't get that."))
@@ -547,14 +673,11 @@ pub async fn changes_for_card(db: &Db, card_id: i64) -> anyhow::Result<Vec<Strin
     if !enabled(db).await? {
         return Ok(vec![]);
     }
-    let markdown: Option<(String,)> =
-        sqlx::query_as("SELECT markdown FROM reports WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1")
-            .fetch_optional(db)
-            .await?;
+    let markdown: Vec<(String,)> =
+        sqlx::query_as("SELECT markdown FROM reports WHERE closed_at IS NULL ORDER BY id").fetch_all(db).await?;
     let keys: Vec<String> = markdown
-        .map(|(m,)| quietdeck_types::report::default_keys(&m))
-        .unwrap_or_default()
-        .into_iter()
+        .iter()
+        .flat_map(|(m,)| quietdeck_types::report::default_keys(m))
         .filter(|(_, cards)| cards.contains(&card_id))
         .map(|(key, _)| key)
         .collect();
@@ -585,7 +708,7 @@ pub async fn changes_for_card(db: &Db, card_id: i64) -> anyhow::Result<Vec<Strin
 /// Approve All: keep the Inbox document as it is now, for History, with the person's changes and answers since the
 /// report's previous snapshot and the cards it names. Nothing when there's no report.
 pub async fn snapshot(db: &Db, batch: &str, approved: &[i64]) -> AppResult<()> {
-    let Some(report) = current(db).await? else { return Ok(()) };
+    let Some(report) = current(db, INBOX_ID).await? else { return Ok(()) };
     let previous: Option<(Option<i64>,)> =
         sqlx::query_as("SELECT last_answer_id FROM report_snapshots WHERE report_id = ? ORDER BY id DESC LIMIT 1")
             .bind(report.id)
@@ -680,12 +803,14 @@ mod tests {
     #[tokio::test]
     async fn a_chat_reply_shows_with_the_reports_changes_as_a_reply() {
         let state = AppState::for_tests().await;
-        assert!(chat_reply(&state, "Done").await.is_err(), "no report to show it on");
+        assert!(chat_reply(&state, &inbox(&state.db).await.unwrap(), "Done").await.is_err(), "no report to show it on");
         let set = ReportSet { markdown: "# Inbox".into(), base: None, new: true, change: None };
-        super::set(&state, &me(), set).await.unwrap();
-        assert!(chat_reply(&state, "  ").await.is_err());
-        chat_reply(&state, "I'll keep the Acme thread in your inbox until Friday.").await.unwrap();
-        let r = current(&state.db).await.unwrap().unwrap();
+        super::set(&state, &me(), &inbox(&state.db).await.unwrap(), set).await.unwrap();
+        assert!(chat_reply(&state, &inbox(&state.db).await.unwrap(), "  ").await.is_err());
+        chat_reply(&state, &inbox(&state.db).await.unwrap(), "I'll keep the Acme thread in your inbox until Friday.")
+            .await
+            .unwrap();
+        let r = current(&state.db, INBOX_ID).await.unwrap().unwrap();
         let last = r.changes.last().unwrap();
         assert!(last.reply && last.cards.is_empty());
         assert_eq!(last.summary, "I'll keep the Acme thread in your inbox until Friday.");
@@ -700,17 +825,27 @@ mod tests {
             new,
             change: None,
         };
-        let r = super::set(&state, &me(), set("# Round", None, false)).await.unwrap();
+        let r = super::set(&state, &me(), &inbox(&state.db).await.unwrap(), set("# Round", None, false)).await.unwrap();
         assert_eq!((r.version, r.markdown.as_str()), (1, "# Round"));
-        let r = super::set(&state, &me(), set("# Round\n- more", Some(1), false)).await.unwrap();
+        let r = super::set(&state, &me(), &inbox(&state.db).await.unwrap(), set("# Round\n- more", Some(1), false))
+            .await
+            .unwrap();
         assert_eq!(r.version, 2);
-        let stale = super::set(&state, &me(), set("# Old", Some(1), false)).await.unwrap_err();
-        assert!(stale.to_string().contains("version 2"), "{stale}");
-        let missing = super::set(&state, &me(), set("<Default cards=\"c_99\">archive</Default>", Some(2), false))
+        let stale = super::set(&state, &me(), &inbox(&state.db).await.unwrap(), set("# Old", Some(1), false))
             .await
             .unwrap_err();
+        assert!(stale.to_string().contains("version 2"), "{stale}");
+        let missing = super::set(
+            &state,
+            &me(),
+            &inbox(&state.db).await.unwrap(),
+            set("<Default cards=\"c_99\">archive</Default>", Some(2), false),
+        )
+        .await
+        .unwrap_err();
         assert!(missing.to_string().contains("no card c_99"), "{missing}");
-        let fresh = super::set(&state, &me(), set("# Next round", None, true)).await.unwrap();
+        let fresh =
+            super::set(&state, &me(), &inbox(&state.db).await.unwrap(), set("# Next round", None, true)).await.unwrap();
         assert_ne!(fresh.id, r.id);
         assert_eq!(fresh.version, 1);
     }
@@ -738,8 +873,14 @@ mod tests {
             b = ids[1],
             c = ids[2]
         );
-        let r =
-            super::set(&state, &me(), ReportSet { markdown: md, base: None, new: true, change: None }).await.unwrap();
+        let r = super::set(
+            &state,
+            &me(),
+            &inbox(&state.db).await.unwrap(),
+            ReportSet { markdown: md, base: None, new: true, change: None },
+        )
+        .await
+        .unwrap();
         // He changed the second default: its card waits for the agent.
         let r = answer(
             &state,
@@ -784,8 +925,14 @@ mod tests {
              <Ask id=\"budget\">How much can I spend?</Ask>\n\n<Ask id=\"me\" options=\"Yes|No\">Was this you?</Ask>\n",
             id = card.id
         );
-        let r =
-            super::set(&state, &me(), ReportSet { markdown: md, base: None, new: true, change: None }).await.unwrap();
+        let r = super::set(
+            &state,
+            &me(),
+            &inbox(&state.db).await.unwrap(),
+            ReportSet { markdown: md, base: None, new: true, change: None },
+        )
+        .await
+        .unwrap();
         answer(
             &state,
             quietdeck_types::report::ReportAnswerAdd {
@@ -800,15 +947,97 @@ mod tests {
         )
         .await
         .unwrap();
-        let r = reply(&state, ReportReply { to: "budget".into(), text: "Booked at $1.8k".into() }).await.unwrap();
+        let r = reply(
+            &state,
+            &inbox(&state.db).await.unwrap(),
+            ReportReply { to: "budget".into(), text: "Booked at $1.8k".into() },
+        )
+        .await
+        .unwrap();
         let thread: Vec<_> = r.answers.iter().filter(|a| a.control == "budget").map(|a| a.kind).collect();
         assert_eq!(thread, vec![AnswerKind::Choice, AnswerKind::Reply]);
-        let bad = reply(&state, ReportReply { to: "nope".into(), text: "x".into() }).await.unwrap_err();
+        let bad = reply(&state, &inbox(&state.db).await.unwrap(), ReportReply { to: "nope".into(), text: "x".into() })
+            .await
+            .unwrap_err();
         assert!(bad.to_string().contains("question"), "{bad}");
         let req =
             quietdeck_types::decision::ApproveReport { report_id: r.id, report_version: r.version, timeline: vec![] };
         let a = crate::ops::approve_report(&state, req).await.unwrap();
         assert_eq!(a.cards, vec![card.id], "the default's card, and nothing for either question");
+    }
+
+    #[tokio::test]
+    async fn a_work_document_sits_beside_the_inbox_and_approve_all_clears_its_fyi() {
+        let state = AppState::for_tests().await;
+        let overseer = SessionRef { node: "agents".into(), tab: "overseer".into(), session_id: None };
+        let work = crate::documents::add(
+            &state,
+            quietdeck_types::document::DocumentAdd {
+                slug: "work".into(),
+                name: "Work".into(),
+                tab: "Work".into(),
+                kind: DocumentKind::Work,
+                writer_node: Some("agents".into()),
+                writer_tab: Some("overseer".into()),
+                position: None,
+            },
+        )
+        .await
+        .unwrap();
+        let input = |thread: &str| -> quietdeck_types::card::CardInput {
+            serde_json::from_value(serde_json::json!({"account": "personal", "thread_key": thread, "subject": "s",
+                "summary": "x", "section": "actions", "reason": "r",
+                "actions": [{"type": "archive", "account": "personal", "thread_id": thread}]}))
+            .unwrap()
+        };
+        let open = quietdeck_types::card::CardState::Open;
+        let mail = crate::store::cards::add(&state.db, &me(), &input("t1"), open, None).await.unwrap().card;
+        let session = crate::store::cards::add(&state.db, &overseer, &input("t2"), open, None).await.unwrap().card;
+        let inbox_doc = inbox(&state.db).await.unwrap();
+        super::set(
+            &state,
+            &me(),
+            &inbox_doc,
+            ReportSet { markdown: "# Inbox".into(), base: None, new: true, change: None },
+        )
+        .await
+        .unwrap();
+        // The triage agent can't write Work; its writer can.
+        assert!(
+            super::set(
+                &state,
+                &me(),
+                &work,
+                ReportSet { markdown: "# x".into(), base: None, new: false, change: None }
+            )
+            .await
+            .is_err()
+        );
+        let md = format!(
+            "# Needs you\n\n1. **enterprise:** wrap it up?\n   <Default cards=\"c_{}\">Wrap up session</Default>\n\n\
+             ## FYI\n\n- `ci` finished: green.\n- `docs` shipped.\n",
+            session.id
+        );
+        let w = super::set(&state, &overseer, &work, ReportSet { markdown: md, base: None, new: false, change: None })
+            .await
+            .unwrap();
+        assert_eq!(w.document_id, work.id);
+        assert!(w.cards_not_in_report.is_empty());
+        // Each document lists only its own unnamed cards.
+        let i = current(&state.db, INBOX_ID).await.unwrap().unwrap();
+        assert_eq!(i.cards_not_in_report, vec![mail.id]);
+        assert_eq!(i.markdown, "# Inbox");
+        // A Work document is never replaced.
+        let again = ReportSet { markdown: "# new".into(), base: None, new: true, change: None };
+        assert!(super::set(&state, &overseer, &work, again).await.is_err());
+        let req =
+            quietdeck_types::decision::ApproveReport { report_id: w.id, report_version: w.version, timeline: vec![] };
+        let a = crate::ops::approve_report(&state, req).await.unwrap();
+        assert_eq!(a.cards, vec![session.id]);
+        let w = current(&state.db, work.id).await.unwrap().unwrap();
+        assert!(!w.markdown.contains("`ci` finished"), "{}", w.markdown);
+        assert!(w.markdown.contains("## FYI") && w.markdown.contains("Wrap up session"));
+        assert!(snapshots_between(&state.db, 0, i64::MAX).await.unwrap().is_empty(), "History keeps the Inbox only");
     }
 
     #[tokio::test]
@@ -829,13 +1058,24 @@ mod tests {
             ids.push(added.card.id);
         }
         let md = format!("<Default cards=\"c_{}\">archive</Default>", ids[0]);
-        let r =
-            super::set(&state, &me(), ReportSet { markdown: md, base: None, new: false, change: None }).await.unwrap();
+        let r = super::set(
+            &state,
+            &me(),
+            &inbox(&state.db).await.unwrap(),
+            ReportSet { markdown: md, base: None, new: false, change: None },
+        )
+        .await
+        .unwrap();
         assert_eq!(r.cards_not_in_report, vec![ids[1], ids[2]]);
         let md = format!("<Default cards=\"c_{} c_{} c_{}\">archive</Default>", ids[0], ids[1], ids[2]);
-        let r = super::set(&state, &me(), ReportSet { markdown: md, base: Some(1), new: false, change: None })
-            .await
-            .unwrap();
+        let r = super::set(
+            &state,
+            &me(),
+            &inbox(&state.db).await.unwrap(),
+            ReportSet { markdown: md, base: Some(1), new: false, change: None },
+        )
+        .await
+        .unwrap();
         assert!(r.cards_not_in_report.is_empty());
 
         let mut forward = card("t4");
@@ -851,16 +1091,28 @@ mod tests {
             .card
             .id;
         let md = format!("<Default id=\"archive-all\" cards=\"c_{} c_{fwd}\">Archive all</Default>", ids[0]);
-        let refused = super::set(&state, &me(), ReportSet { markdown: md, base: Some(2), new: false, change: None })
-            .await
-            .unwrap_err();
+        let refused = super::set(
+            &state,
+            &me(),
+            &inbox(&state.db).await.unwrap(),
+            ReportSet { markdown: md, base: Some(2), new: false, change: None },
+        )
+        .await
+        .unwrap_err();
         assert!(refused.to_string().contains(&format!("c_{fwd} has forward")), "{refused}");
         let md = format!(
             "<Default cards=\"c_{fwd}\">Forward to `ci`, then archive</Default>\n\
              <Default id=\"archive-all\" cards=\"c_{} c_{} c_{}\">Archive all</Default>",
             ids[0], ids[1], ids[2]
         );
-        super::set(&state, &me(), ReportSet { markdown: md, base: Some(2), new: false, change: None }).await.unwrap();
+        super::set(
+            &state,
+            &me(),
+            &inbox(&state.db).await.unwrap(),
+            ReportSet { markdown: md, base: Some(2), new: false, change: None },
+        )
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -881,7 +1133,14 @@ mod tests {
             ids.push((c.id, c.version));
         }
         let md = format!("<Default id=\"archive-all\" cards=\"c_{} c_{}\">Archive all</Default>", ids[0].0, ids[1].0);
-        super::set(&state, &me(), ReportSet { markdown: md, base: None, new: false, change: None }).await.unwrap();
+        super::set(
+            &state,
+            &me(),
+            &inbox(&state.db).await.unwrap(),
+            ReportSet { markdown: md, base: None, new: false, change: None },
+        )
+        .await
+        .unwrap();
         let decision = |(id, version): (i64, i64)| quietdeck_types::decision::CardDecision {
             card_id: id,
             version,
@@ -903,9 +1162,14 @@ mod tests {
     #[tokio::test]
     async fn answers_are_kept_and_taken_once_when_the_agent_was_away() {
         let state = AppState::for_tests().await;
-        let r = super::set(&state, &me(), ReportSet { markdown: "x".into(), base: None, new: false, change: None })
-            .await
-            .unwrap();
+        let r = super::set(
+            &state,
+            &me(),
+            &inbox(&state.db).await.unwrap(),
+            ReportSet { markdown: "x".into(), base: None, new: false, change: None },
+        )
+        .await
+        .unwrap();
         let r = answer(
             &state,
             ReportAnswerAdd {
@@ -923,11 +1187,16 @@ mod tests {
         // No node is connected in tests, so the answer waits.
         assert_eq!(r.answers.len(), 1);
         assert!(!r.answers[0].picked_up);
-        let taken = take_answers(&state).await.unwrap();
+        let taken = take_answers(&state, &inbox(&state.db).await.unwrap()).await.unwrap();
         assert_eq!(taken.len(), 1);
         assert_eq!(taken[0].value, "No");
-        assert!(take_answers(&state).await.unwrap().is_empty());
-        let chat = chat(&state, ReportChat { text: "archive the HelloFresh ones from now on".into() }).await;
+        assert!(take_answers(&state, &inbox(&state.db).await.unwrap()).await.unwrap().is_empty());
+        let chat = chat(
+            &state,
+            &inbox(&state.db).await.unwrap(),
+            ReportChat { text: "archive the HelloFresh ones from now on".into() },
+        )
+        .await;
         assert!(chat.is_err(), "nobody is running, so the chat fails at once");
     }
 
@@ -936,10 +1205,14 @@ mod tests {
         let state = AppState::for_tests().await;
         let markdown = "<Ask id=\"invoice\" options=\"DocSpring, Inc.|Me\" cards=\"c_5\">Who should BizSpace \
                         invoice?</Ask>";
-        let r =
-            super::set(&state, &me(), ReportSet { markdown: markdown.into(), base: None, new: false, change: None })
-                .await
-                .unwrap();
+        let r = super::set(
+            &state,
+            &me(),
+            &inbox(&state.db).await.unwrap(),
+            ReportSet { markdown: markdown.into(), base: None, new: false, change: None },
+        )
+        .await
+        .unwrap();
         let pick = |cards: Option<&str>| ReportAnswerAdd {
             report_id: r.id,
             report_version: r.version,
@@ -964,10 +1237,14 @@ mod tests {
     #[tokio::test]
     async fn approve_all_keeps_the_document_with_this_rounds_answers_and_undo_drops_it() {
         let state = AppState::for_tests().await;
-        let r =
-            super::set(&state, &me(), ReportSet { markdown: "# Round".into(), base: None, new: false, change: None })
-                .await
-                .unwrap();
+        let r = super::set(
+            &state,
+            &me(),
+            &inbox(&state.db).await.unwrap(),
+            ReportSet { markdown: "# Round".into(), base: None, new: false, change: None },
+        )
+        .await
+        .unwrap();
         let change = |value: &str| ReportAnswerAdd {
             report_id: r.id,
             report_version: r.version,

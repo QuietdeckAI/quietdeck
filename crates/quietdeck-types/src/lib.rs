@@ -6,6 +6,7 @@ pub mod api;
 pub mod card;
 pub mod decision;
 pub mod directory;
+pub mod document;
 pub mod handoff;
 pub mod hooks;
 pub mod lease;

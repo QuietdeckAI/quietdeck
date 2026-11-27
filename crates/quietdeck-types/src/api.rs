@@ -214,6 +214,10 @@ pub enum Changed {
     Push,
     /// The Drafts and Sent tabs.
     Mail,
+    /// The documents (tabs) and their settings.
+    Documents,
+    /// The person's marks on sessions: ignored, parked.
+    SessionMarks,
     /// The stream fell behind: refetch everything.
     All,
 }

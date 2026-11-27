@@ -250,7 +250,7 @@ mod tests {
         let (open, done) = (card("open").await, card("done").await);
         let report =
             quietdeck_types::report::ReportSet { markdown: "# Round".into(), base: None, new: false, change: None };
-        crate::reports::set(&state, &old(), report).await.unwrap();
+        crate::reports::set(&state, &old(), &crate::reports::inbox(&state.db).await.unwrap(), report).await.unwrap();
 
         let h = add(&state.db, &old(), add_req()).await.unwrap();
         let new = SessionRef { node: "vm".into(), tab: "infra".into(), session_id: Some("s-new".into()) };
@@ -268,7 +268,7 @@ mod tests {
         };
         assert_eq!(node(open).await, "vm");
         assert_eq!(node(done).await, "laptop", "finished cards stay with the session that did them");
-        let r = crate::reports::current(&state.db).await.unwrap().unwrap();
+        let r = crate::reports::current(&state.db, quietdeck_types::document::INBOX_ID).await.unwrap().unwrap();
         assert_eq!(r.posted_by, new);
     }
 

@@ -2,7 +2,7 @@
 //! owner's sign-in. The MCP endpoint calls the same functions (`ops`).
 
 use aide::axum::ApiRouter;
-use aide::axum::routing::{delete, get, post, put};
+use aide::axum::routing::{delete, get, patch as axum_patch, post, put};
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use quietdeck_types::api::{
@@ -104,6 +104,12 @@ pub fn router() -> ApiRouter<AppState> {
         .api_route("/report/chat", post(report_chat))
         .api_route("/report/replies", post(report_reply))
         .api_route("/report/snapshots/{id}", get(report_snapshot))
+        .api_route("/report/fyi/clear", post(report_fyi_clear))
+        .api_route("/documents", get(documents_list).post(documents_add))
+        .api_route("/documents/{id}", axum_patch(documents_edit))
+        .api_route("/documents/{id}/remove", post(documents_remove))
+        .api_route("/session-marks", get(session_marks_list).post(session_marks_set))
+        .api_route("/session-marks/remove", post(session_marks_remove))
         .api_route("/pings", get(pings_view).post(ping_send))
         .api_route("/pings/{id}/feedback", post(ping_feedback))
         .api_route("/pings/feedback/take", post(ping_feedback_take))
@@ -226,11 +232,92 @@ async fn messages_read(
     Ok(Json(crate::messages::read(&state.db, &me, q.source.as_deref(), q.after, limit).await?))
 }
 
+/// Which document a report route is about: its slug. Left out, an agent gets the document it writes, else the Inbox.
+#[derive(Deserialize, JsonSchema)]
+pub struct DocQuery {
+    pub doc: Option<String>,
+}
+
+async fn doc_for(state: &AppState, q: &DocQuery, caller: &Caller) -> AppResult<quietdeck_types::document::Document> {
+    let me = match caller {
+        Caller::Session { session } => Some(session),
+        _ => None,
+    };
+    crate::documents::resolve(&state.db, q.doc.as_deref(), me).await
+}
+
 async fn report_show(
     State(state): State<AppState>,
-    Authed(_): Authed,
+    Authed(caller): Authed,
+    Query(q): Query<DocQuery>,
 ) -> AppResult<Json<Option<quietdeck_types::report::Report>>> {
-    Ok(Json(crate::reports::current(&state.db).await?))
+    let doc = doc_for(&state, &q, &caller).await?;
+    Ok(Json(crate::reports::current(&state.db, doc.id).await?))
+}
+
+async fn report_fyi_clear(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Query(q): Query<DocQuery>,
+) -> AppResult<Json<Option<quietdeck_types::report::Report>>> {
+    let doc = crate::documents::resolve(&state.db, q.doc.as_deref(), None).await?;
+    Ok(Json(crate::reports::fyi_clear(&state, &doc).await?))
+}
+
+async fn documents_list(
+    State(state): State<AppState>,
+    Authed(_): Authed,
+) -> AppResult<Json<Vec<quietdeck_types::document::Document>>> {
+    Ok(Json(crate::documents::list(&state.db).await?))
+}
+
+async fn documents_add(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(req): Json<quietdeck_types::document::DocumentAdd>,
+) -> AppResult<Json<quietdeck_types::document::Document>> {
+    Ok(Json(crate::documents::add(&state, req).await?))
+}
+
+async fn documents_edit(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(Id { id }): Path<Id>,
+    Json(req): Json<quietdeck_types::document::DocumentEdit>,
+) -> AppResult<Json<quietdeck_types::document::Document>> {
+    Ok(Json(crate::documents::edit(&state, id, req).await?))
+}
+
+async fn documents_remove(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(Id { id }): Path<Id>,
+) -> AppResult<Json<serde_json::Value>> {
+    crate::documents::remove(&state, id).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+async fn session_marks_list(
+    State(state): State<AppState>,
+    Authed(_): Authed,
+) -> AppResult<Json<Vec<quietdeck_types::document::SessionMark>>> {
+    Ok(Json(crate::documents::marks(&state.db).await?))
+}
+
+async fn session_marks_set(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(req): Json<quietdeck_types::document::SessionMarkSet>,
+) -> AppResult<Json<Vec<quietdeck_types::document::SessionMark>>> {
+    Ok(Json(crate::documents::mark_set(&state, req).await?))
+}
+
+async fn session_marks_remove(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(req): Json<quietdeck_types::document::SessionMarkRemove>,
+) -> AppResult<Json<Vec<quietdeck_types::document::SessionMark>>> {
+    Ok(Json(crate::documents::mark_remove(&state, req).await?))
 }
 
 async fn hooks_list(
@@ -272,24 +359,33 @@ async fn hooks_delete(
 
 async fn chat_reply(
     State(state): State<AppState>,
-    Agent(_): Agent,
+    Agent(me): Agent,
+    Query(q): Query<DocQuery>,
     Json(req): Json<quietdeck_types::report::ChatReply>,
 ) -> AppResult<Json<serde_json::Value>> {
-    crate::reports::chat_reply(&state, &req.text).await?;
+    let doc = crate::documents::resolve(&state.db, q.doc.as_deref(), Some(&me)).await?;
+    crate::reports::chat_reply(&state, &doc, &req.text).await?;
     Ok(Json(serde_json::json!({})))
 }
 
-async fn report_done(State(state): State<AppState>, Agent(_): Agent) -> AppResult<Json<serde_json::Value>> {
-    crate::reports::done(&state).await?;
+async fn report_done(
+    State(state): State<AppState>,
+    Agent(me): Agent,
+    Query(q): Query<DocQuery>,
+) -> AppResult<Json<serde_json::Value>> {
+    let doc = crate::documents::resolve(&state.db, q.doc.as_deref(), Some(&me)).await?;
+    crate::reports::done(&state, &doc).await?;
     Ok(Json(serde_json::json!({})))
 }
 
 async fn report_set(
     State(state): State<AppState>,
     Agent(me): Agent,
+    Query(q): Query<DocQuery>,
     Json(req): Json<quietdeck_types::report::ReportSet>,
 ) -> AppResult<Json<quietdeck_types::report::Report>> {
-    Ok(Json(crate::reports::set(&state, &me, req).await?))
+    let doc = crate::documents::resolve(&state.db, q.doc.as_deref(), Some(&me)).await?;
+    Ok(Json(crate::reports::set(&state, &me, &doc, req).await?))
 }
 
 async fn handoff_add(
@@ -320,10 +416,12 @@ async fn handoff_claim(
 
 async fn report_reply(
     State(state): State<AppState>,
-    _agent: Agent,
+    Agent(me): Agent,
+    Query(q): Query<DocQuery>,
     Json(req): Json<quietdeck_types::report::ReportReply>,
 ) -> AppResult<Json<quietdeck_types::report::Report>> {
-    Ok(Json(crate::reports::reply(&state, req).await?))
+    let doc = crate::documents::resolve(&state.db, q.doc.as_deref(), Some(&me)).await?;
+    Ok(Json(crate::reports::reply(&state, &doc, req).await?))
 }
 
 async fn report_snapshot(
@@ -344,17 +442,21 @@ async fn report_answer(
 
 async fn report_answers_take(
     State(state): State<AppState>,
-    _agent: Agent,
+    Agent(me): Agent,
+    Query(q): Query<DocQuery>,
 ) -> AppResult<Json<Vec<quietdeck_types::report::ReportAnswer>>> {
-    Ok(Json(crate::reports::take_answers(&state).await?))
+    let doc = crate::documents::resolve(&state.db, q.doc.as_deref(), Some(&me)).await?;
+    Ok(Json(crate::reports::take_answers(&state, &doc).await?))
 }
 
 async fn report_chat(
     State(state): State<AppState>,
     _owner: Owner,
+    Query(q): Query<DocQuery>,
     Json(c): Json<quietdeck_types::report::ReportChat>,
 ) -> AppResult<Json<quietdeck_types::node::Delivered>> {
-    Ok(Json(crate::reports::chat(&state, c).await?))
+    let doc = crate::documents::resolve(&state.db, q.doc.as_deref(), None).await?;
+    Ok(Json(crate::reports::chat(&state, &doc, c).await?))
 }
 
 async fn ping_send(
@@ -805,8 +907,16 @@ pub struct AccountQuery {
     pub account: Option<String>,
 }
 
-async fn inbox(State(state): State<AppState>, _owner: Owner, Query(q): Query<AccountQuery>) -> AppResult<Json<Inbox>> {
-    Ok(Json(ops::inbox(&state, q.account.as_deref()).await?))
+/// The Inbox, or with `doc`, the same data with that document's report in it.
+#[derive(Deserialize, JsonSchema)]
+pub struct InboxQuery {
+    pub account: Option<String>,
+    pub doc: Option<String>,
+}
+
+async fn inbox(State(state): State<AppState>, _owner: Owner, Query(q): Query<InboxQuery>) -> AppResult<Json<Inbox>> {
+    let doc = crate::documents::resolve(&state.db, q.doc.as_deref(), None).await?;
+    Ok(Json(ops::inbox_for(&state, q.account.as_deref(), doc.id).await?))
 }
 
 async fn later(

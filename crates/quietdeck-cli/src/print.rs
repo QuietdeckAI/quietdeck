@@ -479,6 +479,45 @@ pub fn round_status(r: &quietdeck_types::api::RoundStatus) -> String {
     out.join("\n")
 }
 
+pub fn documents(d: &[quietdeck_types::document::Document]) -> String {
+    d.iter()
+        .map(|d| {
+            let writer = match (&d.writer_tab, &d.writer_node) {
+                (Some(t), Some(n)) => format!("written by {t}@{n}"),
+                _ => "any agent writes it".to_string(),
+            };
+            format!(
+                "{} ({}): \"{}\" under the {} tab, {}; --doc {}",
+                d.id,
+                d.kind.as_str(),
+                d.name,
+                d.tab,
+                writer,
+                d.slug
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub fn marks(m: &[quietdeck_types::document::SessionMark]) -> String {
+    if m.is_empty() {
+        return "No marks: nothing is ignored or parked.".into();
+    }
+    m.iter()
+        .map(|m| {
+            let what = match (m.mark, m.until) {
+                (quietdeck_types::document::MarkKind::Ignored, _) => "ignored".to_string(),
+                (_, Some(u)) => format!("parked until {u}"),
+                (_, None) => "parked".to_string(),
+            };
+            let note = m.note.as_deref().map(|n| format!(": {n}")).unwrap_or_default();
+            format!("{}@{}: {what}{note}", m.tab, m.node)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

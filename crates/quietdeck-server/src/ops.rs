@@ -373,12 +373,18 @@ pub async fn history(state: &AppState, me: &SessionRef, since: &str) -> AppResul
 // Decisions, the Inbox and History.
 
 pub async fn approve_all(state: &AppState, req: ApproveAll) -> AppResult<Approving> {
+    approve_all_on(state, req, true).await
+}
+
+/// Approve All, keeping the Inbox document for History when `snapshot` (an Approve All from another document doesn't).
+async fn approve_all_on(state: &AppState, req: ApproveAll, snapshot: bool) -> AppResult<Approving> {
     garde::Validate::validate(&req).map_err(bad)?;
     let settings = crate::api::load_settings(&state.db).await?;
     let a = decisions::approve_all(&state.db, &req, settings.undo_seconds).await?;
     // History keeps the Inbox document as it was at this moment (Approve All only, not one default's Approve).
     // Approve All doesn't fail over it.
-    if !a.cards.is_empty()
+    if snapshot
+        && !a.cards.is_empty()
         && req.single != Some(true)
         && let Err(e) = crate::reports::snapshot(&state.db, &a.batch, &a.cards).await
     {
@@ -393,7 +399,10 @@ pub async fn approve_all(state: &AppState, req: ApproveAll) -> AppResult<Approvi
 /// open or handed off, each approved as it stands (a suggestion with its actions as they are).
 pub async fn approve_report(state: &AppState, req: quietdeck_types::decision::ApproveReport) -> AppResult<Approving> {
     garde::Validate::validate(&req).map_err(bad)?;
-    let report = crate::reports::current(&state.db)
+    let doc = crate::reports::document_of(&state.db, req.report_id)
+        .await?
+        .ok_or_else(|| AppError::Conflict("that report isn't the current one: read the new one first".into()))?;
+    let report = crate::reports::current(&state.db, doc.id)
         .await?
         .filter(|r| r.id == req.report_id)
         .ok_or_else(|| AppError::Conflict("that report isn't the current one: read the new one first".into()))?;
@@ -442,7 +451,13 @@ pub async fn approve_report(state: &AppState, req: quietdeck_types::decision::Ap
             });
         }
     }
-    approve_all(state, ApproveAll { cards: decisions, timeline: req.timeline, single: None }).await
+    let work = doc.kind == quietdeck_types::document::DocumentKind::Work;
+    let a = approve_all_on(state, ApproveAll { cards: decisions, timeline: req.timeline, single: None }, !work).await?;
+    // On a Work document, Approve All also clears the FYI list; it doesn't fail over it.
+    if work && let Err(e) = crate::reports::fyi_clear(state, &doc).await {
+        tracing::warn!(error = %e, "couldn't clear the FYI list on Approve All");
+    }
+    Ok(a)
 }
 
 pub async fn undo(state: &AppState, batch: &str) -> AppResult<()> {
@@ -499,6 +514,11 @@ pub async fn actions_report(
 }
 
 pub async fn inbox(state: &AppState, account: Option<&str>) -> AppResult<Inbox> {
+    inbox_for(state, account, quietdeck_types::document::INBOX_ID).await
+}
+
+/// The Inbox's data with another document's report in it: the web app shows every document the same way.
+pub async fn inbox_for(state: &AppState, account: Option<&str>, doc: i64) -> AppResult<Inbox> {
     let mut inbox = Inbox {
         actions: vec![],
         suggestions: vec![],
@@ -510,7 +530,7 @@ pub async fn inbox(state: &AppState, account: Option<&str>) -> AppResult<Inbox> 
         running: decisions::running(&state.db).await?,
         last_agent_at: decisions::last_agent_at(&state.db).await?.map(crate::db::ts),
         rule_offers: vec![],
-        report: crate::reports::current(&state.db).await?,
+        report: crate::reports::current(&state.db, doc).await?,
         presence: crate::reading::current(&state.db).await?,
         finished_cards: vec![],
     };
