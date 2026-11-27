@@ -154,7 +154,8 @@ It should say `You are email triage@agents-triage`.
 
 ## The runner runs in the triage user's node
 
-The runner wakes the agent through the node the agent's tab runs under: it delivers only to a tab on its own node. So
+Without Fleetlayer, the runner wakes the agent through the node the agent's tab runs under: it delivers only to a tab
+on its own node. So
 its `runner:` section goes in triage's `~/.config/quietdeck/node.yaml`, with `agent: { tab: email triage }`, and
 nowhere else.
 
@@ -163,6 +164,11 @@ gog](mail-through-gog.md)), or the runner's Executor token in a file under triag
 The agent can read it. That's the one credential worth giving it, since triage is about mail, but keep it to mail:
 a gog sign-in with `--services gmail` only, or an Executor token for the tools the runner needs. Everything the runner
 carries out still needs your approval first.
+
+With [Fleetlayer](with-fleetlayer.md) running Quietdeck's plugin on both nodes, there's a better arrangement: keep the
+runner in your own user's node, holding the mail credential, and point it at the tab on triage's node with
+`agent: { tab: "email triage@agents-triage" }`. The runner then reaches the agent through Fleetlayer, and triage's user
+holds no mail credential at all. Without Fleetlayer, the runner can only wake a tab on its own node.
 
 ## How other sessions reach it
 

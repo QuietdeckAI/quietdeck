@@ -40,7 +40,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
 - **Per-machine instructions.** A shared global instructions file for every machine, plus one file per machine
   (`CLAUDE.this-machine.md`, which the sync leaves out) for what holds only there: no browser, no Touch ID, how to
   reach the other machines. Now: Nathan's global instructions and the homeserver repo's agents VM role.
-- **Agents propose, the person approves.** Subscriptions, monitoring, rules and new sessions are proposed by agents
+- ~~**Agents propose, the person approves.**~~ Written: `docs/guides/propose-approve.md`. Subscriptions, monitoring, rules and new sessions are proposed by agents
   on cards and approved by the person, never written into a config file the person has to edit. Now: Nathan, 25
   November (build plan).
 - **Two scratchpads per agent.** A wiped one (`/tmp`, the session scratchpad) and a kept, synced one in the notes
@@ -161,7 +161,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
 - **Every background thing has a check that alerts, and an agent listens.** Heartbeats for scheduled jobs, health
   checks for daemons, checks that catch "running but not working", alerts to a Matrix room, and the owning agent
   fixing it. Now: Nathan's global instructions, "Everything in the background is watched, and an agent fixes it".
-- **A dead man's switch for the alert path.** Alertmanager's Watchdog posts to its own Matrix room every 30 minutes;
+- ~~**A dead man's switch for the alert path.**~~ Written: `docs/guides/propose-approve.md`. Alertmanager's Watchdog posts to its own Matrix room every 30 minutes;
   the node's Matrix reader turns each post into a ping to Healthchecks.io (plain code, no card, no agent, no tokens),
   so if Prometheus, Alertmanager, the bridge, Synapse or the reader dies, the silence emails the person. Now:
   `deploy/node.example.yaml` (`matrix.heartbeats`), Nathan's approval on 25 November.
@@ -188,7 +188,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
 
 ## Setting up a machine
 
-- **Quietdeck's messages through Fleetlayer.** On a machine that runs Fleetlayer, add Quietdeck's node to Fleetlayer's
+- ~~**Quietdeck's messages through Fleetlayer.**~~ Written: `docs/guides/with-fleetlayer.md`. On a machine that runs Fleetlayer, add Quietdeck's node to Fleetlayer's
   node.yaml as a plugin (`name: runner`, `command: quietdeck-node`, `args: [fleetlayer-plugin]`,
   `grants: [message.send]`). The runner's forwards and its wake-ups then go through Fleetlayer as
   `plugin:runner@<node>`, the sender access rules name, with an email forward marked as outside data (`untrusted`).
