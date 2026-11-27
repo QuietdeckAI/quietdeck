@@ -26,6 +26,15 @@ Release images build on docspring-dev too: `scripts/build-images --wait <commit>
 A Mac has no release binary: its node is built on the Mac itself with `scripts/install-node-from-source <commit>`
 (release build only, in `~/.cache/quietdeck-node-build`, a temporary worktree), the one other Rust build allowed there.
 
+## Watching CI
+
+Pushing main deploys the deck, and CI takes about 15 minutes. Watch it with
+`timeout 1020 gh run watch <id> --interval 60 --exit-status`. Never use the default 3-second polling, and never loop
+over `gh run list`. Every agent on Nathan's account shares one GitHub API limit (5,000 calls an hour). On 27 November
+2026, several sessions watching at once used it up, and every session's `gh` failed for 35 minutes. When `gh` answers
+403, `gh api rate_limit` says when it resets. Several sessions push to main, so a newer push cancels the run before
+it: watch the newest run that contains your commit.
+
 ## Guides to write
 
 Every time you run into something others will hit too, document it for the people who follow in our footsteps: a
