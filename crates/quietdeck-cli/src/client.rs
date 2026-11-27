@@ -79,14 +79,22 @@ pub async fn ask_node(req: &LocalRequest) -> anyhow::Result<LocalResponse> {
     }
 }
 
+/// Why the node's socket refused, in words that point at the real cause: a sandbox (Codex's, macOS's) that blocks the
+/// socket says "Operation not permitted", which isn't the node being down.
+fn connect_error(path: &std::path::Path, e: &std::io::Error) -> anyhow::Error {
+    let p = path.display();
+    match e.kind() {
+        std::io::ErrorKind::PermissionDenied => anyhow::anyhow!(
+            "this process isn't allowed to reach the Quietdeck node's socket ({p}: {e}). A sandbox may be blocking \
+             it (Codex's read-only and workspace-write modes do), or the socket belongs to another user"
+        ),
+        _ => anyhow::anyhow!("this machine's Quietdeck node isn't running ({p}: {e}). Start it with quietdeck-node"),
+    }
+}
+
 async fn ask_node_once(req: &LocalRequest) -> anyhow::Result<LocalResponse> {
     let path = socket_path();
-    let stream = tokio::net::UnixStream::connect(&path).await.map_err(|e| {
-        anyhow::anyhow!(
-            "this machine's Quietdeck node isn't running ({}: {e}). Start it with quietdeck-node",
-            path.display()
-        )
-    })?;
+    let stream = tokio::net::UnixStream::connect(&path).await.map_err(|e| connect_error(&path, &e))?;
     let (r, mut w) = stream.into_split();
     w.write_all(format!("{}\n", serde_json::to_string(req)?).as_bytes()).await?;
     let line = BufReader::new(r).lines().next_line().await?.ok_or_else(|| anyhow::anyhow!("the node hung up"))?;
@@ -202,4 +210,18 @@ pub fn write_secret_file(path: &Path, contents: &str) -> anyhow::Result<()> {
     f.write_all(b"\n")?;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod connect_error_tests {
+    use super::*;
+
+    #[test]
+    fn a_blocked_socket_isnt_reported_as_a_node_thats_down() {
+        let p = std::path::Path::new("/run/user/1/quietdeck/node.sock");
+        let denied = std::io::Error::from_raw_os_error(1);
+        assert!(connect_error(p, &denied).to_string().contains("isn't allowed to reach"));
+        let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
+        assert!(connect_error(p, &missing).to_string().contains("isn't running"));
+    }
 }

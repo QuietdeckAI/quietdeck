@@ -1,0 +1,11 @@
+Quietdeck
+Copyright 2026 Nathan Broadbent
+
+Quietdeck is licensed under the Functional Source License, Version 1.1, ALv2 Future License (see LICENSE.md).
+
+Parts are adapted from Fleetlayer (https://github.com/fleetlayer/fleetlayer), Copyright 2026 Nathan Broadbent,
+licensed under the Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0):
+
+- install.sh and .github/workflows/release.yml, from Fleetlayer's of the same names: changed for Quietdeck's
+  binaries, repository and messages, and to build the web app before the release build.
+- site/, from Fleetlayer's site: see site/NOTICE for what changed.
