@@ -12,6 +12,7 @@
 mod config;
 mod deck;
 mod gog;
+mod headless;
 mod leases;
 mod mail;
 mod tools;
@@ -37,6 +38,7 @@ use tokio::time::Instant;
 
 pub use config::RunnerConfig;
 pub use deck::{AgentInbox, DeckApi, LinkDeck, LocalAgent};
+pub use headless::HeadlessAgent;
 use mail::MailState;
 pub use tools::{ConfiguredTools, Tools};
 

@@ -67,7 +67,12 @@ pub enum MailBackend {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentConfig {
+    /// The agent's tab, or its name when it's headless.
     pub tab: String,
+    /// Run the agent as one `claude -p` turn per message, resuming the same conversation, instead of pasting into a
+    /// tab. See [`super::headless`].
+    #[serde(default)]
+    pub headless: Option<super::headless::HeadlessConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -291,6 +296,9 @@ impl RunnerConfig {
         }
         if self.agent.tab.trim().is_empty() {
             return Err("runner.agent.tab is empty".into());
+        }
+        if let Some(h) = &self.agent.headless {
+            h.check()?;
         }
         for key in self.tools.keys() {
             if !TOOL_KEYS.contains(&key.as_str()) {

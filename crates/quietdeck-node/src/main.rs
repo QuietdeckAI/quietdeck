@@ -212,7 +212,11 @@ async fn run() -> anyhow::Result<()> {
                 Some(g) => runner::ConfiguredTools::new(executor).with_gog(g),
                 None => runner::ConfiguredTools::new(executor),
             }),
-            Arc::new(runner::LocalAgent { node: node.clone(), tab: cfg.agent.tab.clone() }),
+            match &cfg.agent.headless {
+                Some(h) => Arc::new(runner::HeadlessAgent::spawn(h.clone(), cfg.agent.tab.clone(), state.clone()))
+                    as Arc<dyn runner::AgentInbox>,
+                None => Arc::new(runner::LocalAgent { node: node.clone(), tab: cfg.agent.tab.clone() }),
+            },
             state.clone(),
         ));
         let _ = node.runner.set(runner::spawn(r));

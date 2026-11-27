@@ -73,6 +73,14 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
 
 ## The triage agent
 
+- **A headless agent limited to one CLI.** For Quietdeck solo, each message is one `claude -p` turn on the same
+  conversation (`--resume=<id>`, the ID from `--output-format=json`'s result, kept in the state directory), the prompt
+  on stdin. `--permission-mode=dontAsk` refuses whatever isn't allowed without a prompt nobody would answer,
+  `--tools=Bash` with `--allowedTools=Bash(quietdeck:*)` leaves only the quietdeck CLI, and `--strict-mcp-config`
+  drops the user's MCP servers, so the agent has no mail tools of its own. Footgun: `--allowedTools` takes a list,
+  so write it `--allowedTools=<rule>`, or a bare value after it swallows the next argument. Checked for real on 27
+  November with Claude Code 2.1.332: `quietdeck --version` ran, `ls /` was refused and listed in
+  `permission_denials`, and a resumed turn remembered the last. Now: `crates/quietdeck-node/src/runner/headless.rs`.
 - **Mail through gog, without Executor.** For Quietdeck solo, `runner.mail: gog` runs the user's own gog CLI
   (signed in with `gog auth add <address> --services gmail`) for every mail tool. Footguns: gog's `gmail history`
   asks Gmail for new messages only and prints bare IDs (no labels, threads, archives or deletions), and gog has no
