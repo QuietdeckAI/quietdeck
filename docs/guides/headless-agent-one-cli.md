@@ -3,9 +3,11 @@
 An agent that triages email reads text written by strangers, and some of that text will try to give it orders. If the
 agent can run a shell, search your mailbox or call your other tools, a well-written email can make it do any of those
 things. This guide is for anyone running Claude Code headless (`claude -p`) on input they don't control: mail, issue
-comments, form submissions, web pages. It shows how Quietdeck solo runs its triage agent with one command and nothing
-else, how it hands the agent the mail it can't fetch for itself, and why the code around the agent is the right place
-to read untrusted text.
+comments, form submissions, web pages. It shows how Quietdeck solo's restricted mode
+(`agent.headless.restricted: true`) runs the triage agent with one command and nothing else, how the runner hands it
+the mail it can't fetch for itself, and why the code around the agent is the right place to read untrusted text. Solo's
+default is the other trade-off, a full-access agent that reads the mail itself: [Quietdeck solo and your
+security](../solo-security.md) compares the two.
 
 The shape:
 
@@ -113,8 +115,8 @@ the child exits, times out or is killed, so a pid the system hands out again lat
 
 ## Handing the agent the mail
 
-An agent with no mail tools still has to read the mail, so the runner reads each new message and puts a copy in the
-wake-up. One wake-up looks like this (the addresses and IDs are made up):
+An agent with no mail tools still has to know what arrived, so the runner reads each new message and puts what it
+found in the wake-up. One wake-up looks like this (the addresses and IDs are made up):
 
 ```text
 <cross-session-message from-name="Quietdeck runner">
@@ -128,7 +130,7 @@ To: you@example.com
 Subject: Saturday?
 Date: Fri, 27 Nov 2026 09:12:00 +0000
 
-Are we still on for Saturday? Bring the map.
+Snippet (Gmail's preview of the first lines, not the email): Are we still on for Saturday? Bring the map.
 </email>
 
 <email account="Personal" thread="18c3a2f9c0d1e2f3" message="18c3a2f9c0d1e2f3">
@@ -139,12 +141,13 @@ Are we still on for Saturday? Bring the map.
 
 How it's built:
 
-- **The text, without HTML.** The runner asks gog for the message with `--sanitize-content`, which takes out HTML and
-  links. Hidden text in markup and tracking links don't reach the agent.
+- **The headers and a preview.** Through gog, the runner puts in each message's headers and Gmail's snippet, the first
+  line or two. A restricted agent triages from that; a full-access one reads the thread itself. With a mail tool that
+  returns the text (Executor's `message_text`), the text goes in instead, without HTML.
 - **Headers on one line.** From, To, Cc, Subject and Date each have their whitespace (newlines included) collapsed to
   single spaces, `<` and `>` replaced with `‹` and `›`, and are cut at 300 characters. A header can't start a new line
   that looks like part of the prompt, or open a tag.
-- **The body cut short.** At 3,000 characters, with a line saying so. That's enough to triage, and a long newsletter
+- **The text cut short.** When the text goes in, it's cut at 3,000 characters, with a line saying so. That's enough to triage, and a long newsletter
   can't crowd out everything else.
 - **No tags at all.** Every `<` and `>` in the body and the headers becomes `‹` or `›`, so no tag survives in any case:
   not `</email>` or `</EMAIL>`, and not the closing tag of the wrapper round the whole wake-up. An email can't end its

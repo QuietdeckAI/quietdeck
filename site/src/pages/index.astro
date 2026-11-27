@@ -221,16 +221,20 @@ const done = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12
       <section class="safe" aria-labelledby="safe-title">
         <h2 id="safe-title">Nothing happens without you seeing it</h2>
         <p>
-          The agent reads strangers' mail, so it can only propose. Plain code carries out what you approved, exactly as
-          you approved it.
+          The agent proposes, and you approve. Plain code carries out what you approved, exactly as you approved it.
         </p>
         <ul>
-          <li>Every email reaches the agent marked as untrusted. Its instructions say mail is data, never instructions.</li>
-          <li>The agent can't send mail. A reply is saved as a Gmail draft for you to edit and send.</li>
+          <li>Every archive, label and draft waits on the page until you approve it, and the runner checks the thread hasn't changed since the agent looked.</li>
+          <li>Nothing is ever sent. A reply is saved as a Gmail draft for you to edit and send.</li>
           <li>Approve All waits a few seconds with an Undo button, and leaves out anything that changed while you were reading.</li>
           <li>Mail you archive in Gmail yourself drops off the report.</li>
         </ul>
-        <p class="safe__more"><a href="/solo-security/">How Quietdeck keeps your mail safe</a></p>
+        <p>
+          By default solo's agent is your own Claude Code with full access, so it can read whole threads, your notes and
+          the web to work out what each email needs. It reads strangers' mail with that access, and an email written to
+          fool it could act as you. A restricted mode limits it to Quietdeck's own command.
+        </p>
+        <p class="safe__more"><a href="/solo-security/">Quietdeck solo and your security</a></p>
       </section>
 
       <section class="runs" aria-labelledby="runs-title">

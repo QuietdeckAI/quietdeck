@@ -13,8 +13,10 @@ they differ, it says so.
 - **The runner** is plain code, not a model. It watches your mailbox, wakes the agent when mail arrives, and carries
   out the actions you approve that it can do by itself: archive, label, mark read, save a draft. It's the only part
   that changes your mail.
-- **The agent** is an AI coding agent (Claude Code in solo). It reads what the runner gives it and posts cards and the
-  report through the `quietdeck` command. It can't read or change your mailbox itself.
+- **The agent** is an AI coding agent (Claude Code in solo). It posts cards and the report through the `quietdeck`
+  command, and changes nothing itself. In solo it's your own Claude Code: by default it reads each email in full with
+  gog and has full access to your computer, or a restricted mode limits it to the `quietdeck` command
+  ([Quietdeck solo and your security](solo-security.md)).
 - **The Inbox** is the web page where you read the report and decide.
 
 ## Cards
@@ -91,5 +93,6 @@ it ends by itself when the agent goes idle or closes. [Leases](leases.md) explai
 ## Mail is data
 
 Everything an email says is treated as data written by a stranger, never as instructions. The runner marks mail as
-untrusted when it hands it to the agent, the agent's only tool is the `quietdeck` command, and the agent can't send
-mail: a reply goes no further than a draft. [How solo keeps your mail safe](solo-security.md) covers the rest.
+untrusted when it tells the agent about it, the agent's instructions say never to change your mail itself, and nothing
+is ever sent: a reply goes no further than a draft. An agent with full access can still be fooled into acting as you,
+which is what solo's restricted mode is for. [Quietdeck solo and your security](solo-security.md) covers both modes.

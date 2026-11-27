@@ -34,15 +34,18 @@ you.
 
 ## Nothing happens without you seeing it
 
-The agent reads strangers' mail, so it can only propose. Plain code carries out what you approved, exactly as you
-approved it.
+The agent proposes, and you approve. Plain code carries out what you approved, exactly as you approved it.
 
-- Every email reaches the agent marked as untrusted. Its instructions say mail is data, never instructions.
-- The agent can't send mail. A reply is saved as a Gmail draft for you to edit and send.
+- Every archive, label and draft waits on the page until you approve it, and the runner checks the thread hasn't
+  changed since the agent looked.
+- Nothing is ever sent. A reply is saved as a Gmail draft for you to edit and send.
 - Approve All waits a few seconds with an Undo button, and leaves out anything that changed while you were reading.
 - Mail you archive in Gmail yourself drops off the report.
 
-How Quietdeck keeps your mail safe: https://quietdeck.ai/solo-security.md
+By default solo's agent is your own Claude Code with full access, so it can read whole threads, your notes and the web
+to work out what each email needs. It reads strangers' mail with that access, and an email written to fool it could act
+as you. A restricted mode limits it to Quietdeck's own command. Quietdeck solo and your security:
+https://quietdeck.ai/solo-security.md
 
 ## Two ways to run it
 
