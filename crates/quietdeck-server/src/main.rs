@@ -4,7 +4,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use clap::{Parser, Subcommand};
 use quietdeck_server::config::{DataEnv, Env};
-use quietdeck_server::{auth, db, passkeys, serve, store};
+use quietdeck_server::{auth, db, documents, passkeys, serve, store};
 
 #[derive(Parser)]
 #[command(name = "quietdeck-server", version, about = "Quietdeck's server: the deck, its web app and API")]
@@ -24,6 +24,24 @@ enum Command {
     /// Print a one-time code for registering a passkey without being signed in: the first one, or a new one when
     /// every passkey is lost (run it in the deck's container).
     SetupCode(DataEnv),
+    /// Add a document (a tab an agent writes, such as Work), without the web app (run it in the deck's container):
+    /// `documents-add --slug work --name Work --tab Work --kind work --writer overseer@laptop`. Prints it as JSON.
+    DocumentsAdd {
+        #[command(flatten)]
+        data: DataEnv,
+        #[arg(long)]
+        slug: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        tab: String,
+        /// `inbox` or `work`.
+        #[arg(long, default_value = "work")]
+        kind: String,
+        /// The agent that writes it, `tab@node`.
+        #[arg(long)]
+        writer: Option<String>,
+    },
     /// Print a session token for a made-up tab, for filling a development deck with test cards and reports through
     /// the API (curl -H "Authorization: Bearer ..."). Only with QUIETDECK_DEV_TRUST_LOCAL set, as a dev deck runs.
     DevToken {
@@ -75,6 +93,28 @@ async fn main() -> anyhow::Result<()> {
                 exp: jiff::Timestamp::now().as_second() + hours * 3600,
             };
             println!("{}", auth::mint_session_token(&key, &claims));
+            Ok(())
+        }
+        Command::DocumentsAdd { data, slug, name, tab, kind, writer } => {
+            let db = db::open(&data.db_path()).await?;
+            let kind = quietdeck_types::document::DocumentKind::parse(&kind)
+                .ok_or_else(|| anyhow::anyhow!("--kind is inbox or work"))?;
+            let (writer_node, writer_tab) = match writer.as_deref().map(|w| w.rsplit_once('@')) {
+                Some(Some((tab, node))) => (Some(node.to_string()), Some(tab.to_string())),
+                Some(None) => anyhow::bail!("--writer is tab@node"),
+                None => (None, None),
+            };
+            let req = quietdeck_types::document::DocumentAdd {
+                slug,
+                name,
+                tab,
+                kind,
+                writer_node,
+                writer_tab,
+                position: None,
+            };
+            let doc = documents::insert(&db, req).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("{}", serde_json::to_string(&doc)?);
             Ok(())
         }
         Command::EnrolmentCode(data) => {

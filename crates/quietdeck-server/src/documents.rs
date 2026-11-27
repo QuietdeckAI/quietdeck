@@ -117,14 +117,20 @@ fn unique(e: sqlx::Error, what: &str) -> AppError {
 }
 
 pub async fn add(state: &AppState, req: DocumentAdd) -> AppResult<Document> {
+    let doc = insert(&state.db, req).await?;
+    state.changed(Changed::Documents);
+    Ok(doc)
+}
+
+/// [`add`] on the database alone, for `quietdeck-server documents add` in the deck's container.
+pub async fn insert(db: &Db, req: DocumentAdd) -> AppResult<Document> {
     req.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
     writer_pair(&req.writer_node, &req.writer_tab)?;
     let position = match req.position {
         Some(p) => p,
         None => {
-            let (max,): (Option<i64>,) = sqlx::query_as("SELECT MAX(position) FROM documents WHERE removed_at IS NULL")
-                .fetch_one(&state.db)
-                .await?;
+            let (max,): (Option<i64>,) =
+                sqlx::query_as("SELECT MAX(position) FROM documents WHERE removed_at IS NULL").fetch_one(db).await?;
             max.unwrap_or(0) + 1
         }
     };
@@ -140,11 +146,10 @@ pub async fn add(state: &AppState, req: DocumentAdd) -> AppResult<Document> {
     .bind(&req.writer_tab)
     .bind(position)
     .bind(now_ms())
-    .fetch_one(&state.db)
+    .fetch_one(db)
     .await
     .map_err(|e| unique(e, "a document has that slug already, or that agent writes another document"))?;
-    state.changed(Changed::Documents);
-    get(&state.db, id).await
+    get(db, id).await
 }
 
 pub async fn edit(state: &AppState, id: i64, req: DocumentEdit) -> AppResult<Document> {

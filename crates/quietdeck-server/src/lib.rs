@@ -20,6 +20,7 @@ pub mod mcp;
 pub mod messages;
 pub mod openapi;
 pub mod ops;
+pub mod overseer;
 pub mod passkeys;
 pub mod pings;
 pub mod push;
@@ -127,6 +128,7 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
     tokio::spawn(leases::ticker(state.clone()));
     tokio::spawn(reading::ticker(state.clone()));
     tokio::spawn(fleetlayer::ticker(state.clone()));
+    tokio::spawn(overseer::ticker(state.clone()));
     match (&env.fleetlayer_url, &env.fleetlayer_send_token) {
         (Some(url), Some(token)) => {
             let _ = relay::FLEETLAYER.set(fleetlayer::Sender::new(url, token)?);
@@ -155,6 +157,7 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
     let mut app = Router::new()
         .route("/healthz", get(health))
         .route("/healthz/runners", get(crate::health::runners))
+        .route("/healthz/overseer", get(crate::overseer::health))
         .merge(openapi::routes(state.clone()).0)
         .nest_service("/mcp", mcp::service(state.clone()));
     if local_only.is_some() {
