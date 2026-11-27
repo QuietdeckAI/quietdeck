@@ -13,6 +13,9 @@ use jiff::{SignedDuration, Timestamp};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+/// An account at or past this share of its week is left alone, as the rotator's coordinator does.
+const LEAVE_SEVEN_DAY: f64 = 98.0;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Account {
     pub id: String,
@@ -133,7 +136,7 @@ pub fn choose(state: &Value, now: Timestamp) -> Option<Account> {
         }
         // Spent by its reading, even when the coordinator hasn't flagged it yet (or never will: a full account ran
         // every summary on the Mac, 25 Nov 2026).
-        if pct >= crate::usage::model::LEAVE_SEVEN_DAY {
+        if pct >= LEAVE_SEVEN_DAY {
             continue;
         }
         usable.push(Account {

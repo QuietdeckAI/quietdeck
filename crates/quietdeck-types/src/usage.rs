@@ -135,7 +135,8 @@ pub enum UsageCommand {
     Check { local_id: Option<String> },
 }
 
-/// `usage:` in node.yaml.
+/// `usage:` in node.yaml. Claude sign-ins are Fleetlayer's claude-auth-manager's: the old `claude` and
+/// `serve_coordinator_api` keys are still accepted and ignored.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema)]
 #[serde(default)]
 #[ts(export)]
@@ -143,18 +144,12 @@ pub struct UsageConfig {
     pub enabled: bool,
     /// Poll each account's usage endpoint at most this often, and less while sessions report readings.
     pub poll_minutes: u32,
-    /// The Claude side: reading the Claude sign-ins, polling their usage and the coordinator API. Off where
-    /// Fleetlayer's claude-auth-manager owns them (the slots hold setup tokens there, which can't read usage, so
-    /// polling would only mark every account signed out), leaving Codex on.
-    pub claude: bool,
     /// Read Codex sign-ins too.
     pub codex: bool,
-    /// Serve the account rotator's coordinator API on its socket, so the rotation plugin keeps working.
-    pub serve_coordinator_api: bool,
 }
 
 impl Default for UsageConfig {
     fn default() -> Self {
-        UsageConfig { enabled: true, poll_minutes: 5, claude: true, codex: true, serve_coordinator_api: true }
+        UsageConfig { enabled: true, poll_minutes: 5, codex: true }
     }
 }

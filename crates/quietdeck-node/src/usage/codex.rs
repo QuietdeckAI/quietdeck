@@ -8,7 +8,29 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use super::model::{Ms, parse_iso};
+/// Epoch milliseconds.
+pub type Ms = i64;
+
+/// An ISO 8601 time as epoch ms; one with no offset is read as local time, as JavaScript does.
+pub fn parse_iso(s: &str) -> Option<Ms> {
+    if let Ok(ts) = s.parse::<jiff::Timestamp>() {
+        return Some(ts.as_millisecond());
+    }
+    s.parse::<jiff::civil::DateTime>()
+        .ok()
+        .and_then(|dt| dt.to_zoned_datetime(jiff::tz::TimeZone::system()).ok())
+        .map(|z| z.timestamp().as_millisecond())
+}
+
+/// How long a `Retry-After` header asks to wait: seconds, or an HTTP date.
+pub fn retry_after(header: Option<&str>, now: Ms) -> Option<Ms> {
+    let header = header?.trim();
+    if let Ok(seconds) = header.parse::<f64>() {
+        return Some((seconds * 1000.0).max(0.0) as Ms);
+    }
+    let at = jiff::fmt::rfc2822::parse(header).ok().map(|z| z.timestamp().as_millisecond())?;
+    Some((at - now).max(0))
+}
 
 const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 /// How often the session logs are looked at for a newer snapshot.
@@ -203,9 +225,7 @@ async fn fetch(http: &reqwest::Client, auth: &CodexAuth, now: Ms) -> Answer {
             Ok(v) => Answer::Ok(v),
             Err(_) => Answer::Failed(None),
         },
-        Ok(r) => {
-            Answer::Failed(super::deps::retry_after(r.headers().get("retry-after").and_then(|v| v.to_str().ok()), now))
-        }
+        Ok(r) => Answer::Failed(retry_after(r.headers().get("retry-after").and_then(|v| v.to_str().ok()), now)),
         Err(_) => Answer::Failed(None),
     }
 }

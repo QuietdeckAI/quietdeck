@@ -15,13 +15,12 @@ summaries:
   model: sonnet
   user_name: ""             # your name, for the prompts ("since Sam's last message"); empty means "the user"
 
-# Account usage for this machine's Claude Code and Codex sign-ins. No token leaves the machine.
+# Account usage for this machine's Codex sign-in. No token leaves the machine. Claude sign-ins, their usage and the
+# account rotator's coordinator are Fleetlayer's claude-auth-manager plugin's.
 usage:
   enabled: true
   poll_minutes: 5
-  claude: true                  # false where Fleetlayer's claude-auth-manager owns the Claude sign-ins; Codex stays
   codex: true
-  serve_coordinator_api: true   # keeps the account rotator's plugin working
 
 # Sessions the deck starts or resumes here. Permission flags come only from this file, never from the deck.
 sessions:

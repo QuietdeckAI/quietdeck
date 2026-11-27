@@ -204,6 +204,13 @@ mod tests {
     }
 
     #[test]
+    fn an_old_usage_section_with_the_claude_keys_still_loads() {
+        let yaml = "node: { name: m, deck: \"https://d.example\" }\nusage: { enabled: true, poll_minutes: 5, claude: false, codex: true, serve_coordinator_api: true }\n";
+        let c: NodeConfig = yaml_serde::from_str(yaml).unwrap();
+        assert!(c.usage.enabled && c.usage.codex);
+    }
+
+    #[test]
     fn a_token_can_come_from_the_environment() {
         let yaml = "node: { name: m, deck: \"https://d.example\", token_env: QD_TEST_TOKEN_A1 }\n";
         let c: NodeConfig = yaml_serde::from_str(yaml).unwrap();

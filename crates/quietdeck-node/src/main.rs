@@ -1,5 +1,5 @@
 //! quietdeck-node: the daemon on each machine that runs agent sessions. It connects out to the deck, watches the orchestrator (herdr),
-//! delivers messages to sessions, writes their summaries, monitors account usage, and hands session tokens to the
+//! delivers messages to sessions, writes their summaries, monitors Codex usage, and hands session tokens to the
 //! CLI over its local socket.
 
 mod config;
@@ -182,18 +182,10 @@ async fn run() -> anyhow::Result<()> {
         )
     });
     let (usage_tx, mut usage_rx) = mpsc::channel(64);
-    let usage = config.usage.enabled.then(|| {
-        usage::spawn(
-            config.usage.clone(),
-            usage::UsageEnv {
-                rotator_dir: rotator_dir(&home),
-                home: home.clone(),
-                claude_program: PathBuf::from(&config.programs.claude),
-                state_dir: state.join("usage"),
-            },
-            usage_tx,
-        )
-    });
+    let usage = config
+        .usage
+        .enabled
+        .then(|| usage::spawn(config.usage.clone(), usage::UsageEnv { home: home.clone() }, usage_tx));
 
     let node = Arc::new(Node {
         deliverer: deliver::Deliverer::new(&home, orchestrator.clone()),
