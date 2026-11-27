@@ -23,12 +23,12 @@ document has its own **Approve All**.
 ## Question panels
 
 Some entries ask you something instead of proposing an action. A **question panel** has no approve check, just a
-question and its own thread. Some offer answers as buttons, with a box for anything else. Others take a written
-answer. You answer in the thread, and the agent updates the entry. The Inbox has them too.
+question and its own thread. Some offer answers as buttons, with a box for anything else. Others ask an open question and
+take a written answer. You answer in the thread, and the agent updates the entry. The Inbox has them too.
 
-## What's at the top of Work
+## Needs you
 
-Everything that needs you, newest first:
+The top of Work is **Needs you**:
 
 - **A blocked prompt:** a session stopped on one of its own menus ("Allow this command?"). It shows as a small form,
   and your choice is typed into the session.
@@ -50,7 +50,8 @@ and the overseer prunes it as it goes.
 ## Each entry is a session
 
 Most entries are about one agent session. Where an Inbox item has a mail icon, a Work entry has a session icon. Its
-menu shows the session's name (`tab@machine`), a summary of what it's doing, and **Open transcript**.
+menu shows the session's name (`tab@machine`) and a summary of what it's doing, with **Open transcript**, **Park**,
+**Snooze until…** and **Ignore this session**.
 
 What you can approve under an entry:
 
@@ -64,8 +65,9 @@ The overseer never starts or closes a session without your approval.
 
 ## Parking
 
-Not everything needs doing this week. **Park** a session or an entry to put it away indefinitely, or **snooze** it until
-a date. Parked entries sit in a collapsed **Parked** section at the bottom of Work, each with **Unpark**.
+Not everything needs doing this week. **Park** a session to put it away indefinitely, or **Snooze until…** a date.
+Parked sessions sit in a collapsed **Parked** section at the bottom of Work, each with **Unpark**. A snoozed one comes
+back on its date.
 
 ## The overseer
 
@@ -73,9 +75,16 @@ The overseer is an agent like the triage agent, with a different job. Instead of
 summary first, and only the new part of a transcript when it needs detail. It looks at a session when it goes idle,
 and skips one that's still waiting on CI or a background task. It also reads your task list for today.
 
-It leaves out the triage agent and any session you mark **ignored**, unless one of them is stuck on a prompt.
+It leaves out the triage agent and any session you mark with **Ignore this session**, unless one of them is stuck on
+a prompt.
 
 You chat with it in Work's threads. It answers from what it's read, or passes your message on to the session.
 
 The overseer shares the runner with the triage agent. The runner carries out what you approve and hands anything it
 can't do back to the agent that posted the entry. [Set up an overseer](guides/overseer.md) walks through it.
+
+## For your own frontend
+
+Documents and marks are in the [API](api.md): `/api/v1/documents` lists a deck's documents (kind `inbox` or `work`, and
+the agent that writes each one), the report routes take `?doc=<slug>` to pick one, and `/api/v1/session-marks` holds
+the ignored and parked sessions.

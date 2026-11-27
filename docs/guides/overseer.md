@@ -40,17 +40,17 @@ runner's config, so each gets its own wake-ups and the work it posted comes back
 ```yaml
 runner:
   enabled: true
-  agents:                     # TODO: confirm the key
-    - { tab: email triage }
-    - { tab: overseer }
+  agent:
+    tabs: [email triage, overseer]
 ```
 
-An older node that still has `agent: { tab: … }` keeps working with one agent.
+`agent: { tab: … }`, with one agent, keeps working.
 
 ## 4. Sessions to ignore
 
-The overseer leaves out the triage agent, and any session you mark **ignored** in Settings: a worker that runs jobs all
-day and never needs you, for example. It still shows an ignored session that's stuck on a prompt.
+The overseer leaves out the triage agent. For any other session that never needs you (a worker that runs jobs all day,
+for example), choose **Ignore this session** from its entry's session menu. The overseer still shows an ignored session
+that's stuck on a prompt.
 
 ## 5. Start it
 

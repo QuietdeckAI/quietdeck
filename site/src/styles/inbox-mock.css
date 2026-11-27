@@ -289,3 +289,12 @@
   border-color: var(--m-accent);
   color: var(--m-accent);
 }
+.mock h5.mock__first {
+  margin-top: 0;
+}
+.mock h5 small {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  color: var(--m-muted);
+  margin-left: 0.35rem;
+}
