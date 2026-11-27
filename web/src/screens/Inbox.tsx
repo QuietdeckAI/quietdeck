@@ -379,7 +379,14 @@ function ReportScreen({
         running={inbox.running}
         corner={<UpdatedAt at={report.updated_at} stacked />}
       >
-        <ApproveAllBar inbox={inbox} request={request} beforeApprove={beforeApprove} onPending={setSending} inline />
+        <ApproveAllBar
+          inbox={inbox}
+          request={request}
+          report={{ id: Number(report.id), version: Number(report.version) }}
+          beforeApprove={beforeApprove}
+          onPending={setSending}
+          inline
+        />
       </ReportChatBox>
       <ReportToasts report={report} presence={inbox.presence} />
     </div>

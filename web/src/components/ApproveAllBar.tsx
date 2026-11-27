@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { ApproveAll } from "@/types/ApproveAll";
+import type { ApproveReport } from "@/types/ApproveReport";
 import type { Approving } from "@/types/Approving";
 import type { Inbox } from "@/types/Inbox";
 import type { Skipped } from "@/types/Skipped";
@@ -17,9 +18,13 @@ export function ApproveAllBar({
   top,
   inline,
   onPending,
+  report,
 }: {
   inbox: Inbox;
   request: ApproveAll;
+  /** The report on screen: the deck then works out which cards Approve All takes (its Defaults he didn't change),
+   * and `request` only says what the button shows. */
+  report?: { id: number; version: number };
   /** Runs first: the report sends any change typed but not yet sent. */
   beforeApprove?: () => Promise<void>;
   /** Above the report, rather than pinned to the bottom of the screen. */
@@ -44,6 +49,10 @@ export function ApproveAllBar({
     mutationFn: async () => {
       undoWhenAnswered.current = false;
       await beforeApprove?.();
+      if (report) {
+        const body: ApproveReport = { report_id: report.id, report_version: report.version, timeline: request.timeline };
+        return api<Approving>("/api/report/approve", { method: "POST", body });
+      }
       return api<Approving>("/api/decisions/approve-all", { method: "POST", body: request });
     },
     onSuccess: async (a) => {
