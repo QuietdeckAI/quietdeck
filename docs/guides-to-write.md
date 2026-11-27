@@ -261,3 +261,9 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   the deck's `/healthz/overseer` in the uptime checker. Now: the overseer skill (`~/.claude/skills/overseer/SKILL.md`),
   `crates/quietdeck-server/src/overseer.rs`, `crates/quietdeck-types/src/document.rs` (28 November, the quietdeck work
   tab). The quietdeck docs tab is writing docs/work.md and docs/guides/overseer.md.
+- **Quietdeck's Fleetlayer plugin restarts with the Fleetlayer node, not with quietdeck-node.** A node-bin rollout
+  restarts `quietdeck-node.service`, but the plugin processes Fleetlayer starts keep running the old binary until the
+  Fleetlayer node itself restarts: on 28 November nathan's plugin was still on ccfd523 and the runner node's on an
+  older one after several rollouts. Fixed in the homeserver repo's Ansible (80aad69d): it restarts a Fleetlayer node
+  whose Quietdeck plugin runs anything other than the current version (28 November, homeserver pve and the quietdeck
+  tab). Anyone running both: restart the Fleetlayer node after updating Quietdeck, or check the plugin's version.
