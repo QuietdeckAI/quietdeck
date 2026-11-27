@@ -53,12 +53,25 @@ programs:
 #
 # gog's history has new messages only, so threads the person archives in Gmail themselves are found by listing the
 # inbox's thread IDs every mail_watch.inbox_every (5m) and comparing it with the last complete listing.
+#
+# For an agent with no mail tools of its own (as in Quietdeck solo), the runner can carry the mail in each wake-up:
+# mail_watch.message_text reads a new message's headers and sanitised text, and mail_watch.recent lists the inbox's
+# newest messages once, on the first check. gog fills both in; with Executor, set them as tools like `message`.
+# The agent can also run headless, one `claude -p` turn per message, instead of in a tab:
+#
+#     agent:
+#       tab: email triage
+#       headless:
+#         instructions_file: ~/.config/quietdeck/triage-agent.md
+#         model: sonnet
+#         turn_timeout: 15m        # bin, cwd and allowed_tools have defaults; see docs/configuration.md
 runner:
   enabled: false
   agent: { tab: email triage }                  # gets wake-ups, hand-offs and error reports
   executor:
     url: https://executor.example.com/org/<org>/mcp
     token_file: ~/.config/quietdeck/executor-token   # mode 600; or token_env: QUIETDECK_EXECUTOR_TOKEN
+    # call_tool: call                           # the MCP tool that runs one app tool by path (default)
   accounts:                                     # the account IDs from the deck's config
     personal:
       address: you@example.com
@@ -129,6 +142,7 @@ matrix:
   user: '@quietdeck:example.com'                # already a member of each room
   password_file: ~/.config/quietdeck/matrix-password   # mode 600, the password only
   rooms: ['!abc123:example.com']                # room IDs, not aliases
+  # device_name: Quietdeck (laptop)             # what other members see; default "Quietdeck (<node name>)"
   heartbeats:                                   # a dead man's switch: a message here (Alertmanager's Watchdog) pings
     - room: '!watchdog:example.com'             # the URL, plain code only; silence lets the pinged service alert you
       ping_url_file: ~/.config/quietdeck/watchdog-ping-url   # mode 600, the URL only (e.g. Healthchecks.io)

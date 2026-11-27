@@ -2,7 +2,8 @@
 # Nothing here is a credential. Missing means defaults.
 
 # Account labels. Every card, timeline entry and ping carries one; the Inbox has a tab per account.
-# The addresses themselves live in your own files (the runner's node.yaml, the email-triage skill), not here.
+# The runner's node.yaml holds the address it watches. An optional `address` here lets the Inbox's "View email" open
+# the thread in the right Gmail account: { id: personal, label: Personal, address: you@example.com }.
 accounts:
   - { id: personal, label: Personal }
   - { id: work, label: Work }

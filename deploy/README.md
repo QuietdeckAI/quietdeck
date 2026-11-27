@@ -53,7 +53,7 @@ Mounted at `/data`, ReadWriteOnce, owned by gid 65532 (`fsGroup: 65532`).
 | Path | What |
 |---|---|
 | `/data/quietdeck.db` | SQLite, in WAL mode (`journal_mode=WAL`, `synchronous=NORMAL`), with `quietdeck.db-wal` and `quietdeck.db-shm` beside it. Migrations run at start-up |
-| `/data/deck.yaml` | The deck's config: accounts, boards, projects, ping budget, lease fallback. Read at start-up; an example is in `deploy/deck.example.yaml`. Missing means defaults |
+| `/data/deck.yaml` | The deck's config: accounts, boards, projects, tasks, ping budget, lease fallback and heavy-build slots. Read at start-up; an example is in `deploy/deck.example.yaml`. Missing means defaults |
 
 **Backups** need no deck code. Take an online copy of the live database with `sqlite3 /data/quietdeck.db ".backup
 '<target>'"` or `VACUUM INTO '<target>'`, never a file copy, and copy `deck.yaml` alongside. Because the database is in
@@ -82,7 +82,11 @@ below). Never run two replicas.
 | `QUIETDECK_LISTEN` | no | `0.0.0.0:8080` | |
 | `QUIETDECK_HOOKS_LISTEN` | no | `0.0.0.0:8081` | |
 | `RUST_LOG` | no | `info` | Logs never contain message bodies, webhook payloads or card contents |
+| `QUIETDECK_LOCAL_ONLY` | no | off | Quietdeck solo's mode: loopback only, no passkeys, no webhook receiver. `quietdeck-solo` sets it itself; never set it on a deck |
 | `QUIETDECK_DEV_TRUST_LOCAL` | no | off | Development only: every browser request counts as the signed-in owner. Never set it on a deck anyone else can reach |
+
+`QUIETDECK_COMMIT` and `QUIETDECK_BUILT_AT` are baked into the image when it's built (see "Continuous deployment"), not set at run time.
+Every setting is listed in [docs/configuration.md](../docs/configuration.md).
 
 Without the VAPID variables the deck runs and says in Settings that push is off. Changing the VAPID key pair drops
 every device's push subscription.
