@@ -3602,6 +3602,19 @@ export interface components {
         /** @description The deck's settings (the Settings screen). */
         Settings: {
             /**
+             * @description Chat shortcuts: replies the Inbox's chat box offers in one tap ("Just archive and nothing else"). Each is sent
+             *     as an ordinary message.
+             * @default [
+             *       "Just archive and nothing else",
+             *       "Set up a rule to do this automatically",
+             *       "Unsubscribe if possible, then archive",
+             *       "Start a new session to investigate and propose what to do. Don't change anything without my OK",
+             *       "Create the story AND start a new agent to fix it",
+             *       "This doesn't belong in my tasks"
+             *     ]
+             */
+            chat_shortcuts?: string[];
+            /**
              * @description The triage report: the default web app's write-up of the Inbox. Off, the deck is cards only: the report's
              *     routes answer 404, and the Inbox, History, Approve All and the runner ignore any report kept from before. On
              *     unless switched off.

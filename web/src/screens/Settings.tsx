@@ -32,6 +32,7 @@ export function SettingsScreen() {
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-12 px-4 py-8">
       <DeckSettings />
+      <ChatShortcutSettings />
       <Documents />
       <IgnoredSessions />
       <Notifications />
@@ -55,6 +56,51 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 const UNDO_CHOICES = [0, 1, 2, 3, 5, 10, 15, 30, 60];
+
+/** Replies the Inbox's chat box offers in one tap, one a line. Saved when the box loses focus. */
+function ChatShortcutSettings() {
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: () => api<Settings>("/api/settings") });
+  const save = useMutation({
+    mutationFn: (s: Settings) => api<Settings>("/api/settings", { method: "PUT", body: s }),
+    onMutate: (s) => qc.setQueryData(["settings"], s),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+  });
+  const s = settings.data;
+  const [text, setText] = useState<string | null>(null);
+  if (!s) return null;
+  const shown = text ?? s.chat_shortcuts.join("\n");
+  const commit = () => {
+    if (text === null) return;
+    const list = [...new Set(text.split("\n").map((l) => l.trim()).filter(Boolean))].slice(0, 30);
+    setText(null);
+    save.mutate({ ...s, chat_shortcuts: list });
+  };
+  return (
+    <Section title="Chat shortcuts">
+      <div className="rounded-lg border border-rule bg-paper-2 p-4">
+        <label className="block">
+          <span className="block">Shortcut replies</span>
+          <span className="mb-2 block text-sm text-neutral">
+            The button beside Send in each Inbox chat offers these. Picking one sends it as your message. One a line.
+          </span>
+          <textarea
+            className={cn(fieldClass, "min-h-28 w-full py-2 text-sm leading-6")}
+            value={shown}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={commit}
+            aria-label="Shortcut replies, one a line"
+          />
+        </label>
+        {save.error && (
+          <p role="alert" className="mt-2 text-sm text-danger">
+            {save.error.message}
+          </p>
+        )}
+      </div>
+    </Section>
+  );
+}
 
 function DeckSettings() {
   const qc = useQueryClient();

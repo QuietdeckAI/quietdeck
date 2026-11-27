@@ -483,8 +483,10 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
         .map(str::trim)
         .filter(|c| a.kind == AnswerKind::Choice && !quietdeck_types::report::card_ids(c).is_empty());
     // A question panel (an `<Ask>` with no options) is answered in words, in a thread of its own.
-    let panel = a.kind == AnswerKind::Choice
-        && quietdeck_types::report::ask_keys(&r.markdown).iter().any(|(k, free)| *free && k == &a.control);
+    let asks = quietdeck_types::report::ask_keys(&r.markdown);
+    let panel = a.kind == AnswerKind::Choice && asks.iter().any(|(k, free)| *free && k == &a.control);
+    // A message in an `<Ask>`'s chat: he'd rather talk it over than pick an option, so it isn't his answer.
+    let ask_chat = a.kind == AnswerKind::Change && asks.iter().any(|(k, _)| k == &a.control);
     // A default's messages are a thread: a later one continues the conversation.
     let (earlier,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM report_answers WHERE report_id = ? AND control = ? \
@@ -539,6 +541,17 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
                 a.control
             ),
         },
+        AnswerKind::Change if ask_chat => format!(
+            "On the report (version {}), a message about the question \"{}\" [{}], instead of picking an answer: \
+             {value}\n\nIt's in the question's own thread{}. It isn't his answer: the question stays open. Answer him \
+             in that thread (`quietdeck report reply '{}' \"…\"`), and change the question or its options in the \
+             report where the conversation settles it.",
+            a.report_version,
+            a.about.trim(),
+            a.control,
+            if earlier > 0 { ", continuing the conversation there (`quietdeck report show` lists it)" } else { "" },
+            a.control
+        ),
         AnswerKind::Change if earlier > 0 => format!(
             "On the report (version {}), in the thread on the default \"{}\" [{}]: {value}\n\nIt continues that \
              conversation (`quietdeck report show` lists it). Like every message he writes in the Inbox, it's an \
@@ -970,6 +983,27 @@ mod tests {
             .await
             .unwrap_err();
         assert!(bad.to_string().contains("question"), "{bad}");
+        // He'd rather talk "Was this you?" over than pick: a message in its chat, which doesn't hold up Approve All.
+        answer(
+            &state,
+            quietdeck_types::report::ReportAnswerAdd {
+                report_id: r.id,
+                report_version: r.version,
+                control: "me".into(),
+                kind: AnswerKind::Change,
+                about: "Was this you?".into(),
+                value: "Which device was it?".into(),
+                cards: None,
+            },
+        )
+        .await
+        .unwrap();
+        let r =
+            reply(&state, &inbox(&state.db).await.unwrap(), ReportReply { to: "me".into(), text: "An iPad".into() })
+                .await
+                .unwrap();
+        let thread: Vec<_> = r.answers.iter().filter(|a| a.control == "me").map(|a| a.kind).collect();
+        assert_eq!(thread, vec![AnswerKind::Change, AnswerKind::Reply]);
         let req =
             quietdeck_types::decision::ApproveReport { report_id: r.id, report_version: r.version, timeline: vec![] };
         let a = crate::ops::approve_report(&state, req).await.unwrap();

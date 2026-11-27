@@ -36,7 +36,7 @@ use crate::{api, passkeys};
 
 /// `info.version`: the minor version goes up with each additive change, the patch version with fixes to the
 /// description alone. A breaking change is a new `/api/v2`, never a new major version of v1.
-pub const API_VERSION: &str = "1.3.0";
+pub const API_VERSION: &str = "1.4.0";
 
 /// The versioned prefix the spec describes.
 pub const V1: &str = "/api/v1";

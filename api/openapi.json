@@ -5681,6 +5681,24 @@
       "Settings": {
         "description": "The deck's settings (the Settings screen).",
         "properties": {
+          "chat_shortcuts": {
+            "default": [
+              "Just archive and nothing else",
+              "Set up a rule to do this automatically",
+              "Unsubscribe if possible, then archive",
+              "Start a new session to investigate and propose what to do. Don't change anything without my OK",
+              "Create the story AND start a new agent to fix it",
+              "This doesn't belong in my tasks"
+            ],
+            "description": "Chat shortcuts: replies the Inbox's chat box offers in one tap (\"Just archive and nothing else\"). Each is sent\nas an ordinary message.",
+            "items": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 30,
+            "type": "array"
+          },
           "report": {
             "default": true,
             "description": "The triage report: the default web app's write-up of the Inbox. Off, the deck is cards only: the report's\nroutes answer 404, and the Inbox, History, Approve All and the runner ignore any report kept from before. On\nunless switched off.",
@@ -6515,7 +6533,7 @@
     },
     "summary": "Quietdeck's core: cards, decisions, actions, rules, leases, sessions and the timeline.",
     "title": "Quietdeck API",
-    "version": "1.3.0"
+    "version": "1.4.0"
   },
   "openapi": "3.1.0",
   "paths": {

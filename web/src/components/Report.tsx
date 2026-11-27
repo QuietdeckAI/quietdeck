@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Markdown as Render } from "markdown-to-jsx/react";
-import { Check, CircleHelp, Loader2, MessageSquare, Square, Undo2 } from "lucide-react";
+import { Check, CircleHelp, Loader2, MessageSquare, MessageSquareText, Square, Undo2 } from "lucide-react";
 import { Children, createContext, Fragment, isValidElement, type ReactNode, use, useEffect, useRef, useState } from "react";
 import { useInfo } from "@/components/AccountTabs";
 import { EmailMenu } from "@/components/EmailMenu";
@@ -9,6 +9,8 @@ import { useSessionMarks } from "@/lib/documents";
 import type { Document } from "@/types/Document";
 import type { SessionMark } from "@/types/SessionMark";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import type { Settings } from "@/types/Settings";
 import { Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { clock } from "@/lib/format";
@@ -574,6 +576,37 @@ function ApprovedMark({ cards }: { cards: string | undefined }) {
   );
 }
 
+/** The chat box's shortcuts (Settings → Chat shortcuts): each sends its text as an ordinary message. */
+function ChatShortcuts({ about, disabled, onPick }: { about: string; disabled: boolean; onPick: (text: string) => void }) {
+  const settings = useQuery({ queryKey: ["settings"], queryFn: () => api<Settings>("/api/settings") });
+  const shortcuts = settings.data?.chat_shortcuts ?? [];
+  if (shortcuts.length === 0) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={disabled}
+          aria-label={`Shortcut replies about: ${about}`}
+          title="Shortcut replies"
+          className="h-10 w-10 shrink-0 px-0"
+        >
+          <MessageSquareText aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="max-w-[min(22rem,calc(100vw-2rem))]">
+        <DropdownMenuLabel>Send a shortcut</DropdownMenuLabel>
+        {shortcuts.map((s) => (
+          <DropdownMenuItem key={s} onSelect={() => onPick(s)}>
+            {s}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function Default({
   id,
   cards,
@@ -602,8 +635,11 @@ function Default({
   const [sending, setSending] = useState<string | null>(null);
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
-  const submit = () => {
-    const value = draft.trim();
+  // A shortcut sends its text as if he'd typed it: into the draft, then the same undo window.
+  const submit = (typed?: string) => {
+    const value = (typed ?? draft).trim();
+    if (!value) return;
+    if (typed !== undefined) setDraft(key, typed);
     setSending(value);
     undoWindow.start(() => {
       // Approve All sent it already (and cleared the draft), or it was edited since.
@@ -692,15 +728,18 @@ function Default({
               onKeyDown={enterSends(() => draft.trim() && !undoWindow.pending && submit())}
               className="bg-paper py-[9px] text-sm leading-5"
             />
-            <Button
-              size="sm"
-              loading={send.isPending}
-              disabled={!draft.trim() || undoWindow.pending}
-              onClick={submit}
-              className="h-10 shrink-0"
-            >
-              Send
-            </Button>
+            <span className="flex shrink-0 gap-2">
+              <ChatShortcuts about={about} disabled={undoWindow.pending} onPick={(t) => submit(t)} />
+              <Button
+                size="sm"
+                loading={send.isPending}
+                disabled={!draft.trim() || undoWindow.pending}
+                onClick={() => submit()}
+                className="h-10 flex-1 sm:flex-none"
+              >
+                Send
+              </Button>
+            </span>
           </span>
         </>
       ) : (
@@ -875,8 +914,8 @@ function ChoiceAsk({
     setSending(null);
   };
   const shown = sending ?? answered?.value;
-  const replies = report.answers.filter((a) => a.control === control && a.kind === "reply");
   const otherOn = other !== undefined && other !== false && other !== "false";
+  const chat = useAskChat(control, about);
   return (
     <span className="report-ask relative">
       <span>{children}</span>{" "}
@@ -909,6 +948,7 @@ function ChoiceAsk({
           </Button>
         )}
         {undoWindow.pending && <UndoButton onClick={undo} label={`Undo the answer to: ${about}`} />}
+        {chat.button}
       </span>
       {shown !== undefined && !choices.includes(shown) && <span className="block text-accent">You said: {shown}</span>}
       {sending !== null ? (
@@ -940,16 +980,107 @@ function ChoiceAsk({
           </Button>
         </span>
       )}
-      {replies.length > 0 && (
-        <span className="mt-1.5 flex flex-col gap-2">
-          {replies.map((a) => (
-            <Bubble key={a.id} answer={a} />
-          ))}
-        </span>
-      )}
+      {chat.body}
       {send.error && <span className="block text-sm text-danger">{send.error.message}</span>}
     </span>
   );
+}
+
+/**
+ * The chat on an `<Ask>` with options, for when none of them fits and he'd rather talk it over: a button beside the
+ * options opens the question's thread (his picks, his messages, the agent's replies) with a box to write in. What he
+ * writes goes to the agent as a message about the question, not as his answer, so the question stays open. Closed,
+ * the thread's messages show under the question as before.
+ */
+function useAskChat(control: string, about: string): { button: ReactNode; body: ReactNode } {
+  const { report, kept } = useReport();
+  const key = `chat:${control}`;
+  const open = kept.open.has(key);
+  const draft = kept.notes[key] ?? "";
+  const setDraft = (t: string) => kept.setNote(key, t);
+  const caret = useKeptCaret(key);
+  const send = useAnswer();
+  const undoWindow = useUndoWindow();
+  const [sending, setSending] = useState<string | null>(null);
+  const tab = report.posted_by.tab;
+  const thread = report.answers.filter((a) => a.control === control);
+  const talk = thread.filter((a) => a.kind !== "choice");
+  const lastMine = talk.filter((a) => a.kind !== "reply").at(-1);
+  const newest = talk.at(-1);
+  const submit = () => {
+    const value = draft.trim();
+    if (!value) return;
+    setSending(value);
+    setDraft("");
+    undoWindow.start(() =>
+      send.mutate(
+        { report_id: report.id, report_version: report.version, control, kind: "change", about, value },
+        { onSettled: () => setSending(null), onError: () => setDraft(value) },
+      ),
+    );
+  };
+  const undo = () => {
+    undoWindow.cancel();
+    if (sending !== null) {
+      setDraft(sending);
+      caret.focusAtEnd(sending.length);
+    }
+    setSending(null);
+  };
+  const button = (
+    <button
+      type="button"
+      onClick={() => {
+        if (!open) caret.focusAtEnd(draft.length);
+        kept.setOpen(key, !open);
+      }}
+      aria-expanded={open}
+      aria-label={`${talk.length > 0 ? "Conversation" : "Chat"}: ${about}`}
+      title={talk.length > 0 ? "Conversation" : "Chat about it instead"}
+      className={cn(smallButton, talk.length > 0 ? "px-1.5" : "w-7 px-0")}
+    >
+      <MessageSquare aria-hidden />
+      {talk.length > 0 && <span className="tabular-nums">{talk.length}</span>}
+    </button>
+  );
+  const body = open ? (
+    <span className="block">
+      <ThreadMessages thread={thread} ownKey={control} ownLabel={about} pending={sending} />
+      {lastMine && !sending && newest?.kind !== "reply" && <ChatStatus answer={lastMine} />}
+      <span className="mt-2 mb-1 flex flex-col gap-2 sm:flex-row sm:items-end">
+        <Textarea
+          rows={1}
+          {...caret.props}
+          value={draft}
+          maxLength={4000}
+          placeholder={talk.length > 0 ? `Reply to ${tab}` : `Talk it over with ${tab}`}
+          aria-label={`Message about: ${about}`}
+          disabled={undoWindow.pending}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={enterSends(() => draft.trim() && !undoWindow.pending && submit())}
+          className="bg-paper py-[9px] text-sm leading-5"
+        />
+        {undoWindow.pending ? (
+          <UndoButton onClick={undo} label={`Undo the message about: ${about}`} />
+        ) : (
+          <Button size="sm" loading={send.isPending} disabled={!draft.trim()} onClick={submit} className="h-10 shrink-0">
+            Send
+          </Button>
+        )}
+      </span>
+      {send.error && <span className="block text-sm text-danger">{send.error.message}</span>}
+    </span>
+  ) : (
+    (talk.length > 0 || sending !== null) && (
+      <span className="mt-1.5 flex flex-col gap-2">
+        {talk.map((a) => (
+          <Bubble key={a.id} answer={a} />
+        ))}
+        {sending !== null && <Bubble pending={sending} />}
+      </span>
+    )
+  );
+  return { button, body };
 }
 
 /** Whether an `<Ask>` still waits for him: it has no answer from him yet. */

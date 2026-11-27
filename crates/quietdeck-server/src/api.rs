@@ -1025,6 +1025,7 @@ pub async fn load_settings(db: &crate::db::Db) -> anyhow::Result<Settings> {
             "require_filter_proposal" => s.require_filter_proposal = value == "true",
             "show_pending_count" => s.show_pending_count = value == "true",
             "report" => s.report = value == "true",
+            "chat_shortcuts" => s.chat_shortcuts = serde_json::from_str(&value).unwrap_or(s.chat_shortcuts),
             _ => {}
         }
     }

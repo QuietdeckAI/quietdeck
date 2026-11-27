@@ -22,4 +22,9 @@ show_pending_count: boolean,
  * routes answer 404, and the Inbox, History, Approve All and the runner ignore any report kept from before. On
  * unless switched off.
  */
-report: boolean, };
+report: boolean, 
+/**
+ * Chat shortcuts: replies the Inbox's chat box offers in one tap ("Just archive and nothing else"). Each is sent
+ * as an ordinary message.
+ */
+chat_shortcuts: Array<string>, };

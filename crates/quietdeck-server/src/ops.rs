@@ -622,6 +622,7 @@ pub async fn save_settings(state: &AppState, s: Settings) -> AppResult<Settings>
         ("require_filter_proposal", s.require_filter_proposal.to_string()),
         ("show_pending_count", s.show_pending_count.to_string()),
         ("report", s.report.to_string()),
+        ("chat_shortcuts", serde_json::to_string(&s.chat_shortcuts).unwrap_or_else(|_| "[]".into())),
     ] {
         sqlx::query(
             "INSERT INTO settings (name, value) VALUES (?, ?) \

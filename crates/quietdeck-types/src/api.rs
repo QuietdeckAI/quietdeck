@@ -62,15 +62,41 @@ pub struct Settings {
     #[serde(default = "yes")]
     #[garde(skip)]
     pub report: bool,
+    /// Chat shortcuts: replies the Inbox's chat box offers in one tap ("Just archive and nothing else"). Each is sent
+    /// as an ordinary message.
+    #[serde(default = "default_chat_shortcuts")]
+    #[garde(length(max = 30), inner(length(min = 1, max = 500)))]
+    pub chat_shortcuts: Vec<String>,
 }
 
 fn yes() -> bool {
     true
 }
 
+/// The starting list: Nathan's two, then the replies he typed most in the Inbox up to 27 Nov 2026, one per kind of
+/// reply (no rewordings of the same thing).
+pub fn default_chat_shortcuts() -> Vec<String> {
+    [
+        "Just archive and nothing else",
+        "Set up a rule to do this automatically",
+        "Unsubscribe if possible, then archive",
+        "Start a new session to investigate and propose what to do. Don't change anything without my OK",
+        "Create the story AND start a new agent to fix it",
+        "This doesn't belong in my tasks",
+    ]
+    .map(String::from)
+    .to_vec()
+}
+
 impl Default for Settings {
     fn default() -> Self {
-        Settings { undo_seconds: 3, require_filter_proposal: true, show_pending_count: true, report: true }
+        Settings {
+            undo_seconds: 3,
+            require_filter_proposal: true,
+            show_pending_count: true,
+            report: true,
+            chat_shortcuts: default_chat_shortcuts(),
+        }
     }
 }
 
