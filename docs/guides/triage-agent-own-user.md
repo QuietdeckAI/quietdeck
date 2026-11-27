@@ -15,7 +15,7 @@ herdr, so the operating system decides what it can read. The examples use a mach
 `you`, and a new user `triage`.
 
 For isolating agents that read untrusted input in general (containers, network rules, what to grant), see Fleetlayer's
-[untrusted input guide](https://fleetlayer.ai/guides/untrusted-input/). This page covers the Quietdeck side.
+[untrusted input guide](https://fleetlayer.ai/docs/guides/untrusted-input/). This page covers the Quietdeck side.
 
 If you only want the agent to run a few commands and nothing else, [Give an agent untrusted mail and one
 command](headless-agent-one-cli.md) shows the other approach: a headless agent whose only tool is `quietdeck`. The two
@@ -116,7 +116,7 @@ and your folder holds your settings, MCP servers and history, none of which tria
 global instructions and the skills it uses.
 
 Mark its working folder as trusted before it starts there unattended, so it doesn't stop on Claude Code's trust prompt:
-Fleetlayer's [unattended agents guide](https://fleetlayer.ai/guides/unattended-agents/) says how.
+Fleetlayer's [unattended agents guide](https://fleetlayer.ai/docs/guides/unattended-agents/) says how.
 
 ## Its own Quietdeck node
 
@@ -203,7 +203,7 @@ And from one of your own sessions, `quietdeck sessions --node agents-triage` sho
 running.
 
 If you copy triage's Claude Code transcripts into your own home (to back them up or search them), anything that sweeps
-your own `~/.claude/projects` will see them as yours. Fleetlayer's [day-to-day guide](https://fleetlayer.ai/guides/day-to-day/)
+your own `~/.claude/projects` will see them as yours. Fleetlayer's [day-to-day guide](https://fleetlayer.ai/docs/guides/day-to-day/)
 has the fix.
 
 ## Where this lives in Quietdeck

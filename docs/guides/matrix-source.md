@@ -10,7 +10,7 @@ with one command and posts cards about them. It never holds a Matrix token.
 
 This guide assumes a deck, a node on each machine and the runner waking a triage agent, as in
 [Getting started](../getting-started.md). For running agents across several machines in general, see Fleetlayer's
-[node services guide](https://fleetlayer.ai/guides/node-services/). The examples use a homeserver at
+[node services guide](https://fleetlayer.ai/docs/guides/node-services/). The examples use a homeserver at
 `matrix.example.org`, a user `@quietdeck:example.org` and a node called `build-server`.
 
 ## How it works

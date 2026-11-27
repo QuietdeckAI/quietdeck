@@ -11,7 +11,7 @@ one's open cards and report. Then the old one closes.
 
 This guide assumes a deck and a node on both machines, as in [Getting started](../getting-started.md). For setting up
 machines that run agents in general, see Fleetlayer's
-[node services guide](https://fleetlayer.ai/guides/node-services/). The examples move a `billing` tab from a machine
+[node services guide](https://fleetlayer.ai/docs/guides/node-services/). The examples move a `billing` tab from a machine
 called `laptop` to one called `build-server`.
 
 ## How it works

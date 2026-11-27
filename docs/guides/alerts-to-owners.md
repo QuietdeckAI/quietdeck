@@ -9,7 +9,7 @@ service. You approve each webhook once. After that, alerts never reach your Inbo
 
 This guide assumes a deck with its hooks port public, as in [Getting started](../getting-started.md). Setting up the
 monitoring itself (heartbeats, health checks, which checks catch a service that's up but not working) is in
-Fleetlayer's [monitoring guide](https://fleetlayer.ai/guides/monitoring/). The examples use an `infra` tab on a machine
+Fleetlayer's [monitoring guide](https://fleetlayer.ai/docs/guides/monitoring/). The examples use an `infra` tab on a machine
 called `build-server` that looks after a small cluster.
 
 ## How it works
@@ -145,7 +145,7 @@ metadata:
 ### GitHub
 
 For CI results on a branch, Fleetlayer's GitHub endpoint reads GitHub's payload and routes each run to the session
-subscribed to that `owner/repo@branch`: see Fleetlayer's [CI results guide](https://fleetlayer.ai/guides/ci-results/),
+subscribed to that `owner/repo@branch`: see Fleetlayer's [CI results guide](https://fleetlayer.ai/docs/guides/ci-results/),
 which also covers the email route through a triage agent.
 
 ### Anything else

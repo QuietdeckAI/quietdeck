@@ -22,20 +22,20 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   a queue worker) are marked monitored, and the node pings a heartbeat URL while each runs, so Gatus, Healthchecks or
   Cronitor alerts when one stops; the rest can be closed any time. Agents propose it on a card and the person
   approves. Now: build plan (Nathan, 25 November). Not built yet.
-- ~~**No trust prompts for agent sessions.**~~ On Fleetlayer: https://fleetlayer.ai/guides/unattended-agents/. Claude Code keeps folder trust in `~/.claude.json`
+- ~~**No trust prompts for agent sessions.**~~ On Fleetlayer: https://fleetlayer.ai/docs/guides/unattended-agents/. Claude Code keeps folder trust in `~/.claude.json`
   (`projects.<path>.hasTrustDialogAccepted`). Despite what we first thought, a trusted parent doesn't cover the folders
   inside it: Claude Code 2.1.332 prompted in `~/code/obsidian-livesync` on a Mac whose `/` and `~/code` were both
   trusted (27 November), so mark the exact folder every time. It never remembers the home folder, so sessions
   shouldn't start there: the node marks a new session's own folder trusted and moves a home-folder start to
   `~/Notes/Agents/<tab>`. Now: `crates/quietdeck-node/src/control.rs` (25 and 27 November).
-- ~~**Every agent-facing command needs a timeout.**~~ On Fleetlayer: https://fleetlayer.ai/guides/unattended-agents/. A CLI waiting on a socket or HTTP call with no limit hangs an
+- ~~**Every agent-facing command needs a timeout.**~~ On Fleetlayer: https://fleetlayer.ai/docs/guides/unattended-agents/. A CLI waiting on a socket or HTTP call with no limit hangs an
   agent's turn forever when the other end restarts mid-request (a node restart during `msg send`, 25 November): the
   agent can't recover by itself. Quietdeck's CLI: 10 seconds for the local node, 3 to connect and 30 in all for the
   deck, 5 end to end for a message (the deck's delivery 4, a herdr prompt 3). Now: `crates/quietdeck-cli/src/client.rs`.
-- ~~**Agent tools must work without a login session.**~~ On Fleetlayer: https://fleetlayer.ai/guides/node-services/. `sudo -u <user>` and cron jobs have no `XDG_RUNTIME_DIR`, so a
+- ~~**Agent tools must work without a login session.**~~ On Fleetlayer: https://fleetlayer.ai/docs/guides/node-services/. `sudo -u <user>` and cron jobs have no `XDG_RUNTIME_DIR`, so a
   CLI that finds its daemon's socket through it fails for exactly the separate agent users (triage, talira). The CLI
   now falls back to `/run/user/<uid>/`. Now: `crates/quietdeck-cli/src/client.rs` (25 November).
-- ~~**Sessions survive a reboot.**~~ On Fleetlayer: https://fleetlayer.ai/guides/node-services/. herdr resumes Claude Code sessions after a VM restart, with their conversation;
+- ~~**Sessions survive a reboot.**~~ On Fleetlayer: https://fleetlayer.ai/docs/guides/node-services/. herdr resumes Claude Code sessions after a VM restart, with their conversation;
   background processes and the session's temporary scratchpad don't survive. Now: the agents VM restart, 25 November.
 - **Per-machine instructions.** A shared global instructions file for every machine, plus one file per machine
   (`CLAUDE.this-machine.md`, which the sync leaves out) for what holds only there: no browser, no Touch ID, how to
@@ -45,7 +45,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   November (build plan).
 - **Two scratchpads per agent.** A wiped one (`/tmp`, the session scratchpad) and a kept, synced one in the notes
   vault, named after the role. Now: Nathan's global instructions, "Agents' scratchpads: one wiped, one kept".
-- ~~**Builds off the laptop.**~~ On Fleetlayer: https://fleetlayer.ai/guides/agents-building-software/. Heavy Rust builds and tests on a build server (`scripts/on-dev`), heavy-build leases, why
+- ~~**Builds off the laptop.**~~ On Fleetlayer: https://fleetlayer.ai/docs/guides/agents-building-software/. Heavy Rust builds and tests on a build server (`scripts/on-dev`), heavy-build leases, why
   a laptop's disk fills. Now: `AGENTS.md`, `docs/leases.md`.
 
 - **Continuous deployment without races.** CI builds the image and commits its digest to the infra repo with a
@@ -53,7 +53,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   only add during a rolling deploy, Argo CD backs up before and checks after. Why not an image updater (build order
   isn't commit order). Now: `deploy/README.md` "Continuous deployment", Talira's `internal-docs/deploying.md`.
 
-- ~~**Agents driving your own browser.**~~ On Fleetlayer: https://fleetlayer.ai/guides/browser/. One of the things people do most (Nathan, 25 November): any agent on any
+- ~~**Agents driving your own browser.**~~ On Fleetlayer: https://fleetlayer.ai/docs/guides/browser/. One of the things people do most (Nathan, 25 November): any agent on any
   machine controls the person's real, signed-in Chrome, reusing its cookies, and asks them to sign in in a tab when
   needed. Playwright MCP's extension, its server on the Mac per session (tab groups keep sessions apart), reached over
   SSH or Tailscale SSH; later Quietdeck as the gate (allowlist, approvals, audit, kill switch), never as the pipe. Now:
@@ -67,7 +67,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   2026): it's only for sessions with no messaging socket. Now: Nathan's shared CLAUDE.md, "Messaging Nathan's herdr
   sessions" (26 November).
 
-- ~~**Mirrored transcripts get summarised twice.**~~ On Fleetlayer: https://fleetlayer.ai/guides/day-to-day/. On a machine with one Unix user per agent, a root timer
+- ~~**Mirrored transcripts get summarised twice.**~~ On Fleetlayer: https://fleetlayer.ai/docs/guides/day-to-day/. On a machine with one Unix user per agent, a root timer
   (`agents-mirror`, every 2 minutes) copies each agent user's Claude project into the main user's home, so its
   memory syncs and its transcripts reach the archive. Anything that sweeps the main user's `~/.claude/projects` then
   sees the other user's live transcript as its own, and summarised it under the wrong node, beside that user's own
@@ -210,7 +210,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   `docs/drafts/homeserver-guides.md`.
 - **Dev servers on a remote machine.** Vite refuses host names it doesn't know (403), and `crypto.randomUUID` exists
   only on HTTPS pages or localhost; use the tailnet's full name and allow it. Now: this conversation (25 November).
-- ~~**Reinstalling a launchd agent races.**~~ On Fleetlayer: https://fleetlayer.ai/guides/node-services/. `launchctl bootout` returns before the old job is gone; a `bootstrap`
+- ~~**Reinstalling a launchd agent races.**~~ On Fleetlayer: https://fleetlayer.ai/docs/guides/node-services/. `launchctl bootout` returns before the old job is gone; a `bootstrap`
   straight after fails with "5: Input/output error" and leaves the service down. Wait until `launchctl print
   gui/<uid>/<label>` fails, then bootstrap, retrying a few times. Now: `crates/quietdeck-node/src/service.rs`
   (26 November), and Fleetlayer's `fleetlayer-node/src/service.rs`.

@@ -53,7 +53,7 @@ fleetlayer status
 
 `command` is a full path or a name on the service's PATH. If `fleetlayer status` shows the plugin restarting with "No
 such file or directory", give it the full path (such as `/usr/local/bin/quietdeck-node`) and run
-`fleetlayer-node install` again. [Add a machine](https://fleetlayer.ai/guides/node-services/) has the other service
+`fleetlayer-node install` again. [Add a machine](https://fleetlayer.ai/docs/guides/node-services/) has the other service
 problems.
 
 ### What changes
@@ -125,7 +125,7 @@ The plugin and the Quietdeck node must agree on that socket:
 
 ## Limit what the runner may message
 
-Fleetlayer's [access rules](https://fleetlayer.ai/access-control/) name the runner as `plugin:runner@<node>`. They're
+Fleetlayer's [access rules](https://fleetlayer.ai/docs/access-control/) name the runner as `plugin:runner@<node>`. They're
 checked in Fleetlayer's control plane, for messages to a session on **another** node. A message to a session on the
 runner's own node is delivered there without a check, because every process of that Unix user could claim to be any
 of its sessions anyway. So a runner beside its agent can always wake it, and the rules decide where its forwards and
@@ -159,7 +159,7 @@ fleetlayer-control acl explain --from plugin:runner@build-server-triage --can me
 ```
 
 A pattern such as `*@build-server-triage` matches the runner too. If you follow Fleetlayer's
-[untrusted input guide](https://fleetlayer.ai/guides/untrusted-input/) and put `*@<triage node>` in an untrusted
+[untrusted input guide](https://fleetlayer.ai/docs/guides/untrusted-input/) and put `*@<triage node>` in an untrusted
 group, its `only` and `untrusted` rules cover the runner's messages as well. Write the runner's own rule with that in
 mind.
 
@@ -169,7 +169,7 @@ node, whose token the agent can't read.
 
 ## Read Fleetlayer's summaries in the deck
 
-On a machine where Fleetlayer's [summaries plugin](https://fleetlayer.ai/plugins/summaries/) writes the summaries, the
+On a machine where Fleetlayer's [summaries plugin](https://fleetlayer.ai/docs/plugins/summaries/) writes the summaries, the
 deck can pull them into its own store, so the Sessions screen, search and the digest work as they do with Quietdeck's
 own. Give the deck Fleetlayer's control plane address and a read-scoped token:
 
@@ -196,7 +196,7 @@ period replaces the older one, so nothing shows twice.
 ## Claude accounts
 
 Claude sign-ins and their usage belong to Fleetlayer's [Claude accounts
-plugin](https://fleetlayer.ai/plugins/claude-auth-manager/), which serves the Claude account rotator's
+plugin](https://fleetlayer.ai/docs/plugins/claude-auth-manager/), which serves the Claude account rotator's
 `coordinator.sock`. Quietdeck's node never reads a Claude sign-in or serves that socket; the old `usage.claude` and
 `usage.serve_coordinator_api` keys in its `node.yaml` are accepted and ignored.
 

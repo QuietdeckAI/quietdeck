@@ -18,7 +18,7 @@ The shape:
 - Everything the agent proposes waits for a person to approve it, and plain code carries it out.
 
 For running agents unattended in general (sign-ins, prompts that block, monitoring), see Fleetlayer's
-[unattended agents guide](https://fleetlayer.ai/guides/unattended-agents/).
+[unattended agents guide](https://fleetlayer.ai/docs/guides/unattended-agents/).
 
 ## The command line
 

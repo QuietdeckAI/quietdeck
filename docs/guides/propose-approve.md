@@ -134,7 +134,7 @@ No card, no agent and no tokens are involved, because this check has to work whe
 loop would cost tokens every half hour and be one more thing that can fail silently. It's set up once, under
 `matrix.heartbeats` in the node's `node.yaml`; [Bring Matrix messages to the triage agent](matrix-source.md#a-dead-mans-switch-for-the-alert-path)
 shows how. For monitoring in general (heartbeats for scheduled jobs, health checks that catch a service that's up but
-not working), see Fleetlayer's [monitoring guide](https://fleetlayer.ai/guides/monitoring/).
+not working), see Fleetlayer's [monitoring guide](https://fleetlayer.ai/docs/guides/monitoring/).
 
 Heartbeats for monitored sessions, and subscriptions that send a channel's messages to the agent in a role, are
 planned, not built.
