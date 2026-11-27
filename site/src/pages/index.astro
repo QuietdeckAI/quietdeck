@@ -248,8 +248,7 @@ const done = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12
             <span class="mock__tab">Rules</span>
           </div>
           <div class="mock__body">
-            <h4>Work</h4>
-            <h5 class="mock__first">Needs you</h5>
+            <h4>Needs you</h4>
             <ol>
               <li>
                 <b><code>billing</code> is waiting on a prompt:</b> it wants to run the invoice script against the
@@ -257,21 +256,21 @@ const done = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12
                 <div class="mock__choices" aria-hidden="true"><span class="on">Yes</span><span>Yes, and don't ask again</span><span>No</span></div>
               </li>
               <li>
-                <b><code>web</code> finished the Playwright fix:</b> pull request #143 is merged and deployed. Wrap it up,
-                then close it.
-                <div class="mock__default"><span>Wrap up session, then close it</span><span class="mock__icons"><Fragment set:html={chat} /><Fragment set:html={term} /><Fragment set:html={check} /></span></div>
+                <b><code>mobile</code> asks which push provider to use.</b> It suggests the platform's own services.
+                <div class="mock__ask"><span>Which push provider should <code>mobile</code> use?</span><span class="mock__answer">Your answer</span></div>
               </li>
               <li>
-                <b>Renew the domain for sign.example.com:</b> due today. Only you can pay for it.
-                <div class="mock__default"><span>Mark it done in the thread</span><span class="mock__icons"><Fragment set:html={chat} /><Fragment set:html={term} /></span></div>
+                <b><code>web</code> finished the Playwright fix and wrapped up:</b> pull request #143 is merged and
+                deployed. It proposes one story, then closing the session.
+                <div class="mock__default"><span>Create the story, then close the session</span><span class="mock__icons"><Fragment set:html={chat} /><Fragment set:html={term} /><Fragment set:html={check} /></span></div>
               </li>
             </ol>
             <h5>FYI</h5>
             <ul>
               <li><code>certs</code> installed the new certificate and checked it.</li>
               <li><code>release</code> shipped 0.4.2.</li>
-              <li><code>docs</code> published the new guide.</li>
             </ul>
+            <div class="mock__default"><span>Archive all</span><span class="mock__icons"><Fragment set:html={check} /></span></div>
             <h5>Parked <small>1</small></h5>
           </div>
           <div class="mock__bar" aria-hidden="true">

@@ -289,12 +289,26 @@
   border-color: var(--m-accent);
   color: var(--m-accent);
 }
-.mock h5.mock__first {
-  margin-top: 0;
-}
 .mock h5 small {
   font-family: var(--font-body);
   font-size: 0.75rem;
   color: var(--m-muted);
   margin-left: 0.35rem;
+}
+.mock__ask {
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--m-accent);
+  border-radius: 7px;
+  background: var(--m-panel);
+  color: var(--m-ink);
+}
+.mock__answer {
+  display: block;
+  margin-top: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--m-rule);
+  border-radius: 6px;
+  color: var(--m-muted);
+  font-size: 0.875rem;
 }

@@ -6,6 +6,8 @@ you, what's finished and what's still running. An agent called the **overseer** 
 
 <!-- DRAFT: names and settings to confirm with the quietdeck work session before this ships. -->
 
+![The Work tab: under Needs you, a session waiting for a key only you can add, a pull request to review, a question with an answer box, and a finished session proposing stories and closing; then today's tasks, an FYI list with Archive all, and one parked session](https://quietdeck.ai/images/work.png)
+
 ## Documents and tabs
 
 Every page you read in Quietdeck is a **document**. A document has a name, the tab it sits under, and the agent that
