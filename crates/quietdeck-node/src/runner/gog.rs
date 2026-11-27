@@ -266,7 +266,7 @@ impl Gog {
         let what = args.iter().take_while(|a| !a.starts_with('-')).take(3).copied().collect::<Vec<_>>().join(" ");
         match out.code {
             Some(0) => {}
-            Some(EXIT_NOT_FOUND) => return Err(format!("404 not found (gog {what}): {}", stderr_line(&out.stderr))),
+            Some(EXIT_NOT_FOUND) => return Err(format!("404 not found (gog {what}): {}", error_message(&out))),
             Some(EXIT_AUTH) => {
                 return Err(format!(
                     "gog isn't signed in to {account} any more (or lacks Gmail access): run `gog auth add {account} \
@@ -276,7 +276,7 @@ impl Gog {
             Some(EXIT_RATE_LIMITED) => return Err(format!("Gmail is rate-limiting gog {what}: try again shortly")),
             code => {
                 let code = code.map_or("a signal".to_string(), |c| format!("exit {c}"));
-                return Err(format!("gog {what} failed ({code}): {}", stderr_line(&out.stderr)));
+                return Err(format!("gog {what} failed ({code}): {}", error_message(&out)));
             }
         }
         let text = out.stdout.trim();
@@ -328,6 +328,19 @@ pub(super) async fn spawn(cmd: &mut tokio::process::Command) -> std::io::Result<
             }
             other => return other,
         }
+    }
+}
+
+/// What gog said went wrong: with `--json` it prints `{"error": {"message": …}}` on stdout, and usually the same on
+/// stderr. The JSON's message first, then stderr.
+fn error_message(out: &Output) -> String {
+    let from_json = serde_json::from_str::<Value>(out.stdout.trim())
+        .ok()
+        .and_then(|v| v.pointer("/error/message").and_then(Value::as_str).map(str::to_string))
+        .filter(|m| !m.trim().is_empty());
+    match from_json {
+        Some(m) => short(&Value::String(m)),
+        None => stderr_line(&out.stderr),
     }
 }
 
@@ -777,6 +790,15 @@ exit $(cat "$dir/$op.exit" 2>/dev/null || echo 0)
 
             let profile = gog.call("profile", &json!({"account": "alice@example.com"})).await.unwrap();
             assert_eq!(profile, json!({"historyId": "28605522"}), "the newest message's historyId");
+        }
+
+        #[test]
+        fn the_error_message_comes_from_gogs_json_then_stderr() {
+            let out = |stdout: String, stderr: &str| Output { code: Some(5), stdout, stderr: stderr.into() };
+            let m = error_message(&out(fixture("not_found").to_string(), ""));
+            assert_eq!(m, "Google API error (404 notFound): Requested entity was not found.");
+            assert_eq!(error_message(&out(String::new(), "boom\n")), "boom");
+            assert_eq!(error_message(&out("{}".into(), "")), "no message");
         }
 
         #[tokio::test]
