@@ -66,6 +66,22 @@ pub struct ApproveAll {
     pub single: Option<bool>,
 }
 
+/// Approve All for the Inbox report: the deck works out the cards itself, those named by each `<Default>` the person
+/// didn't change on this version of the report, so every frontend approves the same way. `report_version` is the
+/// version on screen: a newer one is refused, to be read first.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema, Validate)]
+#[ts(export)]
+pub struct ApproveReport {
+    #[garde(skip)]
+    pub report_id: i64,
+    #[garde(skip)]
+    pub report_version: i64,
+    /// The timeline entries on screen, which move to History.
+    #[serde(default)]
+    #[garde(length(max = 1000))]
+    pub timeline: Vec<i64>,
+}
+
 /// A card Approve All left alone, and why.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[ts(export)]

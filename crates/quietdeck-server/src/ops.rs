@@ -8,7 +8,7 @@ use quietdeck_types::api::{Caller, Changed, DeckInfo, Settings};
 use quietdeck_types::card::{
     ActionRecord, ActionReport, Card, CardAdded, CardInput, CardSection, CardState, Released, RunBy,
 };
-use quietdeck_types::decision::{ApproveAll, Approving, Decide, Inbox, ReportReceipt, StopResult};
+use quietdeck_types::decision::{ApproveAll, Approving, CardDecision, Decide, Inbox, ReportReceipt, StopResult};
 use quietdeck_types::directory::{HitSource, PartialSearch, SessionRow, TranscriptHit, WhoHas, WhoHasHit};
 use quietdeck_types::node::{DeckRequest, Delivered, TranscriptSearch};
 use quietdeck_types::relay::{DeliveryError, DeliveryKind, MsgSend};
@@ -385,6 +385,62 @@ pub async fn approve_all(state: &AppState, req: ApproveAll) -> AppResult<Approvi
     state.release.notify_one();
     state.changed(Changed::Cards);
     Ok(a)
+}
+
+/// Approve All for the report on screen: the cards of every `<Default>` the person didn't change on this version,
+/// open or handed off, each approved as it stands (a suggestion with its actions as they are).
+pub async fn approve_report(state: &AppState, req: quietdeck_types::decision::ApproveReport) -> AppResult<Approving> {
+    garde::Validate::validate(&req).map_err(bad)?;
+    let report = crate::reports::current(&state.db)
+        .await?
+        .filter(|r| r.id == req.report_id)
+        .ok_or_else(|| AppError::Conflict("that report isn't the current one: read the new one first".into()))?;
+    if report.version != req.report_version {
+        return Err(AppError::Conflict(format!(
+            "the report changed (version {} is newer than the {} on screen): read it, then approve",
+            report.version, req.report_version
+        )));
+    }
+    let changed: std::collections::HashSet<&str> = report
+        .answers
+        .iter()
+        .filter(|a| a.kind == quietdeck_types::report::AnswerKind::Change && a.report_version == report.version)
+        .map(|a| a.control.as_str())
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut decisions = Vec::new();
+    for (key, ids) in quietdeck_types::report::default_keys(&report.markdown) {
+        if changed.contains(key.as_str()) {
+            continue;
+        }
+        for id in ids {
+            if !seen.insert(id) {
+                continue;
+            }
+            let Some(card) = cards::get(&state.db, id).await? else { continue };
+            if !matches!(card.state, CardState::Open | CardState::HandedOff) {
+                continue;
+            }
+            decisions.push(if card.input.section == CardSection::Suggestion {
+                CardDecision {
+                    card_id: card.id,
+                    version: card.version,
+                    kind: quietdeck_types::card::DecisionKind::Edit,
+                    fields: Some(card.input.actions.clone()),
+                    text: None,
+                }
+            } else {
+                CardDecision {
+                    card_id: card.id,
+                    version: card.version,
+                    kind: quietdeck_types::card::DecisionKind::Approve,
+                    fields: None,
+                    text: None,
+                }
+            });
+        }
+    }
+    approve_all(state, ApproveAll { cards: decisions, timeline: req.timeline, single: None }).await
 }
 
 pub async fn undo(state: &AppState, batch: &str) -> AppResult<()> {

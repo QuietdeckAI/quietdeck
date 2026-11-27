@@ -678,6 +678,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn approve_report_takes_the_cards_of_every_default_he_didnt_change() {
+        let state = AppState::for_tests().await;
+        let card = |thread: &str| -> quietdeck_types::card::CardInput {
+            serde_json::from_value(serde_json::json!({"account": "personal", "thread_key": thread, "subject": "s",
+                "summary": "x", "section": "actions", "reason": "r",
+                "actions": [{"type": "archive", "account": "personal", "thread_id": thread}]}))
+            .unwrap()
+        };
+        let mut ids = vec![];
+        for t in ["t1", "t2", "t3"] {
+            let added =
+                crate::store::cards::add(&state.db, &me(), &card(t), quietdeck_types::card::CardState::Open, None)
+                    .await
+                    .unwrap();
+            ids.push(added.card.id);
+        }
+        let md = format!(
+            "1. One\n   <Default cards=\"c_{a} c_{b}\">Archive both</Default>\n2. Two\n   <Default cards=\"c_{c}\">Archive</Default>\n",
+            a = ids[0],
+            b = ids[1],
+            c = ids[2]
+        );
+        let r =
+            super::set(&state, &me(), ReportSet { markdown: md, base: None, new: true, change: None }).await.unwrap();
+        // He changed the second default: its card waits for the agent.
+        let r = answer(
+            &state,
+            quietdeck_types::report::ReportAnswerAdd {
+                report_id: r.id,
+                report_version: r.version,
+                control: format!("cards:c_{}", ids[2]),
+                kind: AnswerKind::Change,
+                about: "Archive".into(),
+                value: "forward it to api instead".into(),
+                cards: None,
+            },
+        )
+        .await
+        .unwrap();
+        let req = |version| quietdeck_types::decision::ApproveReport {
+            report_id: r.id,
+            report_version: version,
+            timeline: vec![],
+        };
+        let stale = crate::ops::approve_report(&state, req(r.version - 1)).await;
+        assert!(matches!(stale, Err(AppError::Conflict(_))), "an older version on screen is refused");
+        let a = crate::ops::approve_report(&state, req(r.version)).await.unwrap();
+        let mut took = a.cards.clone();
+        took.sort_unstable();
+        assert_eq!(took, vec![ids[0], ids[1]], "the changed default's card isn't approved");
+    }
+
+    #[tokio::test]
     async fn the_report_lists_open_cards_no_default_names() {
         let state = AppState::for_tests().await;
         let card = |thread: &str| -> quietdeck_types::card::CardInput {

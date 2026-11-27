@@ -64,6 +64,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/events", get(crate::events::stream))
         .route("/api/settings", get(get_settings).put(put_settings))
         .route("/api/decisions/approve-all", post(approve_all))
+        .route("/api/report/approve", post(approve_report))
         .route("/api/decisions/undo", post(undo))
         .route("/api/decisions/stop", post(stop))
         .route("/api/decisions/take", post(take))
@@ -820,6 +821,14 @@ async fn approve_all(
     Json(req): Json<ApproveAll>,
 ) -> AppResult<Json<Approving>> {
     Ok(Json(ops::approve_all(&state, req).await?))
+}
+
+async fn approve_report(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(req): Json<quietdeck_types::decision::ApproveReport>,
+) -> AppResult<Json<Approving>> {
+    Ok(Json(ops::approve_report(&state, req).await?))
 }
 
 async fn undo(State(state): State<AppState>, _owner: Owner, Json(u): Json<UndoBatch>) -> AppResult<()> {
