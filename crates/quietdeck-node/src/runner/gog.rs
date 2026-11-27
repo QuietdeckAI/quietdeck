@@ -52,7 +52,7 @@ fn default_bin() -> String {
 }
 
 /// Every op `gog:` takes in a tool spec.
-pub const OPS: [&str; 14] = [
+pub const OPS: [&str; 15] = [
     "profile",
     "history",
     "message",
@@ -65,6 +65,7 @@ pub const OPS: [&str; 14] = [
     "labels",
     "archive",
     "mark_read",
+    "not_spam",
     "label",
     "draft",
 ];
@@ -152,6 +153,7 @@ impl Gog {
             }
             "archive" => self.modify(&account, input, &[], &["INBOX".into()]).await,
             "mark_read" => self.modify(&account, input, &[], &["UNREAD".into()]).await,
+            "not_spam" => self.modify(&account, input, &["INBOX".into()], &["SPAM".into()]).await,
             "label" => {
                 let add = strings(input, "add");
                 let remove = strings(input, "remove");
@@ -571,7 +573,9 @@ pub fn preset_input(op: &str) -> Value {
     match op {
         "history" => json!({"account": account, "since": "${history_id}", "page": "${page_token}"}),
         "message" | "message_text" => json!({"account": account, "id": "${message_id}"}),
-        "thread" | "archive" | "mark_read" => json!({"account": account, "thread_id": "${action.thread_id}"}),
+        "thread" | "archive" | "mark_read" | "not_spam" => {
+            json!({"account": account, "thread_id": "${action.thread_id}"})
+        }
         "label" => json!({"account": account, "thread_id": "${action.thread_id}", "add": "${action.add}",
             "remove": "${action.remove}"}),
         "draft" => json!({"account": account, "from": "${action.from}", "to": "${action.to}", "cc": "${action.cc}",

@@ -76,6 +76,9 @@ pub struct SenderAuth {
     pub dmarc_pass: bool,
     #[serde(default)]
     pub dkim_pass: bool,
+    /// The sending server is one the domain's SPF record allows. Absent on cards from before 28 Nov 2026.
+    #[serde(default)]
+    pub spf_pass: Option<bool>,
 }
 
 /// One fact on a card: an amount, a date, a reference.

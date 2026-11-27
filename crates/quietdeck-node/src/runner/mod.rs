@@ -207,7 +207,9 @@ fn newer_message(r: &Released, account: &str, thread_id: &str, meta: &ThreadMeta
 
 fn thread_of(a: &Action) -> Option<(&str, &str)> {
     match a {
-        Action::Archive { account, thread_id } | Action::MarkRead { account, thread_id } => Some((account, thread_id)),
+        Action::Archive { account, thread_id }
+        | Action::MarkRead { account, thread_id }
+        | Action::NotSpam { account, thread_id } => Some((account, thread_id)),
         Action::Label { account, thread_id, .. } => Some((account, thread_id)),
         Action::Draft(c) => Some((&c.account, &c.thread_id)),
         _ => None,
@@ -231,6 +233,7 @@ fn describe(a: &Action) -> &'static str {
     match a {
         Action::Archive { .. } => "Archive",
         Action::MarkRead { .. } => "Mark read",
+        Action::NotSpam { .. } => "Mark as not spam",
         Action::Label { .. } => "Label",
         Action::Forward { .. } => "Forward",
         Action::Draft(_) => "Draft",
@@ -543,6 +546,7 @@ impl Runner {
         match (a, meta) {
             (Action::Archive { .. }, Some(m)) if !m.any_label("INBOX") => return Ok(json!({"already": "archived"})),
             (Action::MarkRead { .. }, Some(m)) if !m.any_label("UNREAD") => return Ok(json!({"already": "read"})),
+            (Action::NotSpam { .. }, Some(m)) if !m.any_label("SPAM") => return Ok(json!({"already": "not spam"})),
             _ => {}
         }
         match a {
@@ -804,6 +808,11 @@ impl Runner {
             let mut facts = Vec::with_capacity(new.len());
             let mut sent = vec![];
             for m in &new {
+                // Filed as spam: counted for the wake-up, read by the agent itself; never held, never a card here.
+                if m.labels.iter().any(|l| l == "SPAM") {
+                    *state.spam.entry(m.account.clone()).or_default() += 1;
+                    continue;
+                }
                 // A message that's already gone (Gmail took back a follow-up nudge) isn't mail.
                 if let Some((f, meta)) = self.facts(watch, m).await {
                     let is_sent = m.labels.iter().any(|l| l == "SENT");

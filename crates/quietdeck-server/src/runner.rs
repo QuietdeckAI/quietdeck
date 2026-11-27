@@ -89,6 +89,7 @@ pub async fn check_solo_actions(state: &AppState, actions: &[Action]) -> AppResu
             let doing = match t.as_str() {
                 "archive" => "archive it",
                 "mark_read" => "mark it read",
+                "not_spam" => "move it out of spam",
                 "label" => "label it",
                 "draft" => "reply",
                 _ => "do it",

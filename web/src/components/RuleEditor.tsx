@@ -15,6 +15,7 @@ import type { SessionRef } from "@/types/SessionRef";
 export const ACTION_WORD: Record<ActionType, string> = {
   archive: "Archive",
   mark_read: "Mark read",
+  not_spam: "Mark as not spam",
   label: "Label",
   forward: "Forward",
   draft: "Draft",

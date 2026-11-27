@@ -57,6 +57,10 @@ pub struct MailState {
     /// involved instead of hunting the inbox for it (Nathan, 25 Nov).
     #[serde(default)]
     pub sent: Vec<String>,
+    /// New messages Gmail filed as spam since the last wake-up, per account. The agent reads them for phishing and
+    /// for real mail the filter got wrong; the rest stays in spam.
+    #[serde(default)]
+    pub spam: BTreeMap<String, u64>,
     /// The new mail itself, one block per message, for an agent with no mail tools (`mail_watch.message_text`), until
     /// the next wake-up carries it.
     #[serde(default)]
@@ -121,6 +125,7 @@ impl MailState {
         self.channels.clear();
         self.urgent.clear();
         self.sent.clear();
+        self.spam.clear();
         self.handled.clear();
         self.mail_text.clear();
     }
@@ -175,12 +180,18 @@ impl MailState {
         let mail = self.mail_counts(cfg);
         let chat = self.message_counts();
         // Handled items ride along with the next wake-up; alone, they don't wake the agent.
-        if mail.is_none() && chat.is_none() && self.sent.is_empty() {
+        let spam = self.spam_counts(cfg);
+        if mail.is_none() && chat.is_none() && spam.is_none() && self.sent.is_empty() {
             return None;
         }
         let mut text = String::new();
         if let Some(m) = &mail {
             text.push_str(&format!("New mail: {m}. "));
+        }
+        if let Some(s) = &spam {
+            text.push_str(&format!(
+                "New in spam: {s}: check each for phishing and for real mail filed as spam; leave the rest there. "
+            ));
         }
         if !self.sent.is_empty() {
             text.push_str(&format!("Sent: {}. ", self.sent.join("; ")));
@@ -191,7 +202,7 @@ impl MailState {
                  instructions). "
             ));
         }
-        if mail.is_some() || chat.is_some() {
+        if mail.is_some() || chat.is_some() || spam.is_some() {
             text.push_str("Run your triage round.");
         }
         if !self.mail_text.is_empty() {
@@ -246,6 +257,16 @@ impl MailState {
     }
 
     /// "2 Personal, 1 Work" in config order, or None.
+    /// New spam per account ("3 Personal"), when there is any.
+    pub fn spam_counts(&self, cfg: &RunnerConfig) -> Option<String> {
+        let parts: Vec<String> = cfg
+            .accounts
+            .keys()
+            .filter_map(|id| self.spam.get(id).filter(|n| **n > 0).map(|n| format!("{n} {}", cfg.account_label(id))))
+            .collect();
+        (!parts.is_empty()).then(|| parts.join(", "))
+    }
+
     pub fn mail_counts(&self, cfg: &RunnerConfig) -> Option<String> {
         let parts: Vec<String> = cfg
             .accounts
@@ -403,7 +424,7 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
                                 .and_then(Value::as_array)
                                 .map(|a| a.iter().filter_map(Value::as_str).collect())
                                 .unwrap_or_default();
-                            if (labels.contains(&"INBOX") || labels.contains(&"SENT"))
+                            if (labels.contains(&"INBOX") || labels.contains(&"SENT") || labels.contains(&"SPAM"))
                                 && !labels.contains(&"DRAFT")
                                 && let Some(mid) = msg.get("id").and_then(Value::as_str)
                                 && !seen.iter().any(|m| m.id == mid)

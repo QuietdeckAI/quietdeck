@@ -79,6 +79,32 @@
           },
           {
             "additionalProperties": false,
+            "description": "Out of spam and back into the inbox: Gmail's \"Not spam\".",
+            "properties": {
+              "account": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "thread_id": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": {
+                "const": "not_spam",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "account",
+              "thread_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
             "properties": {
               "account": {
                 "maxLength": 100,
@@ -846,6 +872,7 @@
         "enum": [
           "archive",
           "mark_read",
+          "not_spam",
           "label",
           "forward",
           "draft",
@@ -1326,7 +1353,8 @@
             ],
             "default": {
               "dkim_pass": false,
-              "dmarc_pass": false
+              "dmarc_pass": false,
+              "spf_pass": null
             }
           },
           "state": {
@@ -1582,7 +1610,8 @@
             ],
             "default": {
               "dkim_pass": false,
-              "dmarc_pass": false
+              "dmarc_pass": false,
+              "spf_pass": null
             }
           },
           "subject": {
@@ -5010,6 +5039,14 @@
           "dmarc_pass": {
             "default": false,
             "type": "boolean"
+          },
+          "spf_pass": {
+            "default": null,
+            "description": "The sending server is one the domain's SPF record allows. Absent on cards from before 28 Nov 2026.",
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "type": "object"

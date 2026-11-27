@@ -152,6 +152,13 @@ pub enum Action {
         #[garde(length(min = 1, max = 200))]
         thread_id: String,
     },
+    /// Out of spam and back into the inbox: Gmail's "Not spam".
+    NotSpam {
+        #[garde(length(min = 1, max = 100))]
+        account: String,
+        #[garde(length(min = 1, max = 200))]
+        thread_id: String,
+    },
     Label {
         #[garde(length(min = 1, max = 100))]
         account: String,
@@ -283,6 +290,7 @@ pub enum Action {
 pub enum ActionType {
     Archive,
     MarkRead,
+    NotSpam,
     Label,
     Forward,
     Draft,
@@ -298,9 +306,10 @@ pub enum ActionType {
 }
 
 impl ActionType {
-    pub const ALL: [ActionType; 14] = [
+    pub const ALL: [ActionType; 15] = [
         ActionType::Archive,
         ActionType::MarkRead,
+        ActionType::NotSpam,
         ActionType::Label,
         ActionType::Forward,
         ActionType::Draft,
@@ -319,6 +328,7 @@ impl ActionType {
         match self {
             ActionType::Archive => "archive",
             ActionType::MarkRead => "mark_read",
+            ActionType::NotSpam => "not_spam",
             ActionType::Label => "label",
             ActionType::Forward => "forward",
             ActionType::Draft => "draft",
@@ -350,6 +360,7 @@ impl Action {
         match self {
             Action::Archive { .. } => ActionType::Archive,
             Action::MarkRead { .. } => ActionType::MarkRead,
+            Action::NotSpam { .. } => ActionType::NotSpam,
             Action::Label { .. } => ActionType::Label,
             Action::Forward { .. } => ActionType::Forward,
             Action::Draft(_) => ActionType::Draft,
@@ -370,6 +381,7 @@ impl Action {
         match self {
             Action::Archive { account, .. }
             | Action::MarkRead { account, .. }
+            | Action::NotSpam { account, .. }
             | Action::Label { account, .. }
             | Action::Calendar { account, .. }
             | Action::Watch { account, .. } => Some(account),

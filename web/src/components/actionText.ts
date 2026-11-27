@@ -10,6 +10,8 @@ export function actionLine(a: Action): { verb: string; detail?: string } {
       return { verb: "Archive" };
     case "mark_read":
       return { verb: "Mark read" };
+    case "not_spam":
+      return { verb: "Mark as not spam" };
     case "label": {
       const parts = [...a.add.map((l) => `+${l}`), ...a.remove.map((l) => `−${l}`)];
       return { verb: "Label", detail: parts.join("  ") };

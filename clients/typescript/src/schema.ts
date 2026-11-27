@@ -1676,6 +1676,11 @@ export interface components {
             type: "mark_read";
         } | {
             account: string;
+            thread_id: string;
+            /** @constant */
+            type: "not_spam";
+        } | {
+            account: string;
             /** @default [] */
             add?: string[];
             /** @default [] */
@@ -1865,7 +1870,7 @@ export interface components {
          * @description An action's type alone: the `type` tag, the names `runner.eligible` and project policies use.
          * @enum {string}
          */
-        ActionType: "archive" | "mark_read" | "label" | "forward" | "draft" | "reply" | "story" | "task" | "calendar" | "resume" | "new_session" | "lease" | "watch" | "session";
+        ActionType: "archive" | "mark_read" | "not_spam" | "label" | "forward" | "draft" | "reply" | "story" | "task" | "calendar" | "resume" | "new_session" | "lease" | "watch" | "session";
         /**
          * @description Which harness runs the session.
          * @enum {string}
@@ -2070,7 +2075,8 @@ export interface components {
             /**
              * @default {
              *       "dkim_pass": false,
-             *       "dmarc_pass": false
+             *       "dmarc_pass": false,
+             *       "spf_pass": null
              *     }
              */
             sender_auth?: components["schemas"]["SenderAuth"];
@@ -2198,7 +2204,8 @@ export interface components {
             /**
              * @default {
              *       "dkim_pass": false,
-             *       "dmarc_pass": false
+             *       "dmarc_pass": false,
+             *       "spf_pass": null
              *     }
              */
             sender_auth?: components["schemas"]["SenderAuth"];
@@ -3397,6 +3404,11 @@ export interface components {
             dkim_pass?: boolean;
             /** @default false */
             dmarc_pass?: boolean;
+            /**
+             * @description The sending server is one the domain's SPF record allows. Absent on cards from before 28 Nov 2026.
+             * @default null
+             */
+            spf_pass?: boolean | null;
         };
         /** @description `quietdeck sessions show <session>`: one session, and with `--timeline` every summary point it has, oldest first. */
         SessionDetail: {

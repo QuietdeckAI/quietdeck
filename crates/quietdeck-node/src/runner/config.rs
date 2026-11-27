@@ -217,7 +217,7 @@ fn default_inbox_every() -> String {
 /// kinds. Until then those go to the agent as having no handler.
 pub fn default_eligible() -> Vec<ActionType> {
     use ActionType::*;
-    vec![Archive, MarkRead, Label, Draft, Forward, Watch, Lease, Story, Task, Calendar, Resume, NewSession]
+    vec![Archive, MarkRead, NotSpam, Label, Draft, Forward, Watch, Lease, Story, Task, Calendar, Resume, NewSession]
 }
 
 /// `30s`, `2m`, `1h`, or plain seconds.
@@ -238,9 +238,10 @@ pub fn parse_duration(s: &str) -> Result<Duration, String> {
 }
 
 /// The names `runner.tools` takes: one per action the runner carries out with a tool.
-pub const TOOL_KEYS: [&str; 10] = [
+pub const TOOL_KEYS: [&str; 11] = [
     "archive",
     "mark_read",
+    "not_spam",
     "label",
     "draft",
     "calendar",
@@ -280,7 +281,7 @@ impl RunnerConfig {
         fill(&mut self.thread, "thread");
         fill(&mut self.send_as, "send_as");
         fill(&mut self.labels, "labels");
-        for op in ["archive", "mark_read", "label", "draft"] {
+        for op in ["archive", "mark_read", "not_spam", "label", "draft"] {
             self.tools.entry(op.into()).or_insert_with(|| ToolSpec::gog(op));
         }
         if self.mail_watch.is_none() && !self.accounts.is_empty() {

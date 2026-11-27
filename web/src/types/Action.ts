@@ -9,7 +9,7 @@ import type { TaskOp } from "./TaskOp";
 /**
  * One proposed action. The `type` tag is also the name `runner.eligible` uses.
  */
-export type Action = { "type": "archive", account: string, thread_id: string, } | { "type": "mark_read", account: string, thread_id: string, } | { "type": "label", account: string, thread_id: string, add: Array<string>, remove: Array<string>, } | { "type": "forward", to: SessionRef, text: string, 
+export type Action = { "type": "archive", account: string, thread_id: string, } | { "type": "mark_read", account: string, thread_id: string, } | { "type": "not_spam", account: string, thread_id: string, } | { "type": "label", account: string, thread_id: string, add: Array<string>, remove: Array<string>, } | { "type": "forward", to: SessionRef, text: string, 
 /**
  * The user's own comment, set on a sent row. Part of the approved payload, not an adjustment.
  */

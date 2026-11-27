@@ -3,4 +3,8 @@
 /**
  * What the agent read in the message's authentication results. Strict sender rules need one of them to pass.
  */
-export type SenderAuth = { dmarc_pass: boolean, dkim_pass: boolean, };
+export type SenderAuth = { dmarc_pass: boolean, dkim_pass: boolean, 
+/**
+ * The sending server is one the domain's SPF record allows. Absent on cards from before 28 Nov 2026.
+ */
+spf_pass: boolean | null, };
