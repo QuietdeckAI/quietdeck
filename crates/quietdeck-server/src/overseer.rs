@@ -1,5 +1,6 @@
 //! The overseer watch: the deck wakes the agent that writes a Work document when one of the person's sessions needs a
-//! look. A session that went idle (and stayed idle two minutes) or is blocked on a prompt is named once per change, a
+//! look. A session that went idle (and stayed idle two minutes) or is blocked on a prompt is named once per change (a
+//! new status time: idle and done at the same moment are one change), a
 //! few at a time in one message, and a session is named at most once every five minutes. A session that went idle more
 //! than six hours ago (or got blocked more than three days ago) stops counting, so a new watch doesn't wake its agent
 //! for everything that was already there. Left out: the overseer itself, the writers of other documents, the agents runners work for (the
@@ -140,7 +141,7 @@ pub async fn changes_for(state: &AppState, node: &str, tab: &str, now: i64) -> a
            AND (s.status = 'blocked' OR NOT EXISTS (SELECT 1 FROM session_marks m WHERE m.node = s.node \
                 AND m.tab = s.tab AND (m.until IS NULL OR m.until > ?1))) \
            AND NOT EXISTS (SELECT 1 FROM overseer_told t WHERE t.node = s.node AND t.session_id = s.session_id \
-                AND ((t.status = s.status AND t.status_changed_at = s.status_changed_at) OR t.told_at > ?1 - ?6)) \
+                AND (t.status_changed_at = s.status_changed_at OR t.told_at > ?1 - ?6)) \
          ORDER BY s.status = 'blocked' DESC, s.status_changed_at",
     )
     .bind(now)
@@ -315,6 +316,9 @@ mod tests {
                 .await
                 .unwrap();
         }
+        assert!(changes_for(&state, "laptop", "overseer", now).await.unwrap().is_empty());
+        // idle to done at the same moment (herdr reports both) isn't a new change.
+        sqlx::query("UPDATE sessions SET status = 'done' WHERE session_id = 's1'").execute(&state.db).await.unwrap();
         assert!(changes_for(&state, "laptop", "overseer", now).await.unwrap().is_empty());
         // search worked again and went idle: a new change.
         session(&state, "s1", "search", "idle", now - 3 * 60_000).await;
