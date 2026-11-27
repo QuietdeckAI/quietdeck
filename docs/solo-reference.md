@@ -6,7 +6,7 @@ The settings file and commands of [Quietdeck solo](solo.md).
 
 | Command | What it does |
 |---|---|
-| `quietdeck-solo init` | Writes `solo.yaml` and the agent's instructions. `--account id=address` (repeatable; default: every account gog is signed in to), `--port`, `--model`, `--force` to replace existing files. |
+| `quietdeck-solo init` | Writes `solo.yaml` and the agent's instructions. `--account id=address` (repeatable; default: every account gog is signed in to), `--port`, `--model`, `--actions` (below), `--force` to replace existing files. |
 | `quietdeck-solo install` | Runs solo as a service that starts at login (launchd on macOS, systemd `--user` on Linux), after checking the settings. `--no-start` writes the service file only. Run it again after changing settings, moving the program or changing PATH. |
 | `quietdeck-solo uninstall` | Stops the service and removes its file. Settings and data stay. |
 | `quietdeck-solo run` | Runs solo in the terminal: what the service runs. |
@@ -34,10 +34,14 @@ agent:
       - Bash(quietdeck card:*)
       # … one rule per quietdeck subcommand
 gog: { bin: /opt/homebrew/bin/gog }   # optional: where gog is, when it isn't on PATH
+actions: [archive, mark_read, label, draft]   # optional: what may run once you approve it (all four by default)
 ```
 
 - **`accounts`**: the key is the account's ID on its cards (letters, digits, `-` and `_`); `label` is what the Inbox
   calls it (default: the ID with a capital letter).
+- **`actions`**: what the runner carries out once you approve it. An approved action that isn't listed goes back to
+  the agent instead of running. `[draft]` is a safe way to try solo: nothing in your mailbox changes except new
+  drafts.
 - **`agent.headless.allowed_tools`**: Claude Code permission rules. The default allows `quietdeck` with `whoami`,
   `card`, `cards`, `report`, `round`, `chat`, `decisions`, `action`, `actions` and `history`. A bare `Bash` (anything
   at all) is refused. Think before adding to it: the agent reads mail from strangers.
