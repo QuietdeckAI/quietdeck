@@ -86,7 +86,7 @@ what triage needs keeps them one config change away rather than one prompt injec
 Two checks keep a config from undoing that:
 
 - Solo refuses to start when `allowed_tools` contains a bare `Bash` or `Bash(*)`, which would let the agent run
-  anything.
+  anything, or `Bash(quietdeck:*)` or `Bash(quietdeck *)`, which would allow every subcommand.
 - The rules are tested for real, not just read. A refused command appears in the result's `permission_denials`, so a
   test turn that asks the agent to run `ls /` or `quietdeck msg send` should come back with both denied, while
   `quietdeck cards` runs. This was checked with Claude Code 2.1.332; check again when you upgrade, since permission
@@ -146,8 +146,9 @@ How it's built:
   that looks like part of the prompt, or open a tag.
 - **The body cut short.** At 3,000 characters, with a line saying so. That's enough to triage, and a long newsletter
   can't crowd out everything else.
-- **A tag the text can't close.** Any `</email` in the body becomes `</ email`, so an email can't end its own block and
-  carry on as if it were the runner speaking.
+- **No tags at all.** Every `<` and `>` in the body and the headers becomes `‹` or `›`, so no tag survives in any case:
+  not `</email>` or `</EMAIL>`, and not the closing tag of the wrapper round the whole wake-up. An email can't end its
+  own block and carry on as if it were the runner speaking.
 - **The warning first.** The untrusted-input line goes above the blocks, and the agent's instructions repeat it.
 - **A limit per wake-up.** At most 25 messages go in one wake-up. The rest wait, and the wake-up says how many are
   coming in the next ones.
@@ -156,8 +157,8 @@ How it's built:
 
 The tags and the warning help the model tell data from instructions, but a determined email can still be persuasive.
 What protects the mailbox is that the agent has nothing to be persuaded into: it can post proposals, and a person
-approves them. If you copy this, break every closing tag the model might honour, the outer envelope's as well as your
-own, and in any case (`</EMAIL` too).
+approves them. If you copy this, neutralise every tag in the untrusted text, not just your own closing tag: an email
+can close any wrapper the model sees, in any case.
 
 ## Plain code is the safe reader
 

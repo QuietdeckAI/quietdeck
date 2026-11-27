@@ -90,8 +90,9 @@ file; decide whether that's right for your machine. [Getting started](../getting
 ## Quietdeck's own herdr fallback
 
 The node does use `herdr agent prompt` in one place: for a session it can't reach any other way. That's a Codex
-session, which has no messaging socket, or a Claude Code session without one (an older version, or messaging turned
-off). Those sessions would otherwise get no messages at all.
+session, which has no messaging socket, or a running Claude Code session the node can't reach through one (no socket,
+or no entry in Claude Code's session registry). Those sessions would otherwise get no messages at all. A Claude Code
+session whose process has ended gets nothing typed into its pane: the send fails as offline.
 
 It's never a fallback for a Claude Code session that has a socket. Agents shouldn't copy it either: when the node
 chooses herdr, it knows the session can't be reached a better way. An agent that pastes into a tab doesn't.

@@ -181,7 +181,7 @@ for each.
 ## When the owner is offline
 
 If the deck can't deliver to the owning session (it isn't running, or its machine's node is down), it records the
-failure and passes the events to the triage agent instead, as unhandled messages. The triage agent wakes for them like
+failure (`quietdeck hooks list` shows each endpoint's last one) and passes the events to the triage agent instead, as unhandled messages. The triage agent wakes for them like
 any other new item and decides what to do: reach another session, or put it in front of you.
 
 ## Limits
@@ -192,9 +192,8 @@ any other new item and decides what to do: reach another session, or put it in f
   flooding its owner.
 - **256 KB per call.**
 - **A repeat is dropped.** An Alertmanager alert is identified by its fingerprint, status and start time. A generic
-  event is identified by its whole body, so a sender that posts exactly the same text again is treated as a repeat and
-  not delivered. If a sender's alerts can be identical from one incident to the next, include something that changes
-  in the body.
+  event is identified by its whole body within a ten-minute window: the same body again within ten minutes is the
+  sender retrying and counts once, and the same alert firing later counts again.
 - **Only the hooks port is public.** Port 8081 serves `/hooks/…` and `/healthz` and nothing else. Expose it through a
   tunnel that sends only `/hooks/` there, and keep the deck's main port private. [deploy/README.md](https://github.com/QuietdeckAI/quietdeck/blob/main/deploy/README.md)
   has the ports and `QUIETDECK_HOOKS_PUBLIC_URL`, which the deck needs to print endpoint URLs.
