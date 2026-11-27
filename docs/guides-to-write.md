@@ -188,6 +188,13 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
 
 ## Setting up a machine
 
+- **Quietdeck's messages through Fleetlayer.** On a machine that runs Fleetlayer, add Quietdeck's node to Fleetlayer's
+  node.yaml as a plugin (`name: runner`, `command: quietdeck-node`, `args: [fleetlayer-plugin]`,
+  `grants: [message.send]`). The runner's forwards and its wake-ups then go through Fleetlayer as
+  `plugin:runner@<node>`, the sender access rules name, with an email forward marked as outside data (`untrusted`).
+  Without it, or with no Fleetlayer at all (Quietdeck solo on a laptop), the node keeps its own delivery. Footgun: a
+  Unix socket path must be under about 107 bytes, so a test node's sockets can't live in a deep scratch folder. Now:
+  `crates/quietdeck-node/src/fleetlayer.rs` (27 November, the cutover), smoke-tested against a real fleetlayer-node.
 - **A server VM for agents.** Login user without sudo, lingering, Tailscale SSH, herdr, the node. Now:
   `docs/drafts/homeserver-guides.md`.
 - **Dev servers on a remote machine.** Vite refuses host names it doesn't know (403), and `crypto.randomUUID` exists
