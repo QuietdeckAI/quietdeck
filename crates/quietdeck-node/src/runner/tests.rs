@@ -673,7 +673,10 @@ async fn the_mail_watch_wakes_for_each_new_batch_and_resumes_after_a_restart() {
     // The received message is new mail, the one Gmail filed as spam is counted as spam for the agent to check, and
     // the sent one is named as sent, all in the same wake-up.
     let first = agent.told.lock().unwrap()[0].1.clone();
-    assert!(first.starts_with("New mail: 1 Personal. New in spam: 1 Personal: check each for phishing"), "{first}");
+    assert!(
+        first.starts_with("New mail: 1 Personal. New in spam: 1 Personal: check each for real mail filed as spam"),
+        "{first}"
+    );
     assert!(first.contains("Sent: Personal"), "{first}");
 
     added.lock().unwrap().push((104, "c", "INBOX"));

@@ -57,8 +57,9 @@ pub struct MailState {
     /// involved instead of hunting the inbox for it (Nathan, 25 Nov).
     #[serde(default)]
     pub sent: Vec<String>,
-    /// New messages Gmail filed as spam since the last wake-up, per account. The agent reads them for phishing and
-    /// for real mail the filter got wrong; the rest stays in spam.
+    /// New messages Gmail filed as spam since the last wake-up, per account. The agent reads them for real mail the
+    /// filter got wrong; the rest stays in spam, phishing included: it's already where it belongs, so no warning
+    /// (Nathan, 27 Nov).
     #[serde(default)]
     pub spam: BTreeMap<String, u64>,
     /// The new mail itself, one block per message, for an agent with no mail tools (`mail_watch.message_text`), until
@@ -190,7 +191,7 @@ impl MailState {
         }
         if let Some(s) = &spam {
             text.push_str(&format!(
-                "New in spam: {s}: check each for phishing and for real mail filed as spam; leave the rest there. "
+                "New in spam: {s}: check each for real mail filed as spam; leave the rest there, phishing included. "
             ));
         }
         if !self.sent.is_empty() {

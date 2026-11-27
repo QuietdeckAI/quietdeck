@@ -598,8 +598,8 @@ pub async fn take_answers(state: &AppState, doc: &Document) -> AppResult<Vec<Rep
 }
 
 /// `quietdeck report reply`: the agent's answer in a default's thread. `to` is the default's key as its messages
-/// carry it, or a card it names (`c_12`, kept as `cards:c_12`: the Inbox puts it in the thread of whichever default
-/// names that card).
+/// carry it (still there, or one he answered on this report before the agent took it off), or a card it names (`c_12`,
+/// kept as `cards:c_12`: the Inbox puts it in the thread of whichever default names that card).
 pub async fn reply(state: &AppState, doc: &Document, req: ReportReply) -> AppResult<Report> {
     req.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
     let Some(r) = open_row(&state.db, doc.id).await? else {
@@ -608,7 +608,17 @@ pub async fn reply(state: &AppState, doc: &Document, req: ReportReply) -> AppRes
     let to = req.to.trim();
     let keys = quietdeck_types::report::default_keys(&r.markdown);
     let asks = quietdeck_types::report::ask_keys(&r.markdown);
-    let control = if keys.iter().any(|(k, _)| k == to) || asks.iter().any(|(k, _)| k == to) || to.starts_with("cards:")
+    // A default he commented on keeps its thread after the agent takes it off the report, so his answers name it too.
+    let answered: Option<i64> =
+        sqlx::query_scalar("SELECT 1 FROM report_answers WHERE report_id = ? AND control = ? LIMIT 1")
+            .bind(r.id)
+            .bind(to)
+            .fetch_optional(&state.db)
+            .await?;
+    let control = if keys.iter().any(|(k, _)| k == to)
+        || asks.iter().any(|(k, _)| k == to)
+        || to.starts_with("cards:")
+        || answered.is_some()
     {
         to.to_string()
     } else if !quietdeck_types::report::card_ids(to).is_empty() {
@@ -1191,6 +1201,15 @@ mod tests {
         assert_eq!(taken.len(), 1);
         assert_eq!(taken[0].value, "No");
         assert!(take_answers(&state, &inbox(&state.db).await.unwrap()).await.unwrap().is_empty());
+        // "signin" isn't in the report any more (it never was here), but he answered it, so its thread takes a reply.
+        let r = reply(
+            &state,
+            &inbox(&state.db).await.unwrap(),
+            ReportReply { to: "signin".into(), text: "Signed it out".into() },
+        )
+        .await
+        .unwrap();
+        assert_eq!(r.answers.last().map(|a| a.control.as_str()), Some("signin"));
         let chat = chat(
             &state,
             &inbox(&state.db).await.unwrap(),
