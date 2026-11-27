@@ -1553,9 +1553,9 @@ export interface components {
         } | {
             account: string;
             /** @default [] */
-            add: string[];
+            add?: string[];
             /** @default [] */
-            remove: string[];
+            remove?: string[];
             thread_id: string;
             /** @constant */
             type: "label";
@@ -1564,9 +1564,9 @@ export interface components {
              * @description The user's own comment, set on a sent row. Part of the approved payload, not an adjustment.
              * @default null
              */
-            note: string | null;
+            note?: string | null;
             /** @default null */
-            source: components["schemas"]["MessageRef"] | null;
+            source?: components["schemas"]["MessageRef"] | null;
             text: string;
             to: components["schemas"]["SessionRef"];
             /** @constant */
@@ -1575,7 +1575,7 @@ export interface components {
             account: string;
             body: string;
             /** @default [] */
-            cc: string[];
+            cc?: string[];
             /**
              * Format: email
              * @description The address it's sent from. Must be one the account can send as (checked when the card is posted, again
@@ -1587,7 +1587,7 @@ export interface components {
              * @description The session that asked for the draft, which gets what the user really sent (the sent-mail forward).
              * @default null
              */
-            requested_by: components["schemas"]["SessionRef"] | null;
+            requested_by?: components["schemas"]["SessionRef"] | null;
             subject: string;
             thread_id: string;
             to: string[];
@@ -1597,7 +1597,7 @@ export interface components {
             account: string;
             body: string;
             /** @default [] */
-            cc: string[];
+            cc?: string[];
             /**
              * Format: email
              * @description The address it's sent from. Must be one the account can send as (checked when the card is posted, again
@@ -1609,7 +1609,7 @@ export interface components {
              * @description The session that asked for the draft, which gets what the user really sent (the sent-mail forward).
              * @default null
              */
-            requested_by: components["schemas"]["SessionRef"] | null;
+            requested_by?: components["schemas"]["SessionRef"] | null;
             subject: string;
             thread_id: string;
             to: string[];
@@ -1622,7 +1622,7 @@ export interface components {
             board: string;
             description: string;
             /** @default [] */
-            labels: string[];
+            labels?: string[];
             /** @constant */
             op: "create";
             story_type: string;
@@ -1634,24 +1634,24 @@ export interface components {
             text: string;
         })) | {
             /** @default null */
-            agent_tab: string | null;
+            agent_tab?: string | null;
             /** @default null */
-            description: string | null;
+            description?: string | null;
             op: components["schemas"]["TaskOp"];
             /** @default null */
-            story_id: string | null;
+            story_id?: string | null;
             /** @default null */
-            title: string | null;
+            title?: string | null;
             /** @constant */
             type: "task";
         } | {
             account: string;
             calendar: string;
             /** @default null */
-            description: string | null;
+            description?: string | null;
             end: string;
             /** @default null */
-            location: string | null;
+            location?: string | null;
             start: string;
             time_zone: string;
             title: string;
@@ -1714,7 +1714,7 @@ export interface components {
              * @description What was sent and what came back.
              * @default null
              */
-            outcome: unknown;
+            outcome?: unknown;
             /** @constant */
             result: "done";
         } | {
@@ -1727,7 +1727,7 @@ export interface components {
         /** @description What a rule allows: action types, and for forwards, resumes and new sessions, the target. */
         ActionTemplate: {
             /** @default null */
-            target: components["schemas"]["SessionRef"] | null;
+            target?: components["schemas"]["SessionRef"] | null;
             types: components["schemas"]["ActionType"][];
         };
         /**
@@ -1766,9 +1766,9 @@ export interface components {
              * @description One default's own Approve rather than Approve All: the same undo window, but no Inbox snapshot in History.
              * @default null
              */
-            single: boolean | null;
+            single?: boolean | null;
             /** @default [] */
-            timeline: number[];
+            timeline?: number[];
         };
         /**
          * @description Approve All for the Inbox report: the deck works out the cards itself, those named by each `<Default>` the person
@@ -1784,7 +1784,7 @@ export interface components {
              * @description The timeline entries on screen, which move to History.
              * @default []
              */
-            timeline: number[];
+            timeline?: number[];
         };
         /** @description What Approve All did: nothing is released until `release_at`, and Undo with `batch` cancels it until then. */
         Approving: {
@@ -1821,14 +1821,14 @@ export interface components {
             /** @description The current version's actions, in order. */
             action_records: components["schemas"]["ActionRecord"][];
             /** @default [] */
-            actions: components["schemas"]["Action"][];
+            actions?: components["schemas"]["Action"][];
             /**
              * Format: int64
              * @description Ask for an automatic action under this grant: the deck runs `rules match`, and stores the card as automatic
              *     only when it allows.
              * @default null
              */
-            auto_grant: number | null;
+            auto_grant?: number | null;
             /**
              * @description The email's own words for the Inbox's details pane, as plain text: the newest message verbatim, or a thread as
              *     one line per message (`Mary: Did we update this for Compass?`). Leave out quoted replies, signatures and
@@ -1836,12 +1836,12 @@ export interface components {
              *     systems, leave out end users' personal data and document contents, as stories and forwards do.
              * @default null
              */
-            excerpt: string | null;
+            excerpt?: string | null;
             /**
              * @description Key facts shown under the summary, each `{"label": "Amount", "value": "$1,200"}`.
              * @default []
              */
-            facts: components["schemas"]["Fact"][];
+            facts?: components["schemas"]["Fact"][];
             /** Format: int64 */
             grant_id?: number | null;
             handoff_reason?: string | null;
@@ -1851,54 +1851,54 @@ export interface components {
              * @description Nothing touches the thread (a newsletter the person reads themselves).
              * @default false
              */
-            keep_in_inbox: boolean;
+            keep_in_inbox?: boolean;
             /**
              * @description When that message arrived. A thread left for later takes a new card only for a message newer than that.
              * @default null
              */
-            last_message_at: string | null;
+            last_message_at?: string | null;
             /**
              * @description The newest message the card was prepared on, for freshness checks.
              * @default null
              */
-            last_message_ref: string | null;
+            last_message_ref?: string | null;
             /**
              * @description Open in Gmail (or the draft).
              * @default null
              */
-            link: string | null;
+            link?: string | null;
             /**
              * @description The `List-Id` header, for strict rules and the learning loop.
              * @default null
              */
-            list_id: string | null;
+            list_id?: string | null;
             /**
              * @description The agent wants to carry the card out itself, whatever the runner could do.
              * @default false
              */
-            needs_agent: boolean;
+            needs_agent?: boolean;
             posted_by: components["schemas"]["SessionRef"];
             prepared_at: string;
             reason: string;
             recheck_note?: string | null;
             rechecked_at?: string | null;
             /** @default [] */
-            refs: string[];
+            refs?: string[];
             /**
              * @description The rules.md row the agent used.
              * @default null
              */
-            rule_ref: string | null;
+            rule_ref?: string | null;
             section: components["schemas"]["CardSection"];
             /** @default null */
-            sender: components["schemas"]["Sender"] | null;
+            sender?: components["schemas"]["Sender"] | null;
             /**
              * @default {
              *       "dkim_pass": false,
              *       "dmarc_pass": false
              *     }
              */
-            sender_auth: components["schemas"]["SenderAuth"];
+            sender_auth?: components["schemas"]["SenderAuth"];
             state: components["schemas"]["CardState"];
             subject: string;
             /**
@@ -1919,7 +1919,7 @@ export interface components {
              *     where it arrived). The Inbox shows it with the sender; without it, the account's address stands in.
              * @default null
              */
-            to: string | null;
+            to?: string | null;
             updated_at: string;
             /** Format: int64 */
             version: number;
@@ -1940,13 +1940,13 @@ export interface components {
              * @description The actions as the person edited them, replacing the proposed ones. Absent means as proposed.
              * @default null
              */
-            fields: components["schemas"]["Action"][] | null;
+            fields?: components["schemas"]["Action"][] | null;
             kind: components["schemas"]["DecisionKind"];
             /**
              * @description An adjustment or comment: free text makes it the agent's decision.
              * @default null
              */
-            text: string | null;
+            text?: string | null;
             /**
              * Format: int64
              * @description The version on screen. A card that has a newer version by the time the decision is released is skipped.
@@ -1958,14 +1958,14 @@ export interface components {
             /** @description An account label from deck config. */
             account: string;
             /** @default [] */
-            actions: components["schemas"]["Action"][];
+            actions?: components["schemas"]["Action"][];
             /**
              * Format: int64
              * @description Ask for an automatic action under this grant: the deck runs `rules match`, and stores the card as automatic
              *     only when it allows.
              * @default null
              */
-            auto_grant: number | null;
+            auto_grant?: number | null;
             /**
              * @description The email's own words for the Inbox's details pane, as plain text: the newest message verbatim, or a thread as
              *     one line per message (`Mary: Did we update this for Compass?`). Leave out quoted replies, signatures and
@@ -1973,60 +1973,60 @@ export interface components {
              *     systems, leave out end users' personal data and document contents, as stories and forwards do.
              * @default null
              */
-            excerpt: string | null;
+            excerpt?: string | null;
             /**
              * @description Key facts shown under the summary, each `{"label": "Amount", "value": "$1,200"}`.
              * @default []
              */
-            facts: components["schemas"]["Fact"][];
+            facts?: components["schemas"]["Fact"][];
             /**
              * @description Nothing touches the thread (a newsletter the person reads themselves).
              * @default false
              */
-            keep_in_inbox: boolean;
+            keep_in_inbox?: boolean;
             /**
              * @description When that message arrived. A thread left for later takes a new card only for a message newer than that.
              * @default null
              */
-            last_message_at: string | null;
+            last_message_at?: string | null;
             /**
              * @description The newest message the card was prepared on, for freshness checks.
              * @default null
              */
-            last_message_ref: string | null;
+            last_message_ref?: string | null;
             /**
              * @description Open in Gmail (or the draft).
              * @default null
              */
-            link: string | null;
+            link?: string | null;
             /**
              * @description The `List-Id` header, for strict rules and the learning loop.
              * @default null
              */
-            list_id: string | null;
+            list_id?: string | null;
             /**
              * @description The agent wants to carry the card out itself, whatever the runner could do.
              * @default false
              */
-            needs_agent: boolean;
+            needs_agent?: boolean;
             reason: string;
             /** @default [] */
-            refs: string[];
+            refs?: string[];
             /**
              * @description The rules.md row the agent used.
              * @default null
              */
-            rule_ref: string | null;
+            rule_ref?: string | null;
             section: components["schemas"]["CardSection"];
             /** @default null */
-            sender: components["schemas"]["Sender"] | null;
+            sender?: components["schemas"]["Sender"] | null;
             /**
              * @default {
              *       "dkim_pass": false,
              *       "dmarc_pass": false
              *     }
              */
-            sender_auth: components["schemas"]["SenderAuth"];
+            sender_auth?: components["schemas"]["SenderAuth"];
             subject: string;
             /**
              * @description What the email is, in a few words: the Inbox shows it on one line beside the proposed action. Lead with the kind
@@ -2046,7 +2046,7 @@ export interface components {
              *     where it arrived). The Inbox shows it with the sender; without it, the account's address stands in.
              * @default null
              */
-            to: string | null;
+            to?: string | null;
         };
         /** @description `quietdeck card resolve`: the agent's recheck found the card needs nothing more. */
         CardResolution: {
@@ -2165,15 +2165,15 @@ export interface components {
         /** @description A strict rule's criteria. A sender criterion needs the card to report DMARC or DKIM passing. */
         Criteria: {
             /** @default null */
-            account: string | null;
+            account?: string | null;
             /** @default null */
-            from_address: string | null;
+            from_address?: string | null;
             /** @default null */
-            from_domain: string | null;
+            from_domain?: string | null;
             /** @default null */
-            list_id: string | null;
+            list_id?: string | null;
             /** @default null */
-            subject_contains: string | null;
+            subject_contains?: string | null;
         };
         /**
          * @description One card's own decision outside Approve All: Leave for later, Move up, Move down, or an adjustment typed into its
@@ -2182,7 +2182,7 @@ export interface components {
         Decide: {
             kind: components["schemas"]["DecisionKind"];
             /** @default null */
-            text: string | null;
+            text?: string | null;
             /** Format: int64 */
             version: number;
         };
@@ -2224,7 +2224,7 @@ export interface components {
              *     the runner or its agent is failing.
              * @default false
              */
-            solo: boolean;
+            solo?: boolean;
             /** @description When this deck started: with rolling deploys, when the release went live (or the deck last restarted). */
             started_at: string;
             version: string;
@@ -2271,14 +2271,14 @@ export interface components {
              *     the History screen.
              * @default []
              */
-            comments: components["schemas"]["Comment"][];
+            comments?: components["schemas"]["Comment"][];
             entries: components["schemas"]["TimelineEntry"][];
             since: string;
             /**
              * @description The Inbox document as it was at each Approve All in that time. Only on the History screen.
              * @default []
              */
-            snapshots: components["schemas"]["ReportSnapshotSummary"][];
+            snapshots?: components["schemas"]["ReportSnapshotSummary"][];
             until: string;
         };
         /**
@@ -2314,7 +2314,7 @@ export interface components {
              * @description The latest time its owner couldn't be reached (the events went to the triage agent instead).
              * @default null
              */
-            last_failure: components["schemas"]["HookFailure"] | null;
+            last_failure?: components["schemas"]["HookFailure"] | null;
             /** @description Who proposed it (`<tab>@<node>`), when an agent did. */
             proposed_by?: string | null;
             /** @description `<tab>@<node>`. */
@@ -2340,7 +2340,7 @@ export interface components {
              *     the green check on every device and after the report changes, without the browser having to remember.
              * @default []
              */
-            finished_cards: number[];
+            finished_cards?: number[];
             has_later: boolean;
             /** @description When an agent last posted a card or took decisions. The Inbox shows it only when it's over an hour ago. */
             last_agent_at?: string | null;
@@ -2353,17 +2353,17 @@ export interface components {
              *       "held_count": 0
              *     }
              */
-            presence: components["schemas"]["Presence"];
+            presence?: components["schemas"]["Presence"];
             /**
              * @description The triage agent's current report, which the Inbox shows in place of the cards.
              * @default null
              */
-            report: components["schemas"]["Report"] | null;
+            report?: components["schemas"]["Report"] | null;
             /**
              * @description Cards whose target's tab had grants archived when its earlier session closed.
              * @default []
              */
-            rule_offers: components["schemas"]["RuleOffer"][];
+            rule_offers?: components["schemas"]["RuleOffer"][];
             /** @description Whether any approved action is still waiting or running, for Stop. */
             running: boolean;
             sent: components["schemas"]["Card"][];
@@ -2452,25 +2452,25 @@ export interface components {
              * @description Ends once the holder has been idle or offline this long. Default 30 minutes.
              * @default null
              */
-            idle_minutes: number | null;
+            idle_minutes?: number | null;
             kind: string;
             /**
              * @description Kind-specific: a gmail-filter's `{query}`.
              * @default null
              */
-            params: unknown;
+            params?: unknown;
             reason: string;
             /**
              * @description What's leased. For a gmail-filter, the account; for a heavy-build slot, the machine (default: the holder's).
              * @default null
              */
-            resource: string | null;
+            resource?: string | null;
             /**
              * Format: int64
              * @description A hard limit. Default 24 hours.
              * @default null
              */
-            ttl_seconds: number | null;
+            ttl_seconds?: number | null;
         };
         /** @enum {string} */
         LeaseState: "proposed" | "queued" | "approved" | "active" | "expiring" | "cleanup_requested" | "released" | "overdue" | "rejected";
@@ -2518,9 +2518,9 @@ export interface components {
              * @description Gmail's draft ID, for a draft (its message ID changes with every save).
              * @default null
              */
-            draft_id: string | null;
+            draft_id?: string | null;
             /** @default null */
-            from: string | null;
+            from?: string | null;
             /** Format: int64 */
             id: number;
             kind: components["schemas"]["MailKind"];
@@ -2530,13 +2530,13 @@ export interface components {
             /** @description The session that posted that card. */
             posted_by?: components["schemas"]["SessionRef"] | null;
             /** @default null */
-            snippet: string | null;
+            snippet?: string | null;
             /** @default null */
-            subject: string | null;
+            subject?: string | null;
             /** @default null */
-            thread_id: string | null;
+            thread_id?: string | null;
             /** @default null */
-            to: string | null;
+            to?: string | null;
         };
         MailSeen: {
             kind: components["schemas"]["MailKind"];
@@ -2587,7 +2587,7 @@ export interface components {
              *     next handler. Types only, no counts.
              * @default []
              */
-            no_handler: components["schemas"]["ActionType"][];
+            no_handler?: components["schemas"]["ActionType"][];
             online: boolean;
             runner: boolean;
             runner_types: components["schemas"]["ActionType"][];
@@ -2630,25 +2630,25 @@ export interface components {
         /** @description "Don't ping for this again", with an optional note for the agent that sent it. */
         PingFeedback: {
             /** @default null */
-            note: string | null;
+            note?: string | null;
         };
         /** @description `quietdeck ping`. */
         PingRequest: {
             /** @default null */
-            account: string | null;
+            account?: string | null;
             body: string;
             /**
              * @description A card or a thread.
              * @default null
              */
-            link: string | null;
+            link?: string | null;
             /** @description The agent's one line on why this can't wait a few hours. */
             reason: string;
             /**
              * @description Repeats for the same thread collapse into one notification.
              * @default null
              */
-            thread_key: string | null;
+            thread_key?: string | null;
             title: string;
         };
         /** @description The Rules screen's pings: the last seven days' against the weekly budget, which suppresses nothing. */
@@ -2707,7 +2707,7 @@ export interface components {
         PushSubscribe: {
             auth: string;
             /** @default null */
-            device: string | null;
+            device?: string | null;
             endpoint: string;
             p256dh: string;
         };
@@ -2720,20 +2720,20 @@ export interface components {
              * @description The mail account, or the Matrix room's name.
              * @default null
              */
-            account: string | null;
+            account?: string | null;
             enabled: boolean;
             /**
              * @description The sender contains this (case doesn't matter): `@alertmanager:`, `no-reply@accounts.google.com`.
              * @default null
              */
-            from: string | null;
+            from?: string | null;
             /** Format: int64 */
             id: number;
             /**
              * @description The item carries this Gmail label.
              * @default null
              */
-            label: string | null;
+            label?: string | null;
             last_matched_at?: string | null;
             /** Format: int64 */
             match_count: number;
@@ -2743,12 +2743,12 @@ export interface components {
              * @description `gmail` or `matrix`.
              * @default null
              */
-            source: string | null;
+            source?: string | null;
             /**
              * @description An RE2 regular expression the subject and text are matched against: `(?i)\(critical\)`.
              * @default null
              */
-            text_regex: string | null;
+            text_regex?: string | null;
         };
         /**
          * @description A "while I'm reading" rule: an item that matches every condition it sets gets through while the person reads.
@@ -2759,29 +2759,29 @@ export interface components {
              * @description The mail account, or the Matrix room's name.
              * @default null
              */
-            account: string | null;
+            account?: string | null;
             /**
              * @description The sender contains this (case doesn't matter): `@alertmanager:`, `no-reply@accounts.google.com`.
              * @default null
              */
-            from: string | null;
+            from?: string | null;
             /**
              * @description The item carries this Gmail label.
              * @default null
              */
-            label: string | null;
+            label?: string | null;
             /** @description What it's for, as the Rules screen shows it ("Critical alerts"). */
             name: string;
             /**
              * @description `gmail` or `matrix`.
              * @default null
              */
-            source: string | null;
+            source?: string | null;
             /**
              * @description An RE2 regular expression the subject and text are matched against: `(?i)\(critical\)`.
              * @default null
              */
-            text_regex: string | null;
+            text_regex?: string | null;
         };
         /** @description Who wrote a record. */
         RecordOrigin: "node" | "claude_summarizer";
@@ -2793,7 +2793,7 @@ export interface components {
             /** @description What to call this passkey in Settings ("MacBook", "iPhone"). */
             device_name: string;
             /** @default null */
-            setup_code: string | null;
+            setup_code?: string | null;
         };
         /**
          * @description A released decision with the card it approves, as the runner and `quietdeck decisions take` get it. `actions` is
@@ -2807,7 +2807,7 @@ export interface components {
              *     along with the actions.
              * @default []
              */
-            changes: string[];
+            changes?: string[];
             decision: components["schemas"]["Decision"];
             /** @description Why the runner handed it over, when it did. */
             handoff_reason?: string | null;
@@ -2824,14 +2824,14 @@ export interface components {
              * @description The latest changes, newest last (at most 20): the Inbox toasts new ones.
              * @default []
              */
-            changes: components["schemas"]["ReportChange"][];
+            changes?: components["schemas"]["ReportChange"][];
             created_at: string;
             /**
              * @description The agent said nothing on it waits for the person any more (`quietdeck report done`): the Inbox shows "All
              *     done." until the agent edits it or starts the next one.
              * @default false
              */
-            finished: boolean;
+            finished?: boolean;
             /** Format: int64 */
             id: number;
             markdown: string;
@@ -2887,7 +2887,7 @@ export interface components {
              * @description The agent's answer to the person's chat (`quietdeck chat reply`), not a change: `summary` is its text.
              * @default false
              */
-            reply: boolean;
+            reply?: boolean;
             /** @description What changed, in a line: the agent's `--change`, or what the deck worked out. */
             summary: string;
             /** Format: int64 */
@@ -2921,19 +2921,19 @@ export interface components {
              *     didn't see. Leave it out only for the first report.
              * @default null
              */
-            base: number | null;
+            base?: number | null;
             /**
              * @description What this edit changes, in a line, for the toast the person sees ("New: CI failure on web (c_67)").
              *     Left out, the deck works one out from the defaults that changed.
              * @default null
              */
-            change: string | null;
+            change?: string | null;
             markdown: string;
             /**
              * @description Start a new report: the current one is finished (everything on it approved or handled).
              * @default false
              */
-            new: boolean;
+            new?: boolean;
         };
         /**
          * @description The Inbox document as it was when the person pressed Approve All, for History: the report with every answer on it,
@@ -3013,7 +3013,7 @@ export interface components {
              * Format: int64
              * @default null
              */
-            created_from_card_id: number | null;
+            created_from_card_id?: number | null;
             /**
              * @default {
              *       "account": null,
@@ -3023,25 +3023,25 @@ export interface components {
              *       "subject_contains": null
              *     }
              */
-            criteria: components["schemas"]["Criteria"];
+            criteria?: components["schemas"]["Criteria"];
             /** @default null */
-            instruction: string | null;
+            instruction?: string | null;
             /** @default [] */
-            known_sender_domains: string[];
+            known_sender_domains?: string[];
             mode: components["schemas"]["RuleMode"];
             /**
              * @description The project whose policy governs every action. Without one, each action's project is found from its target
              *     session's directory or its account.
              * @default null
              */
-            project: string | null;
+            project?: string | null;
             /**
              * @description The session the grant is tied to: when it closes, the grant is archived. Defaults to the template's target.
              * @default null
              */
-            session_ref: components["schemas"]["SessionRef"] | null;
+            session_ref?: components["schemas"]["SessionRef"] | null;
             /** @default null */
-            topic: string | null;
+            topic?: string | null;
         };
         RuleMode: "fuzzy" | "strict";
         /**
@@ -3061,7 +3061,7 @@ export interface components {
              * @description With `active`: tie the grant to this session, and make it the target of its forwards and resumes.
              * @default null
              */
-            move_to: components["schemas"]["SessionRef"] | null;
+            move_to?: components["schemas"]["SessionRef"] | null;
             status: components["schemas"]["RuleStatus"];
         };
         /** @description The Rules screen, and `quietdeck rules list`. */
@@ -3080,14 +3080,14 @@ export interface components {
         Sender: {
             address: string;
             /** @default null */
-            name: string | null;
+            name?: string | null;
         };
         /** @description What the agent read in the message's authentication results. Strict sender rules need one of them to pass. */
         SenderAuth: {
             /** @default false */
-            dkim_pass: boolean;
+            dkim_pass?: boolean;
             /** @default false */
-            dmarc_pass: boolean;
+            dmarc_pass?: boolean;
         };
         /** @description `quietdeck sessions show <session>`: one session, and with `--timeline` every summary point it has, oldest first. */
         SessionDetail: {
@@ -3171,12 +3171,12 @@ export interface components {
              * @description A link that brings the session forward in its orchestrator on the machine it runs on (herdr: `herdr://open`).
              * @default null
              */
-            open_url: string | null;
+            open_url?: string | null;
             /**
              * @description The orchestrator's name, for "Open in …".
              * @default null
              */
-            opens_in: string | null;
+            opens_in?: string | null;
             page?: string | null;
             paragraph?: string | null;
             project?: string | null;
@@ -3201,7 +3201,7 @@ export interface components {
             /** @description The working directory on that machine. `~/` is that machine's home. */
             cwd: string;
             /** @default null */
-            effort: string | null;
+            effort?: string | null;
             /**
              * Format: int64
              * @description The handoff it starts from (`quietdeck handoff add`): the new session continues the one that wrote it, and
@@ -3212,19 +3212,19 @@ export interface components {
              * @description The agent's own default when absent.
              * @default null
              */
-            model: string | null;
+            model?: string | null;
             /**
              * @description The session's name. The tab name when absent.
              * @default null
              */
-            name: string | null;
+            name?: string | null;
             /** @description The machine (node) it runs on. */
             on: string;
             /**
              * @description Sent with `herdr agent prompt` once the agent is ready.
              * @default null
              */
-            prompt: string | null;
+            prompt?: string | null;
             tab: string;
         };
         /** @description What the node did for a start or a resume. */
@@ -3253,7 +3253,7 @@ export interface components {
              *     unless switched off.
              * @default true
              */
-            report: boolean;
+            report?: boolean;
             /** @description "Require a proposal for every new filter". A hard rule in code while on. */
             require_filter_proposal: boolean;
             /**
@@ -3261,7 +3261,7 @@ export interface components {
              *     title. On unless switched off.
              * @default true
              */
-            show_pending_count: boolean;
+            show_pending_count?: boolean;
             /**
              * Format: uint32
              * @description Approve All's undo window in seconds: 0 (off) or 1 to 60.
@@ -3362,15 +3362,15 @@ export interface components {
         /** @description `quietdeck timeline add`: agents post automatic actions they carried out and mail a lease absorbed. */
         TimelineAdd: {
             /** @default null */
-            account: string | null;
+            account?: string | null;
             kind: components["schemas"]["TimelineKind"];
             /**
              * Format: int64
              * @default null
              */
-            lease_id: number | null;
+            lease_id?: number | null;
             /** @default [] */
-            refs: string[];
+            refs?: string[];
             text: string;
         };
         TimelineEntry: {
@@ -3469,7 +3469,7 @@ export interface components {
         WatchAdd: {
             account: string;
             /** @default null */
-            subject: string | null;
+            subject?: string | null;
             thread_key: string;
         };
         /** @description One mailbox the runner watches. */
@@ -3506,7 +3506,7 @@ export interface components {
              * @description `tab@machine` of the session that continues this one, when it was moved: ask that one instead.
              * @default null
              */
-            moved_to: string | null;
+            moved_to?: string | null;
             node: string;
             session_id: string;
             source: components["schemas"]["HitSource"];
@@ -3540,33 +3540,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReportReceipt"][];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -3625,33 +3598,6 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -3729,33 +3675,6 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -3794,33 +3713,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Ceremony"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -4026,33 +3918,6 @@ export interface operations {
                     "application/json": components["schemas"]["Card"];
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -4087,33 +3952,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Card"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -4180,33 +4018,6 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -4241,33 +4052,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Comment"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -4326,33 +4110,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Approving"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -4448,33 +4205,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -4535,33 +4265,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionHandoff"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -4722,33 +4425,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HookCreated"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -4991,33 +4667,6 @@ export interface operations {
                     "application/json": components["schemas"]["LeaseAnswer"];
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -5050,33 +4699,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LeaseAnswer"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -5172,33 +4794,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Lease"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -5323,33 +4918,6 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -5418,33 +4986,6 @@ export interface operations {
                     "application/json": components["schemas"]["Delivered"];
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -5504,33 +5045,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Enrolled"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -5711,33 +5225,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -5798,33 +5285,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Ping"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -5890,33 +5350,6 @@ export interface operations {
                     "application/json": components["schemas"]["Ping"];
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -5949,33 +5382,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Presence"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -6087,33 +5493,6 @@ export interface operations {
                     "application/json": components["schemas"]["PushDevice"][];
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -6144,33 +5523,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PushDevice"][];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -6241,33 +5593,6 @@ export interface operations {
                     "application/json": components["schemas"]["ReadingRule"];
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -6308,33 +5633,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadingRule"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -6405,33 +5703,6 @@ export interface operations {
                     "application/json": components["schemas"]["ReadingRule"];
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -6493,33 +5764,6 @@ export interface operations {
                     "application/json": components["schemas"]["Report"];
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -6551,33 +5795,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Report"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -6646,33 +5863,6 @@ export interface operations {
                     "application/json": components["schemas"]["Approving"];
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -6705,33 +5895,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Delivered"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -6793,33 +5956,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Report"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -6977,33 +6113,6 @@ export interface operations {
                     "application/json": components["schemas"]["Rule"];
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -7035,33 +6144,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MatchResult"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -7100,33 +6182,6 @@ export interface operations {
                     "application/json": components["schemas"]["Rule"];
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -7161,33 +6216,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Rule"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -7293,33 +6321,6 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -7354,33 +6355,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -7418,33 +6392,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionStarted"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -7547,33 +6494,6 @@ export interface operations {
                     "application/json": components["schemas"]["SessionStarted"];
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -7671,33 +6591,6 @@ export interface operations {
                     "application/json": components["schemas"]["Settings"];
                 };
             };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -7729,33 +6622,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TimelineEntry"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */
@@ -7819,33 +6685,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadWatch"];
-                };
-            };
-            /** @description Failed to parse the request body as JSON */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Expected request with `Content-Type: application/json` */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Failed to deserialize the JSON body into the target type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
                 };
             };
             /** @description An error, with its message. */

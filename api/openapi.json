@@ -5863,36 +5863,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -5978,36 +5948,6 @@
           "required": true
         },
         "responses": {
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -6101,36 +6041,6 @@
           "required": true
         },
         "responses": {
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -6175,36 +6085,6 @@
               }
             },
             "description": "A WebAuthn ceremony in progress: `options` goes to `navigator.credentials`, and the result comes back with\n`ceremony`."
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -6518,36 +6398,6 @@
             },
             "description": "A card as the deck serves it."
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -6606,36 +6456,6 @@
               }
             },
             "description": "A card as the deck serves it."
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -6730,36 +6550,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -6807,36 +6597,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -6903,36 +6663,6 @@
               }
             },
             "description": "What Approve All did: nothing is released until `release_at`, and Undo with `batch` cancels it until then."
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -7051,36 +6781,6 @@
           "200": {
             "description": "no content"
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -7163,36 +6863,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -7457,36 +7127,6 @@
               }
             },
             "description": "What `hooks create` answers: the endpoint and its URL, shown this once."
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -7852,36 +7492,6 @@
             },
             "description": "What `lease propose` and `lease acquire` answer."
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -7928,36 +7538,6 @@
               }
             },
             "description": "What `lease propose` and `lease acquire` answer."
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -8125,36 +7705,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -8348,36 +7898,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -8492,36 +8012,6 @@
             },
             "description": "Answers for deliveries and searches."
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -8613,36 +8103,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -8912,36 +8372,6 @@
           "200": {
             "description": "no content"
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -9022,36 +8452,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -9151,36 +8551,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -9227,36 +8597,6 @@
               }
             },
             "description": "What the deck knows about the person reading, and what the runner holds meanwhile."
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -9407,36 +8747,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -9485,36 +8795,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -9605,36 +8885,6 @@
               }
             },
             "description": "A \"while I'm reading\" rule: an item that matches every condition it sets gets through while the person reads.\nConditions left out match anything; a rule must set at least one."
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -9739,36 +8989,6 @@
             },
             "description": "A \"while I'm reading\" rule: an item that matches every condition it sets gets through while the person reads.\nConditions left out match anything; a rule must set at least one."
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -9826,36 +9046,6 @@
               }
             },
             "description": "A \"while I'm reading\" rule: an item that matches every condition it sets gets through while the person reads.\nConditions left out match anything; a rule must set at least one."
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -9952,36 +9142,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -10029,36 +9189,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -10148,36 +9278,6 @@
             },
             "description": "What Approve All did: nothing is released until `release_at`, and Undo with `batch` cancels it until then."
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -10225,36 +9325,6 @@
               }
             },
             "description": "Answers for deliveries and searches."
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -10338,36 +9408,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -10578,36 +9618,6 @@
             },
             "description": "A grant."
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -10654,36 +9664,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -10744,36 +9724,6 @@
             },
             "description": "A grant."
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -10832,36 +9782,6 @@
               }
             },
             "description": "A grant."
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -11042,36 +9962,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -11123,36 +10013,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -11199,36 +10059,6 @@
               }
             },
             "description": "What the node did for a start or a resume."
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -11410,36 +10240,6 @@
             },
             "description": "What the node did for a start or a resume."
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -11608,36 +10408,6 @@
             },
             "description": "The deck's settings (the Settings screen)."
           },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -11684,36 +10454,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {
@@ -11821,36 +10561,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
           },
           "default": {
             "content": {

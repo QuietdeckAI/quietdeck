@@ -50,5 +50,5 @@ example `POST /api/v1/decisions/approve-all` with its own list of cards.
 
 An error answers `ApiError` (`{"error": "…"}`) with a 4xx or 5xx status: 401 not signed in, 403 the wrong kind of
 caller, 404 not found, 409 a conflict (or a session that's offline), 422 a request the deck refused, 503 the deck
-can't do it right now. A JSON body that doesn't parse at all gets axum's plain-text 400, 415 or 422 before the
-deck sees it.
+can't do it right now. A request the deck can't read at all (bad JSON, the wrong content type, a bad query) gets
+the same `ApiError` shape, with 400, 415 or 422.

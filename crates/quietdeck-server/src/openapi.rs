@@ -299,6 +299,7 @@ pub fn routes(state: AppState) -> (Router<AppState>, Arc<Value>) {
     let router = v1
         .merge(legacy)
         .route_layer(axum::middleware::from_fn_with_state(state, report_gate))
+        .route_layer(axum::middleware::map_response(json_errors))
         .route(&format!("{V1}/openapi.json"), get(move || std::future::ready(Json(served.as_ref().clone()))));
     (router, spec)
 }
@@ -326,6 +327,25 @@ async fn report_gate(
         }
     }
     next.run(req).await
+}
+
+/// axum answers a request it can't read (bad JSON, the wrong content type, a bad query or path) in plain text. Every
+/// error the API answers is `ApiError` JSON instead, so a client handles one shape.
+async fn json_errors(res: axum::response::Response) -> axum::response::Response {
+    let plain = res
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("text/plain"));
+    if !(plain && res.status().is_client_error()) {
+        return res;
+    }
+    let (parts, body) = res.into_parts();
+    let text = match axum::body::to_bytes(body, 16 * 1024).await {
+        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+        Err(_) => "the request couldn't be read".to_string(),
+    };
+    (parts.status, Json(ApiError { error: text })).into_response()
 }
 
 /// The spec alone, as the committed `api/openapi.json` has it.
@@ -434,6 +454,16 @@ fn describe(spec: &mut Value, card_input: Value) {
         json!({ "required": true, "content": { "application/json": { "schema": card_input } } });
     for (path, method, example) in examples() {
         paths[format!("{V1}{path}")][method]["requestBody"]["content"]["application/json"]["example"] = example;
+    }
+    // axum's plain-text rejections answer `ApiError` JSON too (`json_errors`): the `default` response covers them.
+    for item in paths.as_object_mut().unwrap().values_mut() {
+        for operation in item.as_object_mut().unwrap().values_mut() {
+            if let Some(responses) = operation.get_mut("responses").and_then(Value::as_object_mut) {
+                responses.retain(|status, r| {
+                    !(status.starts_with('4') && r["content"].as_object().is_some_and(|c| c.contains_key("text/plain")))
+                });
+            }
+        }
     }
     for doc in OPERATIONS {
         let Some(operation) = paths.get_mut(format!("{V1}{}", doc.path)).and_then(|p| p.get_mut(doc.method)) else {
@@ -785,5 +815,26 @@ mod tests {
                 other => panic!("no check for the {other} example"),
             }
         }
+    }
+
+    /// A body the deck can't read answers `ApiError` JSON, as every other error does, and the spec says so.
+    #[tokio::test]
+    async fn unreadable_requests_answer_json() {
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+
+        let state = crate::state::AppState::for_tests().await;
+        let (router, spec) = routes(state.clone());
+        let app = router.with_state(state);
+        let req = axum::http::Request::post("/api/v1/nodes/enroll")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from("{not json"))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert!(res.status().is_client_error());
+        let body: Value = serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert!(body["error"].as_str().is_some_and(|e| !e.is_empty()), "{body}");
+        let text = serde_json::to_string(spec.as_ref()).unwrap();
+        assert!(!text.contains("text/plain"), "the spec still lists a plain-text response");
     }
 }
