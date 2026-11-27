@@ -188,6 +188,15 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
 
 ## Setting up a machine
 
+- **The node's sessions from Fleetlayer's registry.** Where a machine runs Fleetlayer, Quietdeck's node lists its
+  sessions from Fleetlayer's `node/sessions` (the same session IDs, tabs and addresses herdr reports, checked side by
+  side on the agents VM) and still lets herdr open, close and type into them, so no delivery changes path. Sessions
+  still starting (`@<pane>`, `named: false`) and ended ones are left out. Without Fleetlayer, herdr lists them as
+  before. Now: `crates/quietdeck-node/src/orchestrator/fleetlayer.rs` (ae06f2f).
+- **The Sessions screen from Fleetlayer (in review).** The deck reads `GET /v1/fleet` with its read token, which shows
+  every machine, including ones with no Quietdeck node. Fleetlayer keeps ended sessions for only an hour, so the deck
+  merges its own rows for history and for machines without Fleetlayer, and hides a running row Fleetlayer no longer
+  lists. Now: the cutover's local branch `sessions-fleet`, waiting for Nathan's review.
 - ~~**Quietdeck's messages through Fleetlayer.**~~ Written: `docs/guides/with-fleetlayer.md`. On a machine that runs Fleetlayer, add Quietdeck's node to Fleetlayer's
   node.yaml as a plugin (`name: runner`, `command: quietdeck-node`, `args: [fleetlayer-plugin]`,
   `grants: [message.send]`). The runner's forwards and its wake-ups then go through Fleetlayer as
