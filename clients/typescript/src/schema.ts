@@ -2227,6 +2227,11 @@ export interface components {
         /** @description `GET /api/info`: what agents and the web app need to know about this deck. */
         DeckInfo: {
             accounts: components["schemas"]["AccountLabel"][];
+            /**
+             * @description Quietdeck solo: the actions its runner carries out once the person approves them. A card proposing another is
+             *     refused when posted. Absent on other decks.
+             */
+            actions?: components["schemas"]["ActionType"][] | null;
             boards: string[];
             /** @description When that release was built. */
             built_at?: string | null;
@@ -2245,7 +2250,7 @@ export interface components {
             version: string;
         };
         /** @description Answers for deliveries and searches. */
-        Delivered: "socket" | "orchestrator";
+        Delivered: "socket" | "orchestrator" | "headless";
         Enabled: {
             enabled: boolean;
         };
