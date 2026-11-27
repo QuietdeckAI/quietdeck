@@ -40,7 +40,7 @@ pub struct HookCreate {
     /// What it's for, as the person reads it ("Talira alerts").
     pub label: String,
     pub kind: HookKind,
-    /// The session its events go to, as `<tab>@<node>` ("talira infra@agents").
+    /// The session its events go to, as `<tab>@<node>` ("alerts@server").
     pub to: String,
 }
 
@@ -66,6 +66,18 @@ pub struct HookEndpoint {
     #[ts(type = "string | null")]
     #[schemars(with = "Option<String>")]
     pub last_event_at: Option<Timestamp>,
+    /// The latest time its owner couldn't be reached (the events went to the triage agent instead).
+    #[serde(default)]
+    pub last_failure: Option<HookFailure>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct HookFailure {
+    #[ts(type = "string")]
+    #[schemars(with = "String")]
+    pub at: Timestamp,
+    pub reason: String,
 }
 
 /// What `hooks create` answers: the endpoint and its URL, shown this once.

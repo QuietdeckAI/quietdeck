@@ -242,7 +242,7 @@ enum HooksCommand {
         /// How to read what arrives: `generic` (any JSON or text) or `alertmanager` (its webhook_configs format).
         #[arg(long, default_value = "generic")]
         kind: String,
-        /// The session its events go to: `<tab>@<node>` ("talira infra@agents").
+        /// The session its events go to: `<tab>@<node>` ("alerts@server").
         #[arg(long)]
         to: String,
     },
@@ -812,8 +812,13 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                         }
                         r.iter()
                             .map(|e| {
+                                let failed = e
+                                    .last_failure
+                                    .as_ref()
+                                    .map(|f| format!("\n    last failure {}: {}", f.at, f.reason))
+                                    .unwrap_or_default();
                                 format!(
-                                    "{}  {} ({}) → {}  {}  {} events",
+                                    "{}  {} ({}) → {}  {}  {} events{failed}",
                                     e.id,
                                     e.label,
                                     e.kind.as_str(),
