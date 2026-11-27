@@ -76,8 +76,11 @@ pub struct SenderAuth {
     pub dmarc_pass: bool,
     #[serde(default)]
     pub dkim_pass: bool,
-    /// The sending server is one the domain's SPF record allows. Absent on cards from before 28 Nov 2026.
-    #[serde(default)]
+    /// The sending server is one the domain's SPF record allows. Absent on cards from before 28 Nov 2026, and left
+    /// out of the deck's answers when absent, so a CLI from before then (which refuses unknown fields here) still
+    /// reads them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub spf_pass: Option<bool>,
 }
 

@@ -5,6 +5,8 @@
  */
 export type SenderAuth = { dmarc_pass: boolean, dkim_pass: boolean, 
 /**
- * The sending server is one the domain's SPF record allows. Absent on cards from before 28 Nov 2026.
+ * The sending server is one the domain's SPF record allows. Absent on cards from before 28 Nov 2026, and left
+ * out of the deck's answers when absent, so a CLI from before then (which refuses unknown fields here) still
+ * reads them.
  */
-spf_pass: boolean | null, };
+spf_pass?: boolean, };

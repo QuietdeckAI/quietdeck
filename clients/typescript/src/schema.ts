@@ -2075,8 +2075,7 @@ export interface components {
             /**
              * @default {
              *       "dkim_pass": false,
-             *       "dmarc_pass": false,
-             *       "spf_pass": null
+             *       "dmarc_pass": false
              *     }
              */
             sender_auth?: components["schemas"]["SenderAuth"];
@@ -2204,8 +2203,7 @@ export interface components {
             /**
              * @default {
              *       "dkim_pass": false,
-             *       "dmarc_pass": false,
-             *       "spf_pass": null
+             *       "dmarc_pass": false
              *     }
              */
             sender_auth?: components["schemas"]["SenderAuth"];
@@ -3405,8 +3403,9 @@ export interface components {
             /** @default false */
             dmarc_pass?: boolean;
             /**
-             * @description The sending server is one the domain's SPF record allows. Absent on cards from before 28 Nov 2026.
-             * @default null
+             * @description The sending server is one the domain's SPF record allows. Absent on cards from before 28 Nov 2026, and left
+             *     out of the deck's answers when absent, so a CLI from before then (which refuses unknown fields here) still
+             *     reads them.
              */
             spf_pass?: boolean | null;
         };
