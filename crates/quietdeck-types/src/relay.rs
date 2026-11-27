@@ -92,12 +92,19 @@ impl Delivery {
 
     /// The text put in front of the session: the fixed header for its kind, then the body.
     pub fn render(&self) -> String {
-        match &self.kind {
+        self.kind.render(&self.body)
+    }
+}
+
+impl DeliveryKind {
+    /// The fixed header for this kind, then the body: what a session sees, whichever program delivers it.
+    pub fn render(&self, body: &str) -> String {
+        match self {
             DeliveryKind::Message { from } => format!(
                 "Message from {} ({}) via Quietdeck:\n{}\n\nReply with: quietdeck msg send --to \"{}\" \"…\"",
                 from.tab,
                 from.node,
-                self.body,
+                body,
                 from.address()
             ),
             DeliveryKind::Forward { account, refs, rule, sent_mail, note } => {
@@ -122,14 +129,14 @@ impl Delivery {
                     s.push_str(&format!("The user's note: {note}\n"));
                 }
                 s.push('\n');
-                s.push_str(&self.body);
+                s.push_str(body);
                 s
             }
             DeliveryKind::Wakeup | DeliveryKind::Handoff | DeliveryKind::RunnerReport | DeliveryKind::Deck => {
-                self.body.clone()
+                body.to_string()
             }
             DeliveryKind::Webhook { source, endpoint, summary } => {
-                format!("Webhook from {source} via Quietdeck (endpoint \"{endpoint}\"): {summary}\n{}", self.body)
+                format!("Webhook from {source} via Quietdeck (endpoint \"{endpoint}\"): {summary}\n{}", body)
             }
         }
     }

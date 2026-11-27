@@ -3,8 +3,8 @@
 //! the tool, for the "while I'm reading" rules; it never logs them.
 //!
 //! The last history ID per account is kept on this machine, so after sleep the next check picks up where it left
-//! off. After a wake-up, no other goes until the agent says its round is done; new mail meanwhile is counted and goes
-//! in the next one.
+//! off. Every check with something new wakes the agent, busy or not (it reads the wake-up on its next turn); only the
+//! person reading the Inbox holds new mail back, and only from the Inbox (since 25 Nov 2026).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;

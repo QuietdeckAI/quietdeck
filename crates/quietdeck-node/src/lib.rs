@@ -4,6 +4,7 @@
 pub mod config;
 pub mod control;
 pub mod deliver;
+pub mod fleetlayer;
 pub mod link;
 pub mod local;
 pub mod matrix;

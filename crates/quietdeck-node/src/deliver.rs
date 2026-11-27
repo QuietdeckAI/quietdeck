@@ -74,7 +74,11 @@ impl Deliverer {
                 Some(reg) if usable(&reg) => {
                     return send_socket(&self.claude_sessions_dir, &reg, &d.from_name(), &text).await;
                 }
-                Some(_) => {} // no socket, or another protocol: the orchestrator below
+                // The process has ended: its pane may be a plain shell now, so nothing is typed into it.
+                Some(reg) if !pid_alive(reg.pid) => {
+                    return Err(format!("{OFFLINE_PREFIX} Claude Code session {session_id} has ended"));
+                }
+                Some(_) => {} // running, with no socket or another protocol: the orchestrator below
                 None if d.target.address.is_none() => {
                     return Err(format!("{OFFLINE_PREFIX} no running Claude Code session {session_id}"));
                 }
@@ -241,6 +245,25 @@ mod tests {
         let d = Deliverer::new(dir.path(), no_orchestrator());
         let err = d.deliver(&delivery("d1", "nope", None)).await.unwrap_err();
         assert!(err.starts_with(OFFLINE_PREFIX), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_session_whose_process_ended_is_offline_even_with_a_pane() {
+        let home = tempfile::tempdir().unwrap();
+        let sessions = home.path().join(".claude/sessions");
+        std::fs::create_dir_all(&sessions).unwrap();
+        // The highest pid Linux hands out: nothing runs there.
+        let dead = 4_194_303u32;
+        assert!(!pid_alive(dead));
+        std::fs::write(
+            sessions.join(format!("{dead}.json")),
+            serde_json::json!({"pid": dead, "sessionId": "gone", "peerProtocol": 1, "messagingSocketPath": "/x.sock"})
+                .to_string(),
+        )
+        .unwrap();
+        let d = Deliverer::new(home.path(), no_orchestrator());
+        let err = d.deliver(&delivery("d3", "gone", Some("w1:p1"))).await.unwrap_err();
+        assert!(err.starts_with(OFFLINE_PREFIX) && err.contains("has ended"), "never typed into its pane: {err}");
     }
 
     #[tokio::test]

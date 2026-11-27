@@ -33,16 +33,17 @@ it for liveness and readiness probes.
 
 `POST /hooks/<endpoint id>/<secret>` on port 8081 (public only through the tunnel; everything else answers 404).
 
-- An agent proposes an endpoint: `quietdeck hooks create --label "Talira alerts" --kind alertmanager --to "talira
-  infra@agents"`. It prints the URL once (the deck keeps only the secret's hash). The endpoint answers 404 until the
+- An agent proposes an endpoint: `quietdeck hooks create --label "Server alerts" --kind alertmanager --to
+  "alerts@server"`. It prints the URL once (the deck keeps only the secret's hash). The endpoint answers 404 until the
   owner approves it in Settings → Webhooks.
-- Kinds: `generic` (any JSON, or text: a title is taken from `title`, `summary`, `message`, `text`, `description`;
-  lenient for Gatus, which doesn't escape its values) and `alertmanager` (its `webhook_configs` JSON, one event per
+- Kinds: `generic` (any JSON, or text: a title is taken from the first of `title`, `summary`, `message`, `text`,
+  `description`, `alert.description`, `app` and `name`; lenient for Gatus, which doesn't escape its values) and `alertmanager` (its `webhook_configs` JSON, one event per
   alert, firing and resolved).
-- Each event is kept once (a repeat of the same call or alert is dropped), delivered straight to the `--to` session as
+- Each event is kept once (a retry of the same call within ten minutes, or the same Alertmanager alert, is dropped;
+  the same generic alert later counts again), delivered straight to the `--to` session as
   outside data, and readable later with `quietdeck messages --new --source webhook`. The triage agent isn't woken for
   it: its next wake-up counts it as handled, for a line in the report. If the owner can't be reached, the failure is
-  recorded and the event goes to the triage agent instead.
+  recorded (`quietdeck hooks list` shows the latest) and the event goes to the triage agent instead.
 - The service always gets 200. At most 120 events per endpoint per minute and 256 KB per call.
 
 ### Data volume

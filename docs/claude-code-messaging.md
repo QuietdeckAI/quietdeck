@@ -123,8 +123,9 @@ On a throwaway Haiku session in a herdr tab:
   plan). It sets no `from`, so the receiving agent replies the way the header says (`quietdeck msg send …`), and **no
   `from-mode`**: the node isn't a Claude session, and claiming bypass mode would get around the check that exists to
   stop permission laundering.
-- It fails at once, with "<tab>@<node> is offline", when there's no registry entry, the pid is gone or the socket
-  refuses. That's the only failure. It doesn't look at whether the session is working or blocked: the queue handles
+- It fails at once, with "<tab>@<node> is offline", when the pid is gone (nothing is typed into its pane, which may be
+  a plain shell by now), when the socket refuses, or when there's no registry entry and herdr has no pane for it. A
+  running session with no registry entry or no socket gets the herdr fallback below. That's the only failure. It doesn't look at whether the session is working or blocked: the queue handles
   both, as it does for `SendMessage`.
 - Nothing is stored or retried.
 

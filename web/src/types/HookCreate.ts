@@ -10,6 +10,6 @@ export type HookCreate = {
  */
 label: string, kind: HookKind, 
 /**
- * The session its events go to, as `<tab>@<node>` ("talira infra@agents").
+ * The session its events go to, as `<tab>@<node>` ("alerts@server").
  */
 to: string, };

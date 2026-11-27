@@ -54,6 +54,7 @@ fn endpoint(r: &Row) -> HookEndpoint {
         approved_at: r.7.map(ts),
         event_count: r.8,
         last_event_at: r.9.map(ts),
+        last_failure: None,
     }
 }
 
@@ -109,7 +110,16 @@ pub async fn list(db: &Db) -> AppResult<Vec<HookEndpoint>> {
     )))
     .fetch_all(db)
     .await?;
-    Ok(rows.iter().map(endpoint).collect())
+    let mut out: Vec<HookEndpoint> = rows.iter().map(endpoint).collect();
+    for e in &mut out {
+        let last: Option<(i64, String)> =
+            sqlx::query_as("SELECT at, reason FROM webhook_failures WHERE endpoint_id = ? ORDER BY at DESC LIMIT 1")
+                .bind(&e.id)
+                .fetch_optional(db)
+                .await?;
+        e.last_failure = last.map(|(at, reason)| quietdeck_types::hooks::HookFailure { at: ts(at), reason });
+    }
+    Ok(out)
 }
 
 /// The person approves an endpoint in Settings: from now on it receives.
@@ -218,8 +228,13 @@ pub fn read_events(kind: HookKind, body: &[u8]) -> Vec<Event> {
             .find_map(|p| text(v, p))
         })
         .unwrap_or_else(|| raw.clone());
-    vec![Event { id: digest(), line: clip(&line, 300), body: raw }]
+    // The same body again within ten minutes is the sender retrying; later, it's the same alert firing again.
+    let window = now_ms() / GENERIC_REPEAT_MS;
+    vec![Event { id: format!("{}:{window}", digest()), line: clip(&line, 300), body: raw }]
 }
+
+/// How long an identical generic event counts as a retry of the last one.
+const GENERIC_REPEAT_MS: i64 = 10 * 60_000;
 
 async fn receive(State(state): State<AppState>, Path((id, secret)): Path<(String, String)>, body: Bytes) -> StatusCode {
     let Ok(Some(r)) = row(&state.db, &id).await else { return StatusCode::NOT_FOUND };
@@ -355,8 +370,7 @@ mod tests {
     #[tokio::test]
     async fn an_endpoint_receives_only_once_approved_and_keeps_each_event_once() {
         let state = AppState::for_tests().await;
-        let req =
-            HookCreate { label: "Talira alerts".into(), kind: HookKind::Generic, to: "talira infra@agents".into() };
+        let req = HookCreate { label: "Server alerts".into(), kind: HookKind::Generic, to: "alerts@server".into() };
         let created = create(&state, None, req).await.unwrap();
         assert!(created.url.starts_with("https://hooks.example.com/hooks/h_"));
         let secret = created.url.rsplit('/').next().unwrap().to_string();

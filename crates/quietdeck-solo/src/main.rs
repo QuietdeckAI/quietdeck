@@ -540,7 +540,7 @@ mod tests {
              agent:\n  name: triage\n  headless: { model: sonnet, allowed_tools: [Bash] }\n",
         );
         let e = node_config(&c, Path::new("/tmp/t")).unwrap_err().to_string();
-        assert!(e.contains("run anything"), "a bare Bash is refused: {e}");
+        assert!(e.contains("run any command"), "a bare Bash is refused: {e}");
         let c = solo("accounts:\n  work: { address: w@example.com }\nagent:\n  headless: { model: sonnet }\n");
         let r = node_config(&c, Path::new("/tmp/t")).unwrap().runner.unwrap();
         assert_eq!(r.agent.headless.unwrap().model.as_deref(), Some("sonnet"));

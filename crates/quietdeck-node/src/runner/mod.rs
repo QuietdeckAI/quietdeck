@@ -104,9 +104,9 @@ struct MessageMeta {
 
 /// "DocSpring: 'Re: Ads' to rep@x.com (thread 1a2b)": a sent message for the next wake-up.
 fn sent_line(account: &str, f: &ItemFacts, meta: Option<&MessageMeta>) -> String {
-    let subject = f.subject.as_deref().map(|s| format!(" '{s}'")).unwrap_or_default();
-    let to = meta.and_then(|m| m.to.as_deref()).map(|t| format!(" to {t}")).unwrap_or_default();
-    let thread = f.thread_key.as_deref().map(|t| format!(" (thread {t})")).unwrap_or_default();
+    let subject = f.subject.as_deref().map(|s| format!(" '{}'", clean_line(s))).unwrap_or_default();
+    let to = meta.and_then(|m| m.to.as_deref()).map(|t| format!(" to {}", clean_line(t))).unwrap_or_default();
+    let thread = f.thread_key.as_deref().map(|t| format!(" (thread {})", clean_line(t))).unwrap_or_default();
     format!("{account}:{subject}{to}{thread}")
 }
 
@@ -894,7 +894,8 @@ impl Runner {
             text.push_str(&format!("\n[… cut at {MAIL_TEXT_CHARS} characters]"));
         }
         out.push_str("\n\n");
-        out.push_str(&text.replace("</email", "</ email"));
+        // No tag survives, in any case or spelling: the text can't close <email> or the delivery's own wrapper.
+        out.push_str(&untagged(&text));
         out.push_str("\n</email>");
         out
     }
@@ -1005,7 +1006,7 @@ impl Runner {
         for ((account, f), v) in items.into_iter().zip(verdicts) {
             match v {
                 HoldVerdict::Let { reason } if reading && !reason.is_empty() => {
-                    let what = f.subject.as_deref().map(|s| format!(" \"{s}\"")).unwrap_or_default();
+                    let what = f.subject.as_deref().map(|s| format!(" \"{}\"", clean_line(s))).unwrap_or_default();
                     state.urgent.push(format!("{reason}: new mail on {}{what}", self.cfg.account_label(&account)));
                 }
                 _ => state.add(&account, Some(1)),
@@ -1050,7 +1051,12 @@ impl Runner {
         for c in &mut held {
             if reading && !c.let_through.is_empty() {
                 for why in &c.let_through {
-                    state.urgent.push(format!("{why}: a new message in {} ({})", c.channel_name, c.source));
+                    state.urgent.push(format!(
+                        "{}: a new message in {} ({})",
+                        clean_line(why),
+                        clean_line(&c.channel_name),
+                        clean_line(&c.source)
+                    ));
                 }
                 c.count = c.count.saturating_sub(c.let_through.len() as u32);
             }
@@ -1149,10 +1155,15 @@ const MAIL_TEXT_MAX: usize = 25;
 /// Each message's text is cut here: enough to triage, never a whole newsletter.
 const MAIL_TEXT_CHARS: usize = 3000;
 
+/// Untrusted text with every angle bracket swapped for a look-alike, so nothing in it reads as a tag.
+fn untagged(s: &str) -> String {
+    s.replace('<', "‹").replace('>', "›")
+}
+
 /// A header value on one line, short, with nothing that could look like a tag.
 fn clean_line(s: &str) -> String {
     let one: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
-    let one = one.replace('<', "‹").replace('>', "›");
+    let one = untagged(&one);
     if one.chars().count() > 300 { one.chars().take(300).collect::<String>() + "…" } else { one }
 }
 

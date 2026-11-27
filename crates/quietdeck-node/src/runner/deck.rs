@@ -102,6 +102,10 @@ impl DeckApi for LinkDeck {
         self.ask(NodeRequest::ActionsReport { reports }, ASK).await
     }
     async fn relay(&self, to: String, kind: DeliveryKind, body: String) -> Result<Delivered, String> {
+        // Through Fleetlayer where it runs Quietdeck's plugin; the deck's relay otherwise (solo, older machines).
+        if let Some(sent) = crate::fleetlayer::send(&crate::fleetlayer::Outgoing::of(&to, &kind, &body, false)).await {
+            return sent.map_err(|e| e.to_string());
+        }
         self.ask(NodeRequest::Relay { to, kind, body }, ASK).await
     }
     async fn start_session(&self, spec: SessionStart) -> Result<SessionStarted, String> {
@@ -142,7 +146,8 @@ impl DeckApi for LinkDeck {
     }
 }
 
-/// The agent, by its tab on this machine, through the node's own delivery (its messaging socket, or the orchestrator).
+/// The agent, by its tab on this machine: through Fleetlayer where it runs Quietdeck's plugin, else the node's own
+/// delivery (its messaging socket, or the orchestrator).
 pub struct LocalAgent {
     pub node: Arc<Node>,
     pub tab: String,
@@ -155,6 +160,16 @@ impl AgentInbox for LocalAgent {
             let sessions = self.node.sessions.lock().await;
             sessions.iter().find(|s| s.running && s.tab.as_deref() == Some(self.tab.as_str())).cloned()
         };
+        // Through Fleetlayer where it runs Quietdeck's plugin, which delivers to the tab on this machine.
+        if let Some(sent) =
+            crate::fleetlayer::send(&crate::fleetlayer::Outgoing::of(&self.tab, &kind, &body, true)).await
+        {
+            sent.map_err(|e| e.to_string())?;
+            if let Some(s) = session {
+                self.node.mark_working(&s.session_id).await;
+            }
+            return Ok(());
+        }
         let s = session.ok_or_else(|| format!("{} isn't running on this machine", self.tab))?;
         let delivery = Delivery {
             id: format!("r_{}", hex::encode(rand::random::<[u8; 12]>())),

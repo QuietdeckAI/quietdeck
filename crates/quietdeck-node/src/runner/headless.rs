@@ -68,15 +68,26 @@ impl HeadlessConfig {
     pub fn check(&self) -> Result<(), String> {
         super::config::parse_duration(&self.turn_timeout)
             .map_err(|e| format!("runner.agent.headless.turn_timeout: {e}"))?;
-        if self.allowed_tools.iter().any(|t| t.trim() == "Bash" || t.trim() == "Bash(*)") {
-            return Err(
-                "runner.agent.headless.allowed_tools: Bash with no command pattern lets the agent run anything; \
-                name the commands, as Bash(quietdeck:*)"
-                    .into(),
-            );
+        if let Some(t) = self.allowed_tools.iter().find(|t| too_wide(t)) {
+            return Err(format!(
+                "runner.agent.headless.allowed_tools: {t} lets the agent run any command (or any quietdeck \
+                subcommand, msg send and session start included); name each subcommand, as Bash(quietdeck card:*)"
+            ));
         }
         Ok(())
     }
+}
+
+/// A Bash rule that allows every command, or every quietdeck subcommand: `Bash`, `Bash(*)`, `Bash(quietdeck:*)`,
+/// `Bash(quietdeck *)`.
+fn too_wide(rule: &str) -> bool {
+    let rule = rule.trim();
+    if rule == "Bash" {
+        return true;
+    }
+    let Some(inner) = rule.strip_prefix("Bash(").and_then(|r| r.strip_suffix(')')) else { return false };
+    let command = inner.trim().trim_end_matches('*').trim_end_matches(':').trim();
+    command.is_empty() || command == "quietdeck"
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -344,6 +355,17 @@ mod tests {
     }
 
     #[test]
+    fn rules_that_allow_every_command_are_refused() {
+        for wide in ["Bash", "Bash(*)", "Bash(quietdeck:*)", "Bash(quietdeck *)", " Bash( quietdeck:* ) "] {
+            let c = HeadlessConfig { allowed_tools: vec![wide.trim().to_string()], ..cfg("claude") };
+            assert!(c.check().is_err(), "{wide} should be refused");
+        }
+        let ok = HeadlessConfig { allowed_tools: vec!["Bash(quietdeck card:*)".into()], ..cfg("claude") };
+        assert!(ok.check().is_ok());
+        assert!(cfg("claude").check().is_ok(), "the default list passes");
+    }
+
+    #[test]
     fn turns_are_limited_to_the_quietdeck_cli() {
         let a = claude_args(&cfg("claude"), Conversation::Resume("abc"));
         assert!(a.contains(&"--permission-mode=dontAsk".to_string()));
@@ -366,7 +388,7 @@ mod tests {
 
         let mut c = cfg("claude");
         c.allowed_tools = vec!["Bash".into()];
-        assert!(c.check().unwrap_err().contains("run anything"));
+        assert!(c.check().unwrap_err().contains("run any command"));
         cfg("claude").check().unwrap();
     }
 

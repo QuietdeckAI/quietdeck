@@ -35,6 +35,9 @@ enum Command {
     },
     /// Stop the service and remove its file.
     Uninstall,
+    /// Run as a Fleetlayer plugin (started by Fleetlayer's node, on stdio): this node's messages then go out through
+    /// Fleetlayer as `plugin:<name>@<node>`. Configure it in Fleetlayer's node.yaml with `grants: [message.send]`.
+    FleetlayerPlugin,
     /// Check the Matrix reader: sign in (or reuse its device), sync for a while and print the messages it would hand
     /// to the deck (they also wait in its outbox for the node). Stop the node first.
     MatrixCheck {
@@ -62,6 +65,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Run => quietdeck_node::run(NodeConfig::load(&config::config_path())?, RunOptions::default()).await,
         Command::Install { no_start } => service::install(&config::home(), !no_start),
         Command::Uninstall => service::uninstall(&config::home()),
+        Command::FleetlayerPlugin => quietdeck_node::fleetlayer::run_plugin().await,
         Command::MatrixCheck { config: path, seconds } => {
             let c = NodeConfig::load(&path.unwrap_or_else(config::config_path))?;
             let m = c.matrix.ok_or_else(|| anyhow::anyhow!("node.yaml has no matrix: section"))?;
