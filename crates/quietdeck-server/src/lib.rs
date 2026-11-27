@@ -16,6 +16,7 @@ pub mod leases;
 pub mod mail;
 pub mod mcp;
 pub mod messages;
+pub mod openapi;
 pub mod ops;
 pub mod passkeys;
 pub mod pings;
@@ -151,8 +152,7 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
     };
     let mut app = Router::new()
         .route("/healthz", get(health))
-        .merge(api::router())
-        .merge(passkeys::router())
+        .merge(openapi::routes().0)
         .nest_service("/mcp", mcp::service(state.clone()));
     if local_only.is_some() {
         app = app.merge(solo::router());

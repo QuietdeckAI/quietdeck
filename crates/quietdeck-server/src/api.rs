@@ -1,10 +1,10 @@
 //! The REST API. Agents call it with the `quietdeck` CLI (session tokens from their node); the web app with the
 //! owner's sign-in. The MCP endpoint calls the same functions (`ops`).
 
+use aide::axum::ApiRouter;
+use aide::axum::routing::{delete, get, post, put};
 use axum::Json;
-use axum::Router;
 use axum::extract::{Path, Query, State};
-use axum::routing::{delete, get, post};
 use quietdeck_types::api::{
     Caller, Changed, DeckInfo, EnrolRequest, Enrolled, EnrolmentCode, RoundDone, RoundStatus, Settings,
 };
@@ -15,100 +15,106 @@ use quietdeck_types::node::Delivered;
 use quietdeck_types::relay::MsgSend;
 use quietdeck_types::rules::{MatchRequest, MatchResult, Rule, RuleInput, RuleStatusChange, RulesView};
 use quietdeck_types::timeline::{Comment, CommentAdd, History, TimelineAdd, TimelineEntry};
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::auth::{Agent, Authed, Owner};
 use crate::error::{AppError, AppResult, bad};
+use crate::openapi::{Id, NodeName, TextId};
 use crate::state::AppState;
 use crate::store::{cards, nodes, sessions};
 use crate::{control, ops};
 
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/api/info", get(info))
-        .route("/api/nodes", get(list_nodes))
-        .route("/api/nodes/enroll", post(enroll))
-        .route("/api/nodes/enrolment-codes", post(new_code))
-        .route("/api/nodes/ws", get(crate::ws::upgrade))
-        .route("/api/nodes/{name}", delete(revoke_node))
-        .route("/api/cards", get(list_cards).post(add_card))
-        .route("/api/cards/{id}", get(get_card))
-        .route("/api/cards/{id}/resolve", post(resolve_card))
-        .route("/api/sessions", get(list_sessions))
-        .route("/api/sessions/search", get(search_sessions))
-        .route("/api/sessions/show", get(show_session))
-        .route("/api/sessions/transcript", get(session_transcript))
-        .route("/api/sessions/catchup", get(session_catchup))
-        .route("/api/sessions/start", post(start_session))
-        .route("/api/sessions/resume", post(resume_session))
-        .route("/api/sessions/close", post(close_session))
-        .route("/api/sessions/interrupt", post(interrupt_session))
-        .route("/api/handoffs", post(handoff_add))
-        .route("/api/handoffs/{id}", get(handoff_show))
-        .route("/api/handoffs/{id}/claim", post(handoff_claim))
-        .route("/api/who-has", get(who_has))
-        .route("/api/msg", post(msg_send))
-        .route("/api/timeline", post(timeline_add))
-        .route("/api/history", get(history))
-        .route("/api/messages", get(messages_read))
-        .route("/api/mail", get(mail_list))
-        .route("/api/mail/seen", post(mail_seen))
-        .route("/api/mail/badges", get(mail_badges))
-        .route("/api/presence", post(presence_beat))
-        .route("/api/presence/release", post(presence_release))
-        .route("/api/reading-rules", get(reading_rules_list).post(reading_rule_create))
-        .route("/api/reading-rules/{id}", axum::routing::put(reading_rule_update).delete(reading_rule_delete))
-        .route("/api/reading-rules/{id}/enabled", post(reading_rule_enabled))
-        .route("/api/inbox", get(inbox))
-        .route("/api/later", get(later))
-        .route("/api/events", get(crate::events::stream))
-        .route("/api/settings", get(get_settings).put(put_settings))
-        .route("/api/decisions/approve-all", post(approve_all))
-        .route("/api/report/approve", post(approve_report))
-        .route("/api/decisions/undo", post(undo))
-        .route("/api/decisions/stop", post(stop))
-        .route("/api/decisions/take", post(take))
-        .route("/api/round", get(round_status))
-        .route("/api/round/done", post(round_done))
-        .route("/api/cards/{id}/decide", post(decide))
-        .route("/api/cards/{id}/retry", post(retry))
-        .route("/api/actions/{id}/start", post(action_start))
-        .route("/api/actions/report", post(actions_report))
-        .route("/api/rules", get(rules_view).post(rule_create))
-        .route("/api/rules/match", post(rules_match))
-        .route("/api/rules/{id}", axum::routing::put(rule_update))
-        .route("/api/rules/{id}/status", post(rule_status))
-        .route("/api/leases", get(leases_view))
-        .route("/api/leases/propose", post(lease_propose))
-        .route("/api/leases/acquire", post(lease_acquire))
-        .route("/api/leases/{id}", get(lease_get))
-        .route("/api/leases/{id}/register", post(lease_register))
-        .route("/api/leases/{id}/release", post(lease_release))
-        .route("/api/leases/{id}/cleaned", post(lease_cleaned))
-        .route("/api/lease-patterns/{id}/revoke", post(lease_pattern_revoke))
-        .route("/api/comments", post(comment_add))
-        .route("/api/report", get(report_show).post(report_set))
-        .route("/api/report/done", post(report_done))
-        .route("/api/chat/reply", post(chat_reply))
-        .route("/api/hooks", get(hooks_list).post(hooks_create))
-        .route("/api/hooks/{id}/approve", post(hooks_approve))
-        .route("/api/hooks/{id}", axum::routing::delete(hooks_delete))
-        .route("/api/report/answers", post(report_answer))
-        .route("/api/report/answers/take", post(report_answers_take))
-        .route("/api/report/chat", post(report_chat))
-        .route("/api/report/replies", post(report_reply))
-        .route("/api/report/snapshots/{id}", get(report_snapshot))
-        .route("/api/pings", get(pings_view).post(ping_send))
-        .route("/api/pings/{id}/feedback", post(ping_feedback))
-        .route("/api/pings/feedback/take", post(ping_feedback_take))
-        .route("/api/watches", get(watches_list).post(watch_add))
-        .route("/api/watches/{id}/stop", post(watch_stop))
-        .route("/api/push", get(push_config))
-        .route("/api/push/devices", get(push_devices).post(push_subscribe))
-        .route("/api/push/devices/remove", post(push_remove))
+/// Every route, without the `/api` prefix: `crate::openapi` mounts them at `/api/v1` (the published, versioned API) and
+/// at `/api` (the same routes, for nodes, CLIs and web apps that predate v1). Routes go in with `api_route`, so the
+/// spec (`api/openapi.json`) takes their types from the handlers; the one `route` is the event stream, whose entry
+/// `crate::openapi` writes by hand.
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/info", get(info))
+        .api_route("/nodes", get(list_nodes))
+        .api_route("/nodes/enroll", post(enroll))
+        .api_route("/nodes/enrolment-codes", post(new_code))
+        .api_route("/nodes/ws", get(crate::ws::upgrade))
+        .api_route("/nodes/{name}", delete(revoke_node))
+        .api_route("/cards", get(list_cards).post(add_card))
+        .api_route("/cards/{id}", get(get_card))
+        .api_route("/cards/{id}/resolve", post(resolve_card))
+        .api_route("/sessions", get(list_sessions))
+        .api_route("/sessions/search", get(search_sessions))
+        .api_route("/sessions/show", get(show_session))
+        .api_route("/sessions/transcript", get(session_transcript))
+        .api_route("/sessions/catchup", get(session_catchup))
+        .api_route("/sessions/start", post(start_session))
+        .api_route("/sessions/resume", post(resume_session))
+        .api_route("/sessions/close", post(close_session))
+        .api_route("/sessions/interrupt", post(interrupt_session))
+        .api_route("/handoffs", post(handoff_add))
+        .api_route("/handoffs/{id}", get(handoff_show))
+        .api_route("/handoffs/{id}/claim", post(handoff_claim))
+        .api_route("/who-has", get(who_has))
+        .api_route("/msg", post(msg_send))
+        .api_route("/timeline", post(timeline_add))
+        .api_route("/history", get(history))
+        .api_route("/messages", get(messages_read))
+        .api_route("/mail", get(mail_list))
+        .api_route("/mail/seen", post(mail_seen))
+        .api_route("/mail/badges", get(mail_badges))
+        .api_route("/presence", post(presence_beat))
+        .api_route("/presence/release", post(presence_release))
+        .api_route("/reading-rules", get(reading_rules_list).post(reading_rule_create))
+        .api_route("/reading-rules/{id}", put(reading_rule_update).delete(reading_rule_delete))
+        .api_route("/reading-rules/{id}/enabled", post(reading_rule_enabled))
+        .api_route("/inbox", get(inbox))
+        .api_route("/later", get(later))
+        .route("/events", axum::routing::get(crate::events::stream))
+        .api_route("/settings", get(get_settings).put(put_settings))
+        .api_route("/decisions/approve-all", post(approve_all))
+        .api_route("/report/approve", post(approve_report))
+        .api_route("/decisions/undo", post(undo))
+        .api_route("/decisions/stop", post(stop))
+        .api_route("/decisions/take", post(take))
+        .api_route("/round", get(round_status))
+        .api_route("/round/done", post(round_done))
+        .api_route("/cards/{id}/decide", post(decide))
+        .api_route("/cards/{id}/retry", post(retry))
+        .api_route("/actions/{id}/start", post(action_start))
+        .api_route("/actions/report", post(actions_report))
+        .api_route("/rules", get(rules_view).post(rule_create))
+        .api_route("/rules/match", post(rules_match))
+        .api_route("/rules/{id}", put(rule_update))
+        .api_route("/rules/{id}/status", post(rule_status))
+        .api_route("/leases", get(leases_view))
+        .api_route("/leases/propose", post(lease_propose))
+        .api_route("/leases/acquire", post(lease_acquire))
+        .api_route("/leases/{id}", get(lease_get))
+        .api_route("/leases/{id}/register", post(lease_register))
+        .api_route("/leases/{id}/release", post(lease_release))
+        .api_route("/leases/{id}/cleaned", post(lease_cleaned))
+        .api_route("/lease-patterns/{id}/revoke", post(lease_pattern_revoke))
+        .api_route("/comments", post(comment_add))
+        .api_route("/report", get(report_show).post(report_set))
+        .api_route("/report/done", post(report_done))
+        .api_route("/chat/reply", post(chat_reply))
+        .api_route("/hooks", get(hooks_list).post(hooks_create))
+        .api_route("/hooks/{id}/approve", post(hooks_approve))
+        .api_route("/hooks/{id}", delete(hooks_delete))
+        .api_route("/report/answers", post(report_answer))
+        .api_route("/report/answers/take", post(report_answers_take))
+        .api_route("/report/chat", post(report_chat))
+        .api_route("/report/replies", post(report_reply))
+        .api_route("/report/snapshots/{id}", get(report_snapshot))
+        .api_route("/pings", get(pings_view).post(ping_send))
+        .api_route("/pings/{id}/feedback", post(ping_feedback))
+        .api_route("/pings/feedback/take", post(ping_feedback_take))
+        .api_route("/watches", get(watches_list).post(watch_add))
+        .api_route("/watches/{id}/stop", post(watch_stop))
+        .api_route("/push", get(push_config))
+        .api_route("/push/devices", get(push_devices).post(push_subscribe))
+        .api_route("/push/devices/remove", post(push_remove))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct MailQuery {
     pub kind: quietdeck_types::mail::MailKind,
     pub account: Option<String>,
@@ -122,7 +128,7 @@ async fn mail_list(
     Ok(Json(crate::mail::list(&state.db, q.kind, q.account.as_deref()).await?))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct MailSeen {
     pub kind: quietdeck_types::mail::MailKind,
 }
@@ -174,13 +180,13 @@ async fn reading_rule_create(
 async fn reading_rule_update(
     State(state): State<AppState>,
     _owner: Owner,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
     Json(input): Json<quietdeck_types::reading::ReadingRuleInput>,
 ) -> AppResult<Json<quietdeck_types::reading::ReadingRule>> {
     Ok(Json(crate::reading::update(&state, id, input).await?))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct Enabled {
     pub enabled: bool,
 }
@@ -188,7 +194,7 @@ pub struct Enabled {
 async fn reading_rule_enabled(
     State(state): State<AppState>,
     _owner: Owner,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
     Json(e): Json<Enabled>,
 ) -> AppResult<Json<quietdeck_types::reading::ReadingRule>> {
     Ok(Json(crate::reading::set_enabled(&state, id, e.enabled).await?))
@@ -197,13 +203,13 @@ async fn reading_rule_enabled(
 async fn reading_rule_delete(
     State(state): State<AppState>,
     _owner: Owner,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
 ) -> AppResult<Json<serde_json::Value>> {
     crate::reading::delete(&state, id).await?;
     Ok(Json(serde_json::json!({})))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct MessagesQuery {
     pub source: Option<String>,
     /// A message ID: read after it without moving the session's mark. Left out: after the session's last read.
@@ -250,7 +256,7 @@ async fn hooks_create(
 async fn hooks_approve(
     State(state): State<AppState>,
     _owner: Owner,
-    Path(id): Path<String>,
+    Path(TextId { id }): Path<TextId>,
 ) -> AppResult<Json<quietdeck_types::hooks::HookEndpoint>> {
     Ok(Json(crate::hooks::approve(&state, &id).await?))
 }
@@ -258,7 +264,7 @@ async fn hooks_approve(
 async fn hooks_delete(
     State(state): State<AppState>,
     _owner: Owner,
-    Path(id): Path<String>,
+    Path(TextId { id }): Path<TextId>,
 ) -> AppResult<axum::http::StatusCode> {
     crate::hooks::delete(&state, &id).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
@@ -297,7 +303,7 @@ async fn handoff_add(
 async fn handoff_show(
     State(state): State<AppState>,
     Authed(_): Authed,
-    axum::extract::Path(id): axum::extract::Path<i64>,
+    Path(Id { id }): Path<Id>,
 ) -> AppResult<Json<quietdeck_types::handoff::SessionHandoff>> {
     Ok(Json(crate::handoffs::get(&state.db, id).await?))
 }
@@ -305,7 +311,7 @@ async fn handoff_show(
 async fn handoff_claim(
     State(state): State<AppState>,
     Agent(me): Agent,
-    axum::extract::Path(id): axum::extract::Path<i64>,
+    Path(Id { id }): Path<Id>,
 ) -> AppResult<Json<quietdeck_types::handoff::SessionHandoff>> {
     let h = crate::handoffs::claim(&state.db, id, &me).await?;
     state.changed(Changed::Cards);
@@ -323,7 +329,7 @@ async fn report_reply(
 async fn report_snapshot(
     State(state): State<AppState>,
     _owner: Owner,
-    axum::extract::Path(id): axum::extract::Path<i64>,
+    Path(Id { id }): Path<Id>,
 ) -> AppResult<Json<quietdeck_types::report::ReportSnapshot>> {
     Ok(Json(crate::reports::snapshot_get(&state.db, id).await?))
 }
@@ -369,7 +375,7 @@ async fn pings_view(
 async fn ping_feedback(
     State(state): State<AppState>,
     _owner: Owner,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
     Json(f): Json<quietdeck_types::timeline::PingFeedback>,
 ) -> AppResult<Json<quietdeck_types::timeline::Ping>> {
     Ok(Json(crate::pings::feedback(&state, id, f).await?))
@@ -382,7 +388,7 @@ async fn ping_feedback_take(
     Ok(Json(crate::pings::take_feedback(&state, &me).await?))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 struct WatchesParams {
     #[serde(default)]
     all: bool,
@@ -404,7 +410,7 @@ async fn watch_add(
     Ok(Json(crate::pings::watch(&state, w).await?))
 }
 
-async fn watch_stop(State(state): State<AppState>, _owner: Owner, Path(id): Path<i64>) -> AppResult<Json<()>> {
+async fn watch_stop(State(state): State<AppState>, _owner: Owner, Path(Id { id }): Path<Id>) -> AppResult<Json<()>> {
     crate::pings::unwatch(&state, id).await?;
     Ok(Json(()))
 }
@@ -460,7 +466,7 @@ async fn rule_create(
 async fn rule_update(
     State(state): State<AppState>,
     _owner: Owner,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
     Json(input): Json<RuleInput>,
 ) -> AppResult<Json<Rule>> {
     Ok(Json(ops::rule_update(&state, id, input).await?))
@@ -469,7 +475,7 @@ async fn rule_update(
 async fn rule_status(
     State(state): State<AppState>,
     _owner: Owner,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
     Json(change): Json<RuleStatusChange>,
 ) -> AppResult<Json<Rule>> {
     Ok(Json(ops::rule_status(&state, id, change).await?))
@@ -501,7 +507,7 @@ async fn lease_acquire(
 async fn lease_get(
     State(state): State<AppState>,
     Authed(_): Authed,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
 ) -> AppResult<Json<quietdeck_types::lease::Lease>> {
     Ok(Json(crate::leases::get(&state.db, id).await?))
 }
@@ -510,7 +516,7 @@ async fn lease_get(
 async fn lease_register(
     State(state): State<AppState>,
     Agent(_): Agent,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
     Json(r): Json<quietdeck_types::lease::LeaseRegister>,
 ) -> AppResult<Json<quietdeck_types::lease::Lease>> {
     Ok(Json(crate::leases::activate(&state, id, r.kind_state).await?))
@@ -519,7 +525,7 @@ async fn lease_register(
 async fn lease_release(
     State(state): State<AppState>,
     Authed(caller): Authed,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
 ) -> AppResult<Json<quietdeck_types::lease::Lease>> {
     Ok(Json(crate::leases::release(&state, &caller, id).await?))
 }
@@ -528,7 +534,7 @@ async fn lease_release(
 async fn lease_cleaned(
     State(state): State<AppState>,
     Authed(caller): Authed,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
 ) -> AppResult<Json<quietdeck_types::lease::Lease>> {
     let lease = crate::leases::get(&state.db, id).await?;
     let by = match &caller {
@@ -546,7 +552,7 @@ async fn lease_cleaned(
 async fn lease_pattern_revoke(
     State(state): State<AppState>,
     _owner: Owner,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
 ) -> AppResult<Json<quietdeck_types::lease::LeasesView>> {
     Ok(Json(crate::leases::revoke_pattern(&state, id).await?))
 }
@@ -585,7 +591,11 @@ async fn new_code(State(state): State<AppState>, _owner: Owner) -> AppResult<Jso
     Ok(Json(nodes::create_enrolment_code(&state.db).await?))
 }
 
-async fn revoke_node(State(state): State<AppState>, _owner: Owner, Path(name): Path<String>) -> AppResult<()> {
+async fn revoke_node(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(NodeName { name }): Path<NodeName>,
+) -> AppResult<()> {
     nodes::revoke(&state.db, &name).await
 }
 
@@ -603,14 +613,18 @@ async fn list_cards(
     Ok(Json(cards::list(&state.db, &f).await?))
 }
 
-async fn get_card(State(state): State<AppState>, Authed(_): Authed, Path(id): Path<i64>) -> AppResult<Json<Card>> {
+async fn get_card(
+    State(state): State<AppState>,
+    Authed(_): Authed,
+    Path(Id { id }): Path<Id>,
+) -> AppResult<Json<Card>> {
     cards::get(&state.db, id).await?.map(Json).ok_or_else(|| AppError::NotFound(format!("no card {id}")))
 }
 
 async fn resolve_card(
     State(state): State<AppState>,
     Agent(_): Agent,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
     Json(how): Json<CardResolution>,
 ) -> AppResult<Json<Card>> {
     garde::Validate::validate(&how).map_err(bad)?;
@@ -627,7 +641,7 @@ async fn list_sessions(
     Ok(Json(sessions::list(&state.db, &state.hub, &f).await?))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct SearchQuery {
     pub q: String,
     pub limit: Option<i64>,
@@ -641,7 +655,7 @@ async fn search_sessions(
     Ok(Json(sessions::search(&state.db, &state.hub, &q.q, q.limit.unwrap_or(20)).await?))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct ShowQuery {
     pub session: String,
     #[serde(default)]
@@ -656,7 +670,7 @@ async fn show_session(
     Ok(Json(crate::ops::show_session(&state, &q.session, q.timeline).await?))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct TranscriptParams {
     pub session: String,
     pub subagent: Option<String>,
@@ -673,7 +687,7 @@ async fn session_transcript(
     Ok(Json(ops::transcript(&state, &q.session, query).await?))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct SessionParam {
     pub session: String,
 }
@@ -760,7 +774,7 @@ async fn timeline_add(
     Ok(Json(ops::timeline_add(&state, &caller, e).await?))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct HistoryQuery {
     /// For an agent: `last` (since this session last asked, the default), or an RFC 3339 time. For the owner: an RFC
     /// 3339 time, a week before `until` by default.
@@ -786,7 +800,7 @@ async fn history(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct AccountQuery {
     pub account: Option<String>,
 }
@@ -842,13 +856,13 @@ async fn stop(State(state): State<AppState>, _owner: Owner) -> AppResult<Json<St
 async fn decide(
     State(state): State<AppState>,
     _owner: Owner,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
     Json(d): Json<Decide>,
 ) -> AppResult<Json<Card>> {
     Ok(Json(ops::decide(&state, id, d).await?))
 }
 
-async fn retry(State(state): State<AppState>, _owner: Owner, Path(id): Path<i64>) -> AppResult<Json<Approving>> {
+async fn retry(State(state): State<AppState>, _owner: Owner, Path(Id { id }): Path<Id>) -> AppResult<Json<Approving>> {
     Ok(Json(ops::retry(&state, id).await?))
 }
 
@@ -867,7 +881,7 @@ async fn round_done(State(state): State<AppState>, Agent(me): Agent) -> AppResul
 async fn action_start(
     State(state): State<AppState>,
     Agent(me): Agent,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
 ) -> AppResult<Json<ActionRecord>> {
     Ok(Json(ops::action_start(&state, &me, id).await?))
 }

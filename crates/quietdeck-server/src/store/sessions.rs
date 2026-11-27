@@ -470,7 +470,7 @@ pub fn resume_command(agent: quietdeck_types::AgentKind, cwd: &str, tab: Option<
     }
 }
 
-#[derive(Debug, Default, Clone, serde::Deserialize)]
+#[derive(Debug, Default, Clone, serde::Deserialize, schemars::JsonSchema)]
 pub struct ListFilter {
     pub node: Option<String>,
     /// Include sessions that aren't running (closed or ended), most recent first.

@@ -224,3 +224,15 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   Quietdeck and Fleetlayer nodes (27 November). Now: this entry.
 - **Syncing notes, skills and instructions between machines.** Now: `docs/drafts/sync-how-to.md`.
 - **Account usage and rotation.** Now: `docs/drafts/account-usage-and-rotation.md`.
+- **Building your own frontend on the published API.** The deck's API is published as an OpenAPI 3.1 spec,
+  `api/openapi.json` (Apache-2.0, so a frontend can use any licence), served live at `/api/v1/openapi.json`. Every
+  route is under `/api/v1`; the old `/api/...` paths answer the same routes for nodes and CLIs already in the field.
+  Changes within v1 are additive only (`api/README.md` has the policy). Operations tagged `report` or `presence`
+  (`x-quietdeck-ui`) belong to the default web app and can be ignored. How it's kept honest: aide builds the spec from
+  the handlers' own types, a test rewrites the file, CI fails if it differs or fails `redocly lint`, and tests fail
+  when a route has no summary or isn't in the spec. Footguns: aide documents only routes added with `api_route`
+  (plain `route` is invisible, which the test catches); a bare `Path<i64>` gives no path parameter in the spec, so
+  paths use named structs (`Path<Id>`); and serde_json's `preserve_order` feature changes key order, so the spec is
+  written with every object's keys sorted. Now: `crates/quietdeck-server/src/openapi.rs`, `api/README.md`
+  (27 November, the quietdeck api tab). Still open: the API reference page on quietdeck.ai, and Fleetlayer sign-in
+  for frontends served from elsewhere.

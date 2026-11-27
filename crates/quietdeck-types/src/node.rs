@@ -351,7 +351,7 @@ pub struct TokenClaims {
 }
 
 /// Answers for deliveries and searches.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum Delivered {

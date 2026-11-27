@@ -33,6 +33,16 @@ jobs:
             echo "::error::web/src/types is out of date: run cargo test and commit the changes"
             exit 1
           }
+      # The server's tests rewrite api/openapi.json from the handlers' types (src/openapi.rs): the published spec
+      # must match the code.
+      - name: The OpenAPI spec is up to date
+        run: |
+          git diff --exit-code -- api/openapi.json || {
+            echo "::error::api/openapi.json is out of date: run cargo test and commit the changes"
+            exit 1
+          }
+      - name: The OpenAPI spec is valid
+        run: npx -y @redocly/cli@2.77.0 lint api/openapi.json --config api/redocly.yaml
 
   web:
     runs-on: ubuntu-24.04

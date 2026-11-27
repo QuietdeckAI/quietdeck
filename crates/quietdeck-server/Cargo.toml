@@ -12,6 +12,10 @@ name = "quietdeck-server"
 path = "src/main.rs"
 
 [dependencies]
+# Pinned exactly: only the 0.16 alphas build on axum 0.8 and schemars 1. It reads each handler's types to write the
+# OpenAPI spec (src/openapi.rs).
+aide = { version = "=0.16.0-alpha.4", features = ["axum", "axum-json", "axum-query", "axum-ws"] }
+indexmap = "2"
 webauthn-rs = "0.6.2"
 quietdeck-types.workspace = true
 serde.workspace = true

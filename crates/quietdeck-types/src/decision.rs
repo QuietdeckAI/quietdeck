@@ -144,7 +144,7 @@ pub struct ReportReceipt {
 
 /// The Inbox, for one account or all of them. Nothing here is a count: `has_later` only says whether to show the
 /// Later link.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema)]
 #[ts(export)]
 pub struct Inbox {
     pub actions: Vec<Card>,
@@ -160,6 +160,7 @@ pub struct Inbox {
     pub running: bool,
     /// When an agent last posted a card or took decisions. The Inbox shows it only when it's over an hour ago.
     #[ts(type = "string | null")]
+    #[schemars(with = "Option<String>")]
     pub last_agent_at: Option<Timestamp>,
     /// Cards whose target's tab had grants archived when its earlier session closed.
     #[serde(default)]

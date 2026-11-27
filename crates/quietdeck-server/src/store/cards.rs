@@ -237,7 +237,7 @@ pub async fn add(
     Ok(Added { card, replaced })
 }
 
-#[derive(Debug, Default, Clone, serde::Deserialize)]
+#[derive(Debug, Default, Clone, serde::Deserialize, schemars::JsonSchema)]
 pub struct ListFilter {
     pub account: Option<String>,
     pub section: Option<CardSection>,

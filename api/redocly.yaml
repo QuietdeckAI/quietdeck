@@ -1,0 +1,6 @@
+# `redocly lint api/openapi.json` in CI (the recommended rules).
+extends:
+  - recommended
+rules:
+  # Errors are the `default` response (ApiError with a 4xx or 5xx status), not one entry per status.
+  operation-4xx-response: off

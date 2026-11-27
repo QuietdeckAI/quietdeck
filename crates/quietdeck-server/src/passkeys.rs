@@ -11,14 +11,14 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use aide::axum::ApiRouter;
+use aide::axum::routing::{get, patch, post};
 use axum::Json;
-use axum::Router;
 use axum::extract::{Path, State};
 use axum::http::header::{COOKIE, SET_COOKIE, USER_AGENT};
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, patch, post};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use quietdeck_types::api::{AuthState, Ceremony, CeremonyFinish, PasskeyInfo, PasskeyRename, RegisterStart};
@@ -31,6 +31,7 @@ use webauthn_rs::prelude::{
 use crate::auth::{Owner, normalise_code, random_bytes, sha256_hex};
 use crate::db::{Db, now_ms, ts, ts_opt};
 use crate::error::{AppError, AppResult, bad};
+use crate::openapi::Id;
 use crate::state::AppState;
 
 pub const COOKIE_NAME: &str = "qd_auth";
@@ -84,16 +85,17 @@ impl Ceremonies {
     }
 }
 
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/api/auth/state", get(auth_state))
-        .route("/api/auth/register/start", post(register_start))
-        .route("/api/auth/register/finish", post(register_finish))
-        .route("/api/auth/login/start", post(login_start))
-        .route("/api/auth/login/finish", post(login_finish))
-        .route("/api/auth/logout", post(logout))
-        .route("/api/passkeys", get(list))
-        .route("/api/passkeys/{id}", patch(rename).delete(remove))
+/// Sign-in routes, without the `/api` prefix (`crate::openapi` mounts them with the rest of the API).
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/auth/state", get(auth_state))
+        .api_route("/auth/register/start", post(register_start))
+        .api_route("/auth/register/finish", post(register_finish))
+        .api_route("/auth/login/start", post(login_start))
+        .api_route("/auth/login/finish", post(login_finish))
+        .api_route("/auth/logout", post(logout))
+        .api_route("/passkeys", get(list))
+        .api_route("/passkeys/{id}", patch(rename).delete(remove))
 }
 
 /// The cookie's value, when the request has one.
@@ -373,7 +375,7 @@ async fn list(State(state): State<AppState>, owner: Owner) -> AppResult<Json<Vec
 async fn rename(
     State(state): State<AppState>,
     _owner: Owner,
-    Path(id): Path<i64>,
+    Path(Id { id }): Path<Id>,
     Json(req): Json<PasskeyRename>,
 ) -> AppResult<()> {
     garde::Validate::validate(&req).map_err(bad)?;
@@ -390,7 +392,7 @@ async fn rename(
 
 /// Remove a passkey and sign out every browser that used it. The last one stays: without it, only a setup code
 /// gets back in.
-async fn remove(State(state): State<AppState>, _owner: Owner, Path(id): Path<i64>) -> AppResult<()> {
+async fn remove(State(state): State<AppState>, _owner: Owner, Path(Id { id }): Path<Id>) -> AppResult<()> {
     let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM passkeys").fetch_one(&state.db).await?;
     if count.0 <= 1 {
         return Err(AppError::Conflict("that's the only passkey: add another before removing it".into()));

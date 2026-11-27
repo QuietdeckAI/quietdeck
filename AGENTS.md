@@ -26,6 +26,20 @@ Release images build on docspring-dev too: `scripts/build-images --wait <commit>
 A Mac has no release binary: its node is built on the Mac itself with `scripts/install-node-from-source <commit>`
 (release build only, in `~/.cache/quietdeck-node-build`, a temporary worktree), the one other Rust build allowed there.
 
+## Adding an API route
+
+The deck's API is published as an OpenAPI spec (`api/openapi.json`, served at `/api/v1/openapi.json`), generated
+from the handlers by aide, so every route must be visible to it:
+
+- Add it in `api.rs` (or `passkeys.rs`) with `.api_route("/path", post(handler))`, without the `/api` prefix (it's
+  mounted at `/api/v1` and `/api`). A plain `.route` is invisible to the spec, and a test fails on one.
+- Give it a line in `OPERATIONS` in `crates/quietdeck-server/src/openapi.rs`: operationId (the handler's name), tag,
+  one-line summary; `ui("report", …)` for what only the default web app uses. A test fails until it has one.
+- Path parameters are named structs: `Path(Id { id }): Path<Id>` (also `TextId`, `NodeName`). A bare `Path<i64>`
+  drops the parameter from the spec. Query structs and body types derive `JsonSchema`.
+- Within v1, change the API only additively (`api/README.md`); raise `API_VERSION`'s minor version when you add.
+- Run `scripts/on-dev test`, which rewrites `api/openapi.json`, and commit it: CI fails when it differs from the code.
+
 ## Watching CI
 
 Pushing main deploys the deck, and CI takes about 15 minutes. Watch it with
