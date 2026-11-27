@@ -1,0 +1,66 @@
+{
+  "sendAs": [
+    {
+      "displayName": "Alice Example",
+      "isDefault": true,
+      "isPrimary": true,
+      "replyToAddress": "alice@example.com",
+      "sendAsEmail": "alice@example.com"
+    },
+    {
+      "displayName": "Alice Example",
+      "sendAsEmail": "frank@example.com",
+      "smtpMsa": {
+        "host": "smtp.example.com",
+        "port": 587,
+        "securityMode": "starttls"
+      },
+      "treatAsAlias": true,
+      "verificationStatus": "accepted"
+    },
+    {
+      "displayName": "Alice Example",
+      "sendAsEmail": "grace@example.com",
+      "smtpMsa": {
+        "host": "smtp.example.com",
+        "port": 587,
+        "securityMode": "starttls"
+      },
+      "treatAsAlias": true,
+      "verificationStatus": "accepted"
+    },
+    {
+      "displayName": "Alice Example",
+      "sendAsEmail": "heidi@example.com",
+      "smtpMsa": {
+        "host": "smtp.example.com",
+        "port": 587,
+        "securityMode": "starttls"
+      },
+      "treatAsAlias": true,
+      "verificationStatus": "accepted"
+    },
+    {
+      "displayName": "Alice Example",
+      "sendAsEmail": "ivan@example.com",
+      "smtpMsa": {
+        "host": "smtp.example.com",
+        "port": 587,
+        "securityMode": "starttls"
+      },
+      "treatAsAlias": true,
+      "verificationStatus": "accepted"
+    },
+    {
+      "displayName": "Alice Example",
+      "sendAsEmail": "judy@example.com",
+      "smtpMsa": {
+        "host": "smtp.example.com",
+        "port": 587,
+        "securityMode": "starttls"
+      },
+      "treatAsAlias": true,
+      "verificationStatus": "accepted"
+    }
+  ]
+}

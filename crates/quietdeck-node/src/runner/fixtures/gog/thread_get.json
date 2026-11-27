@@ -1,0 +1,66 @@
+{
+  "downloaded": null,
+  "thread": {
+    "historyId": "28605522",
+    "id": "1a1f37b62f43d035",
+    "messages": [
+      {
+        "historyId": "28602511",
+        "id": "1a1f37b62f43d035",
+        "internalDate": "1795086307000",
+        "labelIds": [
+          "IMPORTANT",
+          "CATEGORY_PERSONAL"
+        ],
+        "payload": {
+          "mimeType": "text/plain",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Dave Example <dave@example.com>"
+            },
+            {
+              "name": "To",
+              "value": "erin@example.com"
+            },
+            {
+              "name": "Subject",
+              "value": "Subject 4"
+            }
+          ]
+        },
+        "sizeEstimate": 11311,
+        "snippet": "Snippet 4",
+        "threadId": "1a1f37b62f43d035"
+      },
+      {
+        "historyId": "28605522",
+        "id": "1a1fbfaeb24d41ab",
+        "internalDate": "1795228887000",
+        "labelIds": [
+          "SENT"
+        ],
+        "payload": {
+          "mimeType": "text/plain",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Alice Example <alice@example.com>"
+            },
+            {
+              "name": "To",
+              "value": "dave@example.com"
+            },
+            {
+              "name": "Subject",
+              "value": "Re: Subject 4"
+            }
+          ]
+        },
+        "sizeEstimate": 865,
+        "snippet": "Snippet 5",
+        "threadId": "1a1f37b62f43d035"
+      }
+    ]
+  }
+}
