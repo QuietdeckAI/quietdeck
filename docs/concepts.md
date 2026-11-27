@@ -22,7 +22,7 @@ they differ, it says so.
 ## Cards
 
 A card is one proposal, usually for one email thread: what the email is, why the agent proposes what it does, the
-newest message's own words, and a list of **actions** (archive, label, mark read, save a draft reply; in the full deck
+newest message's own words, and a list of **actions** (archive, label, mark read, mark as not spam, save a draft reply; in the full deck
 also forward to another agent, start a session, create a story or task). A card does nothing until it's approved.
 
 Posting a card for the same thread again replaces the open one, so the agent can update a proposal as often as it
