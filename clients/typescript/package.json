@@ -1,0 +1,30 @@
+{
+  "name": "@quietdeck/client",
+  "version": "1.0.0",
+  "description": "A typed client for a Quietdeck deck's API (/api/v1), generated from api/openapi.json",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "generate": "openapi-typescript ../../api/openapi.json --output src/schema.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm generate && git diff --exit-code -- src/schema.ts && pnpm version-matches && pnpm typecheck",
+    "version-matches": "node -e \"const v=JSON.parse(require('fs').readFileSync('../../api/openapi.json','utf8')).info.version;if(!require('fs').readFileSync('src/index.ts','utf8').includes('API_VERSION = \\\"'+v+'\\\"')){console.error('src/index.ts API_VERSION isn\\'t the spec\\'s '+v);process.exit(1)}\""
+  },
+  "dependencies": {
+    "openapi-fetch": "0.17.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  },
+  "packageManager": "pnpm@10.18.3"
+}

@@ -39,6 +39,8 @@ from the handlers by aide, so every route must be visible to it:
   drops the parameter from the spec. Query structs and body types derive `JsonSchema`.
 - Within v1, change the API only additively (`api/README.md`); raise `API_VERSION`'s minor version when you add.
 - Run `scripts/on-dev test`, which rewrites `api/openapi.json`, and commit it: CI fails when it differs from the code.
+  Then `pnpm install && pnpm generate` in `clients/typescript` and commit `src/schema.ts` (and `API_VERSION` in
+  `src/index.ts` when the spec's version moved): CI checks that too.
 
 ## Watching CI
 

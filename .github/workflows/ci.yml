@@ -44,6 +44,26 @@ jobs:
       - name: The OpenAPI spec is valid
         run: npx -y @redocly/cli@2.77.0 lint api/openapi.json --config api/redocly.yaml
 
+  # The TypeScript client (clients/typescript) is generated from api/openapi.json: it must match the spec and
+  # type-check.
+  client:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: clients/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: clients/typescript/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.node-version
+          cache: pnpm
+          cache-dependency-path: clients/typescript/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
   web:
     runs-on: ubuntu-24.04
     defaults:
@@ -120,7 +140,7 @@ jobs:
   # forward: an older run finishing late, or a re-run of an old commit, never puts an older image back. Roll back by
   # reverting the deploy commit in the homeserver repo. deploy/README.md, "Continuous deployment".
   deploy:
-    needs: [rust, web, image]
+    needs: [rust, client, web, image]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
