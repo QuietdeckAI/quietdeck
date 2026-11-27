@@ -130,6 +130,15 @@ pub struct MailWatchConfig {
     pub inbox: Option<ToolSpec>,
     #[serde(default = "default_inbox_every")]
     pub inbox_every: String,
+    /// Reads one new message's headers and text, with `${message_id}`, as `{from, to, cc, subject, date, body}` (gog's
+    /// sanitised text: no HTML, no links). With it, each wake-up carries the new mail itself, capped, for an agent
+    /// that has no mail tools of its own (Quietdeck solo). Optional.
+    #[serde(default)]
+    pub message_text: Option<ToolSpec>,
+    /// Lists the inbox's newest messages (`{messages: [{id, threadId, labelIds}]}`), read once on the first check, so
+    /// an agent with no mail tools starts with what's already there. Optional.
+    #[serde(default)]
+    pub recent: Option<ToolSpec>,
 }
 
 /// One tool: an Executor app tool by path, a command that reads the input as JSON on stdin and prints JSON, or a
@@ -277,12 +286,16 @@ impl RunnerConfig {
                 drafts: None,
                 inbox: None,
                 inbox_every: default_inbox_every(),
+                message_text: None,
+                recent: None,
             });
         }
         if let Some(m) = &mut self.mail_watch {
             fill(&mut m.message, "message");
             fill(&mut m.drafts, "drafts");
             fill(&mut m.inbox, "inbox");
+            fill(&mut m.message_text, "message_text");
+            fill(&mut m.recent, "recent");
         }
     }
 
@@ -317,10 +330,17 @@ impl RunnerConfig {
             }
         }
         let mut specs: Vec<(String, &ToolSpec)> = self.tools.iter().map(|(t, s)| (format!("tools.{t}"), s)).collect();
-        let watch_extras = self.mail_watch.as_ref().map(|m| [&m.message, &m.drafts, &m.inbox]);
-        for (name, s) in ["mail_watch.message", "mail_watch.drafts", "mail_watch.inbox"]
-            .into_iter()
-            .zip(watch_extras.into_iter().flatten())
+        let watch_extras =
+            self.mail_watch.as_ref().map(|m| [&m.message, &m.drafts, &m.inbox, &m.message_text, &m.recent]);
+        for (name, s) in [
+            "mail_watch.message",
+            "mail_watch.drafts",
+            "mail_watch.inbox",
+            "mail_watch.message_text",
+            "mail_watch.recent",
+        ]
+        .into_iter()
+        .zip(watch_extras.into_iter().flatten())
         {
             if let Some(s) = s {
                 specs.push((name.to_string(), s));
