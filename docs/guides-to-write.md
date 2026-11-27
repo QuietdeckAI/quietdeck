@@ -73,6 +73,19 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
 
 ## The triage agent
 
+- **A local web app is not safe just because it's on localhost.** Quietdeck solo's deck has no passkeys, and any
+  page the person visits can post to `http://127.0.0.1:<port>` (CSRF: form posts and no-cors fetches carry no auth
+  but still act) or read it through DNS rebinding. So the deck checks every request's Host against its own loopback
+  address and port, signs a browser in only through a one-time link (`quietdeck-solo open`: 5 minutes, used up on
+  first visit) rather than trusting by address, needs its own Origin (or Referer) on anything that changes state, and
+  answers no CORS preflight, which is what keeps a page from sending a Bearer token cross-origin. Each refusal has a
+  test. Footgun: passkeys (webauthn-rs) refuse an IP address as the relying party, so the deck's public URL is
+  `http://localhost:<port>` while links use 127.0.0.1. Now: `crates/quietdeck-server/src/solo.rs` (27 November).
+- **"Text file busy" in tests that write a script and run it.** A test that writes a fake CLI and executes it at
+  once fails now and then under a parallel run: another thread's fork can hold the new file open for writing until
+  its exec, and the kernel refuses to run a file open for writing (ETXTBSY). The runner retries a spawn briefly on
+  that error, which also covers a CLI being upgraded in place. Now: `spawn` in
+  `crates/quietdeck-node/src/runner/gog.rs` (27 November).
 - **A headless agent limited to one CLI.** For Quietdeck solo, each message is one `claude -p` turn on the same
   conversation (`--resume=<id>`, the ID from `--output-format=json`'s result, kept in the state directory), the prompt
   on stdin. `--permission-mode=dontAsk` refuses whatever isn't allowed without a prompt nobody would answer,

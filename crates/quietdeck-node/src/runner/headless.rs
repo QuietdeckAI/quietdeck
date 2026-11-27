@@ -258,20 +258,19 @@ impl Turns {
         std::fs::create_dir_all(&cwd).map_err(|e| format!("{}: {e}", cwd.display()))?;
         let args = claude_args(&self.cfg, conversation);
         let bin = &self.cfg.bin;
-        let mut child = tokio::process::Command::new(bin)
-            .args(&args)
+        let mut cmd = tokio::process::Command::new(bin);
+        cmd.args(&args)
             .current_dir(&cwd)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| match e.kind() {
-                std::io::ErrorKind::NotFound => {
-                    format!("{bin} isn't installed or isn't on PATH (set runner.agent.headless.bin)")
-                }
-                _ => format!("{bin}: {e}"),
-            })?;
+            .kill_on_drop(true);
+        let mut child = super::gog::spawn(&mut cmd).await.map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => {
+                format!("{bin} isn't installed or isn't on PATH (set runner.agent.headless.bin)")
+            }
+            _ => format!("{bin}: {e}"),
+        })?;
         // The turn is the agent until this goes out of scope: when the child exits, times out or this future is
         // dropped (which kills the child too).
         let _registration =

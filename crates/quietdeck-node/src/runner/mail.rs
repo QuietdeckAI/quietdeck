@@ -36,6 +36,9 @@ pub struct MailState {
     /// The last check in which every account was read.
     #[serde(default)]
     pub ok_at: Option<Timestamp>,
+    /// What went wrong in the last check, per account, when something did.
+    #[serde(default)]
+    pub error: Option<String>,
     #[serde(default)]
     pub woke_at: Option<Timestamp>,
     /// New chat messages since the last wake-up (Matrix and the like), per room as "source\troom name". The deck
@@ -275,6 +278,7 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
     let started = Timestamp::now();
     state.checked_at = Some(started);
     let mut all_read = true;
+    let mut errors: Vec<String> = vec![];
     for (id, account) in &cfg.accounts {
         let acct = json!({"id": id, "address": account.address, "label": cfg.account_label(id)});
         let mut acct = acct;
@@ -290,7 +294,10 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
                 }
                 Err(e) => {
                     all_read = false;
-                    tracing::warn!(account = %id, error = %e, "reading the mailbox's history ID");
+                    {
+                        errors.push(format!("{}: {e}", cfg.account_label(id)));
+                        tracing::warn!(account = %id, error = %e, "reading the mailbox's history ID");
+                    }
                 }
             }
             continue;
@@ -305,7 +312,10 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
             let input = match render(&watch.history.input, &ctx) {
                 Ok(i) => i,
                 Err(e) => {
-                    tracing::warn!(account = %id, error = %e, "runner.mail_watch.history input");
+                    {
+                        errors.push(format!("{}: {e}", cfg.account_label(id)));
+                        tracing::warn!(account = %id, error = %e, "runner.mail_watch.history input");
+                    }
                     failed = true;
                     break;
                 }
@@ -366,13 +376,19 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
                             state.history.insert(id.clone(), h);
                             state.add(id, None);
                         }
-                        Err(e) => tracing::warn!(account = %id, error = %e, "reading the mailbox's history ID"),
+                        Err(e) => {
+                            errors.push(format!("{}: {e}", cfg.account_label(id)));
+                            tracing::warn!(account = %id, error = %e, "reading the mailbox's history ID")
+                        }
                     }
                     failed = true;
                     break;
                 }
                 Err(e) => {
-                    tracing::warn!(account = %id, error = %e, "reading the mailbox's history");
+                    {
+                        errors.push(format!("{}: {e}", cfg.account_label(id)));
+                        tracing::warn!(account = %id, error = %e, "reading the mailbox's history");
+                    }
                     failed = true;
                     break;
                 }
@@ -407,6 +423,7 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
     if all_read {
         state.ok_at = Some(started);
     }
+    state.error = (!errors.is_empty()).then(|| errors.join("; "));
     Checked { new: found, left: left_found }
 }
 
@@ -497,8 +514,10 @@ mod tests {
         state.history.insert("personal".into(), "1".into());
         check(&cfg, &watch, &tools, &mut state).await;
         assert!(state.checked_at.is_some() && state.ok_at.is_none(), "a failed account isn't a good check");
+        assert_eq!(state.error.as_deref(), Some("Personal: gog isn't signed in"));
         check(&cfg, &watch, &tools, &mut state).await;
         assert_eq!(state.ok_at, state.checked_at);
+        assert_eq!(state.error, None, "a good check clears it");
     }
 
     #[tokio::test]

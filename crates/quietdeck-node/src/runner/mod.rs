@@ -725,6 +725,7 @@ impl Runner {
         let health = quietdeck_types::node::RunnerHealth {
             mail_ok_at: state.ok_at,
             mail_checked_at: state.checked_at,
+            mail_error: state.error.clone(),
             agent_ok_at: turns.as_ref().and_then(|t| t.ok_at),
             agent_failed_at: turns.as_ref().and_then(|t| t.failed.as_ref().map(|f| f.0)),
             agent_error: turns.and_then(|t| t.failed.map(|f| f.1)),

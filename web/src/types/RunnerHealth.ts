@@ -13,6 +13,10 @@ mail_ok_at: string | null,
  */
 mail_checked_at: string | null, 
 /**
+ * What went wrong in the last check ("Personal: gog isn't installed…"), when something did.
+ */
+mail_error: string | null, 
+/**
  * A headless agent's last turn that ended well, and its last failure since then. None for an agent in a tab,
  * whose turns the runner doesn't see.
  */

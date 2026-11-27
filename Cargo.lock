@@ -4037,6 +4037,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "quietdeck-solo"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "quietdeck-node",
+ "quietdeck-server",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "yaml_serde",
+]
+
+[[package]]
 name = "quietdeck-types"
 version = "0.1.0"
 dependencies = [

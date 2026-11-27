@@ -275,19 +275,18 @@ impl Gog {
 
     async fn run(&self, args: &[String], stdin: Option<&[u8]>, timeout: Duration) -> Result<Output, String> {
         let bin = &self.bin;
-        let mut child = tokio::process::Command::new(bin)
-            .args(args)
+        let mut cmd = tokio::process::Command::new(bin);
+        cmd.args(args)
             .stdin(if stdin.is_some() { std::process::Stdio::piped() } else { std::process::Stdio::null() })
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| match e.kind() {
-                std::io::ErrorKind::NotFound => {
-                    format!("{bin} isn't installed or isn't on PATH (set runner.gog.bin to its full path)")
-                }
-                _ => format!("{bin}: {e}"),
-            })?;
+            .kill_on_drop(true);
+        let mut child = spawn(&mut cmd).await.map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => {
+                format!("{bin} isn't installed or isn't on PATH (set runner.gog.bin to its full path)")
+            }
+            _ => format!("{bin}: {e}"),
+        })?;
         if let (Some(data), Some(mut pipe)) = (stdin, child.stdin.take()) {
             pipe.write_all(data).await.map_err(|e| format!("{bin}: {e}"))?;
             drop(pipe);
@@ -301,6 +300,21 @@ impl Gog {
             stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
         })
+    }
+}
+
+/// Spawn, trying again briefly when the program is busy being written ("Text file busy"): an upgrade of the CLI
+/// in progress, or a script another thread has just written while a third forks.
+pub(super) async fn spawn(cmd: &mut tokio::process::Command) -> std::io::Result<tokio::process::Child> {
+    let mut tries = 0;
+    loop {
+        match cmd.spawn() {
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && tries < 20 => {
+                tries += 1;
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            other => return other,
+        }
     }
 }
 
@@ -586,7 +600,7 @@ exit $(cat "$dir/$op.exit" 2>/dev/null || echo 0)
         std::fs::write(p.join("raw_m1.json"), r#"{"id":"m1","threadId":"t1","labelIds":["INBOX","UNREAD"]}"#).unwrap();
         std::fs::write(p.join("raw_m2.exit"), "5").unwrap();
         let gog = fake_gog(p);
-        let v = gog.call("history", &json!({"account": "me@example.com", "since": "100"})).await.unwrap();
+        let v = gog.call("history", &json!({"account": "me@example.com", "since": "100"})).await.expect("history");
         assert_eq!(
             v,
             json!({"historyId": "120", "history": [{"messagesAdded": [

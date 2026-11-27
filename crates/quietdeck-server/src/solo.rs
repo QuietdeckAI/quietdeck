@@ -283,6 +283,9 @@ pub fn assess(
                 None if h.mail_checked_at.is_some() => problems.push("mail hasn't been read yet".to_string()),
                 _ => {}
             }
+            if let Some(e) = &h.mail_error {
+                problems.push(format!("the last mail check failed: {e}"));
+            }
             if let Some(failed) = h.agent_failed_at {
                 let why = h.agent_error.as_deref().unwrap_or("no reason given");
                 problems.push(format!("the agent's last turn failed {} minutes ago: {why}", age(failed) / 60));

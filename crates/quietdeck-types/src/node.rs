@@ -35,6 +35,9 @@ pub struct RunnerHealth {
     /// The last mail check, whatever happened.
     #[ts(type = "string | null")]
     pub mail_checked_at: Option<Timestamp>,
+    /// What went wrong in the last check ("Personal: gog isn't installed…"), when something did.
+    #[serde(default)]
+    pub mail_error: Option<String>,
     /// A headless agent's last turn that ended well, and its last failure since then. None for an agent in a tab,
     /// whose turns the runner doesn't see.
     #[ts(type = "string | null")]
