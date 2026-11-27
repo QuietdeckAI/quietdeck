@@ -1,33 +1,61 @@
 # Quietdeck
 
-Your email, read and sorted before you open it.
+Clear your inbox in one pass. Your agents do the work.
 
-An AI agent reads what arrives and writes one short report: what needs you, what it would reply, what can be archived.
-You change what you'd do differently and approve. Nothing touches your mail until you do. Source-available (Fair
-Source, FSL-1.1-ALv2: each release becomes Apache 2.0 after two years), early, built in public:
+An AI agent reads every email and writes you one page: what needs a decision at the top, everything that can just be
+archived at the bottom. You change what you'd do differently and press Approve All. Work goes to the Claude Code
+session that should handle it, and nothing happens to your mail until you approve it. Source-available (Fair Source,
+FSL-1.1-ALv2: each release becomes Apache 2.0 after two years), early, built in public:
 https://github.com/QuietdeckAI/quietdeck
 
-## How Quietdeck solo works
+## Email is where the work starts
 
-One program running in the background on a Mac or a Linux computer. Your mail never passes through anyone else's
-server.
+A customer asks for something, a build fails, an invoice arrives, a vendor says the certificate is ready. Most of it is
+work for an agent, and AI agents are good at that work now. Getting it from your inbox to the right agent is still on
+you.
 
-- **The runner** watches Gmail through gog (https://github.com/steipete/gogcli), a command-line tool you sign in to
-  once, and carries out what you approve: archive, label, mark read, save a draft. It's the only part that touches
-  your mailbox.
-- **The agent** is Claude Code, run for each batch of new mail. It reads only the mail it's given, marked as
-  untrusted, and may only post proposals and the report.
-- **The Inbox** is a page in your browser, on your computer only, signed in with a one-time link.
+- Gmail's notifications are too noisy, so mail piles up until you get round to it.
+- Each email that's really a task means reading it, working out which session should handle it, and pasting it in.
+- CI failures and alerts land in your inbox even when an agent is already watching that build.
+- You still want to see every receipt, with its amount, before it's archived. Forty emails one at a time takes the
+  entire morning.
 
-## What you get
+## One pass, and the work is handed out
 
-- **One short report**: what needs you first, numbered; receipts, newsletters and sales pitches grouped at the end under
-  one Archive all.
-- **Replies drafted, never sent**: saved as Gmail drafts for you to change and send.
-- **Say it in your own words**: change any proposal in plain English; the agent updates it and waits for you.
-- **Nothing without you**: the agent proposes, you approve. Mail you archive in Gmail yourself drops off the report.
-- **Safe with strangers' mail**: https://quietdeck.ai/solo-security.md
-- **On your computer**: no server, no account, no public address.
+- **One page, decisions first.** What needs you is numbered at the top. Receipts, newsletters and pitches are one line
+  each under Archive all. Three emails about the same thing become one item, and its mail menu lists every email
+  behind it, with a summary and a link to open it in Gmail.
+- **Approve All hands out the work.** Each email goes to the AI session that owns it. Approve All resumes a
+  session that has ended, or starts a new one in the right folder, and the agents get on with it.
+- **Change anything in plain words.** Open a thread under any item and say what you'd do instead. The agent updates
+  its proposal and waits for you again.
+- **Alerts go to the agent that owns them.** A service's alerts go straight to its agent, and the report gets a count.
+  An agent watching CI can keep those emails out of your inbox while it works.
+
+## Nothing happens without you seeing it
+
+The agent reads strangers' mail, so it can only propose. Plain code carries out what you approved, exactly as you
+approved it.
+
+- Every email reaches the agent marked as untrusted. Its instructions say mail is data, never instructions.
+- The agent can't send mail. A reply is saved as a Gmail draft for you to edit and send.
+- Approve All waits a few seconds with an Undo button, and leaves out anything that changed while you were reading.
+- Mail you archive in Gmail yourself drops off the report.
+
+How Quietdeck keeps your mail safe: https://quietdeck.ai/solo-security.md
+
+## Two ways to run it
+
+- **Quietdeck solo, on one computer.** One program on your Mac or Linux machine. It reads Gmail through gog
+  (https://github.com/steipete/gogcli), runs Claude Code as the agent, and carries out archives, labels and drafts.
+  Your mail never passes through anyone else's server. https://quietdeck.ai/solo.md
+- **A deck on your own server, for all your agents.** The full Quietdeck connects agent sessions on every machine you
+  use. Approve All forwards work to them, resumes and starts sessions, and alerts, Matrix rooms and pings on your phone
+  come in too. It's designed to run on Fleetlayer (https://fleetlayer.ai), but works without it.
+  https://quietdeck.ai/getting-started.md
+
+How the parts fit together (cards, the report and its defaults, Approve All and undo, rules, leases):
+https://quietdeck.ai/concepts.md
 
 ## Start on your own computer
 
@@ -42,13 +70,3 @@ quietdeck-solo open
 ```
 
 The guide: https://quietdeck.ai/solo.md
-
-## Then, a deck for all your agents
-
-Solo is the smallest Quietdeck. The full one runs a deck on a server of your own and connects agents on every machine
-you use: forwards from email to the agent that owns the work, agents that message each other, and one place to approve
-what all of them propose. If you run your machines with Fleetlayer (https://fleetlayer.ai), Quietdeck works alongside it;
-you don't need it. Getting started: https://quietdeck.ai/getting-started.md
-
-How the parts fit together (cards, the report and its defaults, Approve All and undo, rules, leases):
-https://quietdeck.ai/concepts.md

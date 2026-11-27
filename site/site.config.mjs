@@ -7,7 +7,7 @@ export const site = {
   url: "https://quietdeck.ai",
   title: "Quietdeck",
   summary:
-    "Quietdeck is an inbox for you and your AI agents: an agent triages your email into one short report, drafts replies and proposes what to archive, and nothing happens until you approve it. Start with Quietdeck solo on your own computer, with your Gmail and Claude Code. Source-available (Fair Source, FSL-1.1-ALv2), self-hosted.",
+    "Quietdeck turns your inbox into one page you clear in a single pass: an AI agent sorts every email into decisions and things to archive, drafts replies, and proposes which Claude Code session should do the work. Nothing happens until you approve it. Start with Quietdeck solo on your own computer, with your Gmail and Claude Code. Source-available (Fair Source, FSL-1.1-ALv2), self-hosted.",
   // Working files that stay in the repo only. An entry ending in "/" leaves out a whole folder.
   unpublished: ["guides-to-write", "drafts/"],
 };

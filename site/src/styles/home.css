@@ -704,3 +704,109 @@ main > section {
     transition-duration: 0ms !important;
   }
 }
+
+/* Homepage v2: the Inbox shown full width under the hero copy, then one column of argument. */
+.hero--stack {
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-items: start;
+}
+.hero--stack h1 {
+  max-width: 20ch;
+}
+.hero--stack .lede {
+  max-width: 44rem;
+}
+.hero--stack > .mock {
+  max-width: 56rem;
+}
+.pain,
+.fixes,
+.feature,
+.safe,
+.runs {
+  padding-block: var(--space-3xl);
+  border-top: var(--rule-hair) solid var(--color-rule);
+}
+.pain h2,
+.fixes h2,
+.feature h2,
+.safe h2,
+.runs h2 {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  margin-bottom: var(--space-md);
+}
+.pain > p,
+.safe > p,
+.feature__copy p {
+  max-width: var(--measure);
+  font-size: var(--text-lg);
+}
+.pain ul,
+.safe ul {
+  margin: var(--space-lg) 0 0;
+  padding-left: 1.2rem;
+  max-width: var(--measure);
+}
+.pain li + li,
+.safe li + li {
+  margin-top: var(--space-xs);
+}
+.safe__more {
+  margin-top: var(--space-lg);
+}
+.fixes__list {
+  list-style: none;
+  margin: var(--space-xl) 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-md);
+}
+.fixes__list li,
+.runs__card {
+  background: var(--color-paper-2);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+}
+.fixes__was {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+  margin-bottom: var(--space-sm);
+}
+.fixes__list .fixes__was {
+  text-decoration: line-through;
+}
+.fixes__list h3,
+.runs__card h3 {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  margin-bottom: var(--space-xs);
+}
+.feature {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-xl);
+}
+.feature > .mock {
+  max-width: 48rem;
+}
+.runs__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+}
+.runs__card p + p {
+  margin-top: var(--space-md);
+}
+
+@media (min-width: 48rem) {
+  .fixes__list,
+  .runs__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

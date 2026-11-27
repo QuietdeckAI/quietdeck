@@ -1,0 +1,272 @@
+/* The Inbox, rebuilt in HTML with made-up mail, to show on the homepage. Styled after the real web app (web/src),
+ * always in its dark theme, like a screenshot. Not interactive. */
+.mock {
+  --m-bg: oklch(15.5% 0.012 250);
+  --m-panel: oklch(19% 0.014 250);
+  --m-panel-2: oklch(23% 0.016 250);
+  --m-rule: oklch(31% 0.018 250);
+  --m-ink: oklch(95% 0.006 243);
+  --m-ink-2: oklch(84% 0.01 244);
+  --m-muted: oklch(66% 0.014 245);
+  --m-accent: oklch(78% 0.085 240);
+  --m-ok: oklch(68% 0.14 150);
+  --m-chip: oklch(25% 0.03 245);
+  margin: 0;
+  background: var(--m-bg);
+  color: var(--m-ink-2);
+  border: 1px solid var(--m-rule);
+  border-radius: var(--radius-md);
+  box-shadow: 0 24px 60px -30px oklch(10% 0.02 250 / 0.55);
+  overflow: hidden;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  text-align: left;
+}
+.mock__nav {
+  display: flex;
+  align-items: baseline;
+  gap: 1.5rem;
+  padding: 0.85rem 1.5rem;
+  border-bottom: 1px solid var(--m-rule);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.mock__brand {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  color: var(--m-ink);
+  margin-right: 1rem;
+}
+.mock__tab {
+  color: var(--m-muted);
+  font-size: 0.875rem;
+}
+.mock__tab--on {
+  color: var(--m-ink);
+  box-shadow: 0 2px 0 var(--m-accent);
+}
+.mock__count {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--m-panel-2);
+  font-size: 0.75rem;
+}
+.mock__body {
+  padding: 1.25rem 1.5rem 1rem;
+}
+.mock h4 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  color: var(--m-ink);
+  font-size: 1.75rem;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.75rem;
+}
+.mock h5 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  color: var(--m-ink);
+  font-size: 1.125rem;
+  margin: 1.25rem 0 0.35rem;
+}
+.mock ol,
+.mock ul {
+  margin: 0;
+  padding-left: 1.4rem;
+}
+.mock li + li {
+  margin-top: 0.85rem;
+}
+.mock ul li + li {
+  margin-top: 0.3rem;
+}
+.mock b {
+  color: var(--m-ink);
+  font-weight: 600;
+}
+.mock code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--m-accent);
+  background: var(--m-chip);
+  padding: 0.05rem 0.35rem;
+  border: 0;
+  border-radius: 4px;
+}
+.mock__default {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--m-panel);
+  border: 1px solid var(--m-rule);
+  border-radius: 7px;
+  color: var(--m-ink);
+}
+.mock__default > span:not(.mock__icons) {
+  flex: 1;
+  min-width: 0;
+}
+.mock__icons {
+  display: flex;
+  gap: 0.65rem;
+  color: var(--m-muted);
+  flex: none;
+}
+.mock__icons svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  display: block;
+}
+.mock__icons .on {
+  color: var(--m-ink);
+}
+.mock__done {
+  color: var(--m-ok);
+}
+.mock__more {
+  color: var(--m-muted);
+  margin-top: 0.5rem;
+}
+.mock__bar {
+  display: flex;
+  gap: 0.6rem;
+  align-items: stretch;
+  padding: 0.75rem 1.5rem;
+  border-top: 1px solid var(--m-rule);
+  background: var(--m-bg);
+}
+.mock__state,
+.mock__input,
+.mock__approve {
+  border-radius: 7px;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+.mock__state {
+  border: 1px solid var(--m-rule);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.mock__state::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--m-ok);
+}
+.mock__input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--m-rule);
+  color: var(--m-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mock__approve {
+  background: var(--m-accent);
+  color: oklch(18% 0.02 250);
+  font-weight: 600;
+}
+
+/* A thread under one default. */
+.mock__thread {
+  margin-top: 0.5rem;
+  border: 1px solid var(--m-rule);
+  border-radius: 7px;
+  background: var(--m-panel);
+  padding: 0.6rem 0.75rem 0.75rem;
+}
+.mock__thread .mock__default {
+  margin: 0 0 0.6rem;
+  padding: 0 0 0.6rem;
+  border: 0;
+  border-bottom: 1px solid var(--m-rule);
+  border-radius: 0;
+}
+.mock__msg {
+  max-width: 85%;
+  padding: 0.45rem 0.75rem;
+  border-radius: 8px;
+  background: var(--m-panel-2);
+  color: var(--m-ink);
+}
+.mock__msg--you {
+  margin-left: auto;
+}
+.mock__who {
+  font-size: 0.75rem;
+  color: var(--m-muted);
+  margin: 0.2rem 0 0.6rem;
+}
+.mock__who--you {
+  text-align: right;
+}
+.mock__reply {
+  border: 1px solid var(--m-accent);
+  border-radius: 7px;
+  padding: 0.4rem 0.75rem;
+  color: var(--m-muted);
+  font-size: 0.875rem;
+}
+
+/* The mail menu: every email behind one item. */
+.mock__menu {
+  margin: 0.5rem 0 0 auto;
+  width: min(100%, 26rem);
+  border: 1px solid var(--m-rule);
+  border-radius: 8px;
+  background: var(--m-panel);
+  box-shadow: 0 16px 40px -20px oklch(5% 0.02 250 / 0.8);
+  padding: 0.35rem 0;
+  font-size: 0.875rem;
+}
+.mock__menu-head {
+  padding: 0.35rem 0.85rem 0.5rem;
+  color: var(--m-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mock__mail {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.85rem;
+  border-top: 1px solid var(--m-rule);
+}
+.mock__mail b {
+  display: block;
+}
+.mock__mail small {
+  color: var(--m-muted);
+  font-size: 0.8125rem;
+}
+.mock__mail i {
+  color: var(--m-muted);
+  font-style: normal;
+  flex: none;
+}
+
+@media (max-width: 40rem) {
+  .mock {
+    font-size: 0.875rem;
+  }
+  .mock__body,
+  .mock__bar,
+  .mock__nav {
+    padding-inline: 0.9rem;
+  }
+  .mock__tab:nth-of-type(n + 4) {
+    display: none;
+  }
+  .mock__state {
+    display: none;
+  }
+}
