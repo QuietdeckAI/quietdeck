@@ -73,6 +73,16 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
 
 ## The triage agent
 
+- **Giving an agent with no mail tools the mail itself.** Quietdeck solo's agent can only run quietdeck commands, so
+  the runner reads each new message (gog's `--sanitize-content`: no HTML, no links) and puts it in the wake-up between
+  `<email>` tags, each message cut at 3,000 characters, at most 25 per wake-up, headers flattened to one line with
+  `<` and `>` replaced, and any `</email` in the text broken so it can't close its tag. The untrusted-input line goes
+  above them. On the very first run, the inbox's 25 newest messages count as new, so the first round has something to
+  triage. Now: `mail_block` in `crates/quietdeck-node/src/runner/mod.rs`, `recent` in `mail.rs` (27 November).
+- **rust-embed serves nothing from a debug build on another machine.** The deck embeds the web app with rust-embed,
+  which embeds only in release builds: a debug build reads `web/dist` from the build machine's disk at runtime, so a
+  debug binary copied elsewhere shows "This build has no web app". Copy release builds. Found while setting up the
+  solo toast QA (27 November).
 - **A local web app is not safe just because it's on localhost.** Quietdeck solo's deck has no passkeys, and any
   page the person visits can post to `http://127.0.0.1:<port>` (CSRF: form posts and no-cors fetches carry no auth
   but still act) or read it through DNS rebinding. So the deck checks every request's Host against its own loopback

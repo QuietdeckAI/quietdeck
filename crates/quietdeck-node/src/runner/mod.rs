@@ -706,6 +706,17 @@ impl Runner {
                         state.sent.push(sent_line(&self.cfg.account_label(&m.account), &f, meta.as_ref()));
                     } else {
                         facts.push((m.account.clone(), f));
+                        if watch.message_text.is_some() {
+                            if state.mail_text.len() < MAIL_TEXT_MAX {
+                                state.mail_text.push(self.mail_block(watch, m).await);
+                            } else if state.mail_text.len() == MAIL_TEXT_MAX {
+                                state.mail_text.push(
+                                    "<more>Further new mail isn't included here, to keep this message short: it \
+                                     comes in later wake-ups once these are triaged.</more>"
+                                        .into(),
+                                );
+                            }
+                        }
                     }
                     if is_sent && let Some(meta) = meta {
                         sent.push(mail_item(&m.account, quietdeck_types::mail::MailKind::Sent, &m.id, meta));
@@ -833,6 +844,45 @@ impl Runner {
             Err(e) if e.contains("404") => Ok(None),
             Err(e) => Err(e),
         }
+    }
+
+    /// One new message as the agent reads it: who, what and when, then its text (sanitised by the tool, cut at
+    /// [`MAIL_TEXT_CHARS`]), between `<email>` tags the text can't close.
+    async fn mail_block(&self, watch: &config::MailWatchConfig, m: &mail::NewMail) -> String {
+        let label = self.cfg.account_label(&m.account);
+        let thread = m.thread_id.as_deref().unwrap_or("");
+        let open = format!("<email account=\"{label}\" thread=\"{thread}\" message=\"{}\">", m.id);
+        let Some(spec) = &watch.message_text else { return format!("{open}\n</email>") };
+        let read = match self.account_ctx(&m.account) {
+            Some(acct) => match tools::render(&spec.input, &json!({"account": acct, "message_id": m.id})) {
+                Ok(input) => self.tools.call(spec, input).await,
+                Err(e) => Err(e),
+            },
+            None => Err(format!("account {} isn't in the runner's config", m.account)),
+        };
+        let v = match read {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(account = %m.account, error = %e, "reading a new message's text");
+                return format!("{open}\n(The runner couldn't read this message: {e})\n</email>");
+            }
+        };
+        let field = |k: &str| v.get(k).and_then(Value::as_str).filter(|s| !s.is_empty()).map(clean_line);
+        let mut out = open;
+        for (name, key) in [("From", "from"), ("To", "to"), ("Cc", "cc"), ("Subject", "subject"), ("Date", "date")] {
+            if let Some(val) = field(key) {
+                out.push_str(&format!("\n{name}: {val}"));
+            }
+        }
+        let body = v.get("body").and_then(Value::as_str).unwrap_or("").trim();
+        let mut text: String = body.chars().take(MAIL_TEXT_CHARS).collect();
+        if body.chars().count() > MAIL_TEXT_CHARS {
+            text.push_str(&format!("\n[… cut at {MAIL_TEXT_CHARS} characters]"));
+        }
+        out.push_str("\n\n");
+        out.push_str(&text.replace("</email", "</ email"));
+        out.push_str("\n</email>");
+        out
     }
 
     /// What's known about a new message without reading its body. None when it no longer exists.
@@ -1078,6 +1128,18 @@ fn derived_values(a: &Action, v: &mut Value) {
         v["agent_labels"] = json!([format!("agent:{tab}")]);
         v["agent_label_objects"] = json!([{"name": format!("agent:{tab}")}]);
     }
+}
+
+/// New messages whose text one wake-up carries; more are named as waiting.
+const MAIL_TEXT_MAX: usize = 25;
+/// Each message's text is cut here: enough to triage, never a whole newsletter.
+const MAIL_TEXT_CHARS: usize = 3000;
+
+/// A header value on one line, short, with nothing that could look like a tag.
+fn clean_line(s: &str) -> String {
+    let one: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let one = one.replace('<', "‹").replace('>', "›");
+    if one.chars().count() > 300 { one.chars().take(300).collect::<String>() + "…" } else { one }
 }
 
 fn story_number(id: &str) -> Option<u64> {
