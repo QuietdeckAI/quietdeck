@@ -64,6 +64,7 @@ An error answers `ApiError` (`{"error": "…"}`) with a 4xx or 5xx status:
 | 422 | A request the deck refused |
 | 503 | The deck can't do it right now |
 
-A JSON body that doesn't parse at all gets a plain-text 400, 415 or 422 before the deck sees it.
+A request the deck can't read at all (a body that isn't JSON, or the wrong content type) gets the same `ApiError`
+shape, with 400, 415 or 422.
 
 [How Quietdeck works](concepts.md) explains cards, decisions and the rest of what the API works with.
