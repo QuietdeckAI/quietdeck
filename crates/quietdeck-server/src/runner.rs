@@ -164,12 +164,12 @@ async fn answer_inner(state: &AppState, node: &str, request: NodeRequest) -> App
             state.changed(Changed::Cards);
             Reply::ok(&r)
         }
-        NodeRequest::Relay { to, kind, body } => {
-            match crate::relay::send(&state.db, &state.hub, &to, kind, body).await {
-                Ok(d) => Reply::ok(&d),
-                Err(e) => Reply::Err { error: e.to_string() },
-            }
-        }
+        NodeRequest::Relay { to, .. } => Reply::Err {
+            error: format!(
+                "the deck no longer relays messages: forwarding to {to} needs Fleetlayer's plugin on this machine \
+                 (quietdeck-node fleetlayer-plugin)"
+            ),
+        },
         NodeRequest::StartSession { spec } => Reply::ok(&crate::control::start(state, &caller, spec).await?),
         NodeRequest::HoldCheck { items } => Reply::ok(&crate::reading::hold_check(&state.db, &items).await?),
         NodeRequest::MailSent { items } => {

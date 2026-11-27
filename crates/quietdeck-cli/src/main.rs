@@ -12,13 +12,10 @@ use clap::{Args, Parser, Subcommand};
 use quietdeck_types::api::{EnrolRequest, Enrolled};
 use quietdeck_types::card::{ActionRecord, ActionReport, ActionResult, CardInput, CardResolution, Released};
 use quietdeck_types::decision::ReportReceipt;
-use quietdeck_types::relay::MsgSend;
 use quietdeck_types::timeline::{TimelineAdd, TimelineKind};
 
 use crate::client::Client;
 
-/// `msg send`, end to end.
-const MSG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 /// Starting or resuming a session: the deck waits up to 150 seconds for the agent to come up.
 const SESSION_START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(160);
 
@@ -561,8 +558,8 @@ enum HandoffCommand {
 #[derive(Subcommand)]
 enum MsgCommand {
     /// Send a message to `tab` or `tab@node`. Fails at once when that session is offline, or when no session has
-    /// that name (the error suggests close names; `quietdeck sessions` lists them all). Where this machine runs a
-    /// Fleetlayer node it goes through Fleetlayer, as `fleetlayer msg send` would.
+    /// that name (the error suggests close names). It goes through this machine's Fleetlayer node, exactly as
+    /// `fleetlayer msg send` would.
     Send {
         #[arg(long)]
         to: String,
@@ -843,24 +840,15 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Command::Msg { command: MsgCommand::Send { to, text } } => {
             let text = read_arg(&text)?;
-            // Through Fleetlayer where this machine runs its node; the deck's relay otherwise.
-            if let Some(r) = fleetlayer::send(&fleetlayer::node_socket(), &to, &text).await {
-                return print::out(json, &r?, |_| format!("Delivered to {to}."));
-            }
-            // 5 seconds end to end: the token, the deck, and the deck's delivery to the session (4 seconds).
-            let send = async {
-                let c = Client::connect_with(MSG_TIMEOUT).await?;
-                let r: quietdeck_types::node::Delivered = c.post("/api/msg", &MsgSend { to: to.clone(), text }).await?;
-                anyhow::Ok(r)
-            };
-            let r = match tokio::time::timeout(MSG_TIMEOUT, send).await {
-                Ok(r) => r?,
-                Err(_) => anyhow::bail!(
-                    "not confirmed within {} seconds: the message may not have been delivered to {to}. Try again",
-                    MSG_TIMEOUT.as_secs()
+            // Through Fleetlayer's node on this machine: the deck no longer relays messages.
+            match fleetlayer::send(&fleetlayer::node_socket(), &to, &text).await {
+                Some(r) => print::out(json, &r?, |_| format!("Delivered to {to}.")),
+                None => anyhow::bail!(
+                    "messages to other sessions go through Fleetlayer, and no Fleetlayer node answers on {} \
+                     (`fleetlayer status` checks it)",
+                    fleetlayer::node_socket().display()
                 ),
-            };
-            print::out(json, &r, |_| format!("Delivered to {to}."))
+            }
         }
         Command::Timeline { command: TimelineCommand::Add { kind, text, account, refs, lease } } => {
             let c = Client::connect().await?;

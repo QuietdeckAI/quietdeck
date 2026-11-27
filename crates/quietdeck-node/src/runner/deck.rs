@@ -102,11 +102,13 @@ impl DeckApi for LinkDeck {
         self.ask(NodeRequest::ActionsReport { reports }, ASK).await
     }
     async fn relay(&self, to: String, kind: DeliveryKind, body: String) -> Result<Delivered, String> {
-        // Through Fleetlayer where it runs Quietdeck's plugin; the deck's relay otherwise (solo, older machines).
-        if let Some(sent) = crate::fleetlayer::send(&crate::fleetlayer::Outgoing::of(&to, &kind, &body, false)).await {
-            return sent.map_err(|e| e.to_string());
+        // Through Fleetlayer's plugin: the only way to another session now that the deck doesn't relay.
+        match crate::fleetlayer::send(&crate::fleetlayer::Outgoing::of(&to, &kind, &body, false)).await {
+            Some(sent) => sent.map_err(|e| e.to_string()),
+            None => Err(format!(
+                "forwarding to {to} needs Fleetlayer's plugin on this machine (quietdeck-node fleetlayer-plugin)"
+            )),
         }
-        self.ask(NodeRequest::Relay { to, kind, body }, ASK).await
     }
     async fn start_session(&self, spec: SessionStart) -> Result<SessionStarted, String> {
         self.ask(NodeRequest::StartSession { spec }, START).await

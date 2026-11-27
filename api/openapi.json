@@ -3080,27 +3080,6 @@
         ],
         "type": "object"
       },
-      "MsgSend": {
-        "description": "`quietdeck msg send --to \"<tab>[@<node>]\" \"<text>\"`.",
-        "properties": {
-          "text": {
-            "maxLength": 100000,
-            "minLength": 1,
-            "type": "string"
-          },
-          "to": {
-            "description": "`tab` or `tab@node`. The node is optional when the tab name is unique across nodes.",
-            "maxLength": 300,
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "required": [
-          "to",
-          "text"
-        ],
-        "type": "object"
-      },
       "NodeRow": {
         "description": "A node as the deck serves it.",
         "properties": {
@@ -8399,83 +8378,6 @@
           }
         ],
         "summary": "Read messages after the caller's last read, or after a message ID",
-        "tags": [
-          "messages"
-        ]
-      }
-    },
-    "/api/v1/msg": {
-      "post": {
-        "operationId": "msg_send",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MsgSend"
-              }
-            }
-          },
-          "description": "`quietdeck msg send --to \"<tab>[@<node>]\" \"<text>\"`.",
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Delivered"
-                }
-              }
-            },
-            "description": "Answers for deliveries and searches."
-          },
-          "400": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to parse the request body as JSON"
-          },
-          "415": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Expected request with `Content-Type: application/json`"
-          },
-          "422": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Failed to deserialize the JSON body into the target type"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "An error, with its message."
-          }
-        },
-        "security": [
-          {
-            "session": []
-          }
-        ],
-        "summary": "Send a message to a session by address",
         "tags": [
           "messages"
         ]
