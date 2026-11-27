@@ -96,24 +96,81 @@ const fn ui(
 
 /// The tags, in the reference's order, with what each covers.
 pub const TAGS: &[(&str, &str)] = &[
-    ("deck", "The deck itself: its version, settings and the live event stream."),
-    ("auth", "Passkey sign-in for the owner's browsers."),
-    ("nodes", "Machines enrolled with the deck, and the WebSocket their runners keep open."),
-    ("cards", "Cards: what an agent proposes, one per thread, each with its versions and actions."),
-    ("decisions", "The owner's decisions on cards, the undo window, Stop, and the runner taking approved work."),
-    ("actions", "The runner carrying approved actions out and reporting the results."),
-    ("inbox", "The Inbox and Later views, and the mail tabs' lists."),
-    ("timeline", "The timeline of automatic actions, History, comments, pings and thread watches."),
-    ("sessions", "Agent sessions across every node: listing, transcripts, starting, resuming and closing them."),
-    ("messages", "Messages between sessions, chat messages the deck keeps, and handoffs between sessions."),
-    ("rules", "Rules: what may be done without asking, and reading rules for mail held while the owner reads."),
-    ("leases", "Leases: Gmail filters and heavy-build slots that agents ask for and hand back."),
-    ("hooks", "Webhook endpoints that wake agents."),
-    ("push", "Web push devices."),
+    (
+        "deck",
+        "The deck itself. `GET /info` says who you are and carries the settings and accounts a frontend needs to \
+         start; `GET /events` is a server-sent event stream naming what changed, so a frontend reloads only that.",
+    ),
+    (
+        "auth",
+        "Passkey sign-in for the owner's browsers. The first passkey takes a one-time setup code from the deck's \
+         host; signing in sets an HttpOnly cookie, which the `owner` security scheme names.",
+    ),
+    (
+        "nodes",
+        "Machines enrolled with the deck. A node enrols once with a one-time code, then keeps a WebSocket open \
+         (the node protocol, which frontends don't need) and issues session tokens to the agents on it.",
+    ),
+    (
+        "cards",
+        "A card is what an agent proposes about one email thread: a summary, why, and the actions it would take \
+         (archive, label, reply, forward and more). One card per thread: posting again for the same thread makes a \
+         new version. A decision names the version on screen, so the person never approves something they didn't \
+         see.",
+    ),
+    (
+        "decisions",
+        "The owner's decisions. Approve All sends every card on screen with its decision; the batch waits out the \
+         undo window (Settings), then the runner takes it. `undo` cancels a batch inside its window; `stop` holds \
+         everything approved that hasn't started.",
+    ),
+    (
+        "actions",
+        "The runner carrying approved actions out: it marks each one started, then reports the results, which \
+         finish the card. The round routes tell the woken agent where the mail watch is.",
+    ),
+    (
+        "inbox",
+        "Read views for a frontend: the Inbox (open cards by section, the unread timeline, the batch in its undo \
+         window), Later, and the mail tabs' lists and badges.",
+    ),
+    (
+        "timeline",
+        "What happened without a card: automatic actions the agents carried out, History over a time range, the \
+         owner's comments on either, pings (agents asking for attention, against a weekly budget) and thread \
+         watches.",
+    ),
+    (
+        "sessions",
+        "Agent sessions on every node: list and search them, read a transcript or a catch-up, and start, resume, \
+         interrupt or close one.",
+    ),
+    (
+        "messages",
+        "Messages between sessions by address (`tab@node`), chat messages the deck keeps for agents to read, and \
+         handoffs that move a session's work to a new one.",
+    ),
+    (
+        "rules",
+        "Rules decide what may be carried out without asking: a card that matches an active rule skips the Inbox. \
+         Reading rules decide what may still arrive while the owner is reading the Inbox.",
+    ),
+    (
+        "leases",
+        "Leases are things agents ask for and give back: a Gmail filter while they watch something themselves \
+         (proposed, then approved by the owner) or a heavy-build slot on a machine (acquired, queued if busy).",
+    ),
+    (
+        "hooks",
+        "Webhook endpoints that wake agents. An agent proposes one; it receives nothing until the owner approves \
+         it.",
+    ),
+    ("push", "Web push: the deck's VAPID key, and the browsers subscribed to notifications."),
     (
         "report",
         "The default web app's report: the triage agent's write-up of the Inbox, its answers, chat and snapshots. \
-         A frontend of its own can ignore these (they carry `x-quietdeck-ui: report`).",
+         A frontend of its own can ignore these (they carry `x-quietdeck-ui: report`), and with the `report` \
+         setting off they answer 404.",
     ),
     (
         "presence",
@@ -375,6 +432,9 @@ fn describe(spec: &mut Value, card_input: Value) {
     });
     paths[format!("{V1}/cards")]["post"]["requestBody"] =
         json!({ "required": true, "content": { "application/json": { "schema": card_input } } });
+    for (path, method, example) in examples() {
+        paths[format!("{V1}{path}")][method]["requestBody"]["content"]["application/json"]["example"] = example;
+    }
     for doc in OPERATIONS {
         let Some(operation) = paths.get_mut(format!("{V1}{}", doc.path)).and_then(|p| p.get_mut(doc.method)) else {
             continue; // the test names it
@@ -388,6 +448,46 @@ fn describe(spec: &mut Value, card_input: Value) {
     }
 }
 
+/// Request examples for the main writes, which the reference shows as samples. The test parses each into its type.
+pub fn examples() -> Vec<(&'static str, &'static str, Value)> {
+    vec![
+        (
+            "/cards",
+            "post",
+            json!({
+                "account": "work",
+                "thread_key": "18c2f0a9d4e7b311",
+                "subject": "Invoice 2041 from Acme Hosting",
+                "summary": "Acme's November invoice, $240, paid by card on file.",
+                "section": "archive_list",
+                "reason": "A receipt: nothing to do.",
+                "sender": { "name": "Acme Billing", "address": "billing@acme.example" },
+                "actions": [
+                    { "type": "label", "account": "work", "thread_id": "18c2f0a9d4e7b311", "add": ["Receipts"] },
+                    { "type": "archive", "account": "work", "thread_id": "18c2f0a9d4e7b311" }
+                ]
+            }),
+        ),
+        (
+            "/cards/{id}/decide",
+            "post",
+            json!({ "version": 2, "kind": "adjust", "text": "Forward it to accounts instead" }),
+        ),
+        (
+            "/decisions/approve-all",
+            "post",
+            json!({
+                "cards": [
+                    { "card_id": 41, "version": 1, "kind": "approve" },
+                    { "card_id": 42, "version": 3, "kind": "adjust", "text": "Say we'll pay on Friday" }
+                ],
+                "timeline": [118, 119]
+            }),
+        ),
+        ("/decisions/undo", "post", json!({ "batch": "b_7f3a" })),
+    ]
+}
+
 fn error_response_json() -> Value {
     json!({
         "description": "An error, with its message.",
@@ -396,7 +496,7 @@ fn error_response_json() -> Value {
 }
 
 /// Every object's keys in order, so the document is the same whichever features serde_json was built with. A schema
-/// of `true` (any JSON, from `serde_json::Value`) becomes `{}`, which means the same and which more tools read.
+/// of `true` (any JSON, from `serde_json::Value`) becomes `{}`, which means the same and which more renderers read.
 fn sorted(v: Value) -> Value {
     match v {
         Value::Object(map) => {
@@ -406,7 +506,16 @@ fn sorted(v: Value) -> Value {
                 entries
                     .into_iter()
                     .map(|(k, v)| {
-                        let v = if k == "schema" && v == Value::Bool(true) { json!({}) } else { v };
+                        let v = match (k.as_str(), v) {
+                            ("schema" | "items", Value::Bool(true)) => json!({}),
+                            ("properties", Value::Object(props)) => Value::Object(
+                                props
+                                    .into_iter()
+                                    .map(|(name, p)| (name, if p == Value::Bool(true) { json!({}) } else { p }))
+                                    .collect(),
+                            ),
+                            (_, v) => v,
+                        };
                         (k, sorted(v))
                     })
                     .collect(),
@@ -655,5 +764,26 @@ mod tests {
         assert!(crate::reports::current(&state.db).await.unwrap().is_none());
         let inbox = crate::ops::inbox(&state, None).await.unwrap();
         assert!(inbox.report.is_none() && inbox.finished_cards.is_empty());
+    }
+
+    /// The examples are requests the deck accepts: each parses into its type and passes its checks.
+    #[test]
+    fn examples_are_valid_requests() {
+        use quietdeck_types::decision::{ApproveAll, Decide, UndoBatch};
+        for (path, _, example) in examples() {
+            match path {
+                "/cards" => {
+                    let card: CardInput = serde_json::from_value(example).unwrap();
+                    card.check().unwrap();
+                }
+                "/cards/{id}/decide" => drop(serde_json::from_value::<Decide>(example).unwrap()),
+                "/decisions/approve-all" => {
+                    let all: ApproveAll = serde_json::from_value(example).unwrap();
+                    garde::Validate::validate(&all).unwrap();
+                }
+                "/decisions/undo" => drop(serde_json::from_value::<UndoBatch>(example).unwrap()),
+                other => panic!("no check for the {other} example"),
+            }
+        }
     }
 }

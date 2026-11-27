@@ -37,7 +37,7 @@ impl HookKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[ts(export)]
 pub struct HookCreate {
-    /// What it's for, as the person reads it ("Talira alerts").
+    /// What it's for, as the person reads it ("Ops alerts").
     pub label: String,
     pub kind: HookKind,
     /// The session its events go to, as `<tab>@<node>` ("alerts@server").

@@ -131,8 +131,8 @@ pub struct CardInput {
     pub to: Option<String>,
     /// The email's own words for the Inbox's details pane, as plain text: the newest message verbatim, or a thread as
     /// one line per message (`Mary: Did we update this for Compass?`). Leave out quoted replies, signatures and
-    /// footers. The pane shows the first lines. On a DocSpring account, leave out end users' personal data and
-    /// document contents, as stories and forwards do.
+    /// footers. The pane shows the first lines. On an account whose rules keep customers' data out of other
+    /// systems, leave out end users' personal data and document contents, as stories and forwards do.
     #[serde(default)]
     #[garde(inner(length(max = 4000)))]
     #[ts(optional)]

@@ -600,7 +600,7 @@
                 "minLength": 1,
                 "type": "string"
               },
-              "params": true,
+              "params": {},
               "reason": {
                 "maxLength": 2000,
                 "minLength": 1,
@@ -893,7 +893,7 @@
           },
           "single": {
             "default": null,
-            "description": "One default's own Approve rather than Approve All: the same undo window, but no Inbox snapshot in History\n(Nathan, 26 Nov 2026).",
+            "description": "One default's own Approve rather than Approve All: the same undo window, but no Inbox snapshot in History.",
             "type": [
               "boolean",
               "null"
@@ -1082,7 +1082,7 @@
           },
           "excerpt": {
             "default": null,
-            "description": "The email's own words for the Inbox's details pane, as plain text: the newest message verbatim, or a thread as\none line per message (`Mary: Did we update this for Compass?`). Leave out quoted replies, signatures and\nfooters. The pane shows the first lines. On a DocSpring account, leave out end users' personal data and\ndocument contents, as stories and forwards do.",
+            "description": "The email's own words for the Inbox's details pane, as plain text: the newest message verbatim, or a thread as\none line per message (`Mary: Did we update this for Compass?`). Leave out quoted replies, signatures and\nfooters. The pane shows the first lines. On an account whose rules keep customers' data out of other\nsystems, leave out end users' personal data and document contents, as stories and forwards do.",
             "type": [
               "string",
               "null"
@@ -1373,7 +1373,7 @@
           },
           "excerpt": {
             "default": null,
-            "description": "The email's own words for the Inbox's details pane, as plain text: the newest message verbatim, or a thread as\none line per message (`Mary: Did we update this for Compass?`). Leave out quoted replies, signatures and\nfooters. The pane shows the first lines. On a DocSpring account, leave out end users' personal data and\ndocument contents, as stories and forwards do.",
+            "description": "The email's own words for the Inbox's details pane, as plain text: the newest message verbatim, or a thread as\none line per message (`Mary: Did we update this for Compass?`). Leave out quoted replies, signatures and\nfooters. The pane shows the first lines. On an account whose rules keep customers' data out of other\nsystems, leave out end users' personal data and document contents, as stories and forwards do.",
             "type": [
               "string",
               "null"
@@ -1682,7 +1682,9 @@
           "ceremony": {
             "type": "string"
           },
-          "options": true
+          "options": {
+            "description": "WebAuthn options as JSON: pass them to `navigator.credentials.create()` (registering) or `.get()` (signing in)."
+          }
         },
         "required": [
           "ceremony",
@@ -1696,7 +1698,9 @@
           "ceremony": {
             "type": "string"
           },
-          "credential": true
+          "credential": {
+            "description": "The WebAuthn credential as JSON, from `navigator.credentials.create()` or `.get()`."
+          }
         },
         "required": [
           "ceremony",
@@ -2257,7 +2261,7 @@
             "$ref": "#/components/schemas/HookKind"
           },
           "label": {
-            "description": "What it's for, as the person reads it (\"Talira alerts\").",
+            "description": "What it's for, as the person reads it (\"Ops alerts\").",
             "type": "string"
           },
           "to": {
@@ -2574,7 +2578,7 @@
               "null"
             ]
           },
-          "params": true,
+          "params": {},
           "pattern_id": {
             "format": "int64",
             "type": [
@@ -2713,7 +2717,7 @@
       "LeaseRegister": {
         "description": "The kind's create step is done: `quietdeck lease register <id>` with what it left behind.",
         "properties": {
-          "kind_state": true
+          "kind_state": {}
         },
         "required": [
           "kind_state"
@@ -3383,7 +3387,7 @@
             ]
           },
           "held": {
-            "description": "New items the runner holds until the person is idle, e.g. \"2 DocSpring, 1 in Infrastructure Alerts\n(Matrix)\". None when nothing waits.",
+            "description": "New items the runner holds until the person is idle, e.g. \"2 Work, 1 in Ops alerts (Matrix)\".\nNone when nothing waits.",
             "type": [
               "string",
               "null"
@@ -4020,7 +4024,7 @@
           },
           "change": {
             "default": null,
-            "description": "What this edit changes, in a line, for the toast the person sees (\"New: CI failure on homeserver (c_67)\").\nLeft out, the deck works one out from the defaults that changed.",
+            "description": "What this edit changes, in a line, for the toast the person sees (\"New: CI failure on web (c_67)\").\nLeft out, the deck works one out from the defaults that changed.",
             "type": [
               "string",
               "null"
@@ -6351,6 +6355,33 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "account": "work",
+                "actions": [
+                  {
+                    "account": "work",
+                    "add": [
+                      "Receipts"
+                    ],
+                    "thread_id": "18c2f0a9d4e7b311",
+                    "type": "label"
+                  },
+                  {
+                    "account": "work",
+                    "thread_id": "18c2f0a9d4e7b311",
+                    "type": "archive"
+                  }
+                ],
+                "reason": "A receipt: nothing to do.",
+                "section": "archive_list",
+                "sender": {
+                  "address": "billing@acme.example",
+                  "name": "Acme Billing"
+                },
+                "subject": "Invoice 2041 from Acme Hosting",
+                "summary": "Acme's November invoice, $240, paid by card on file.",
+                "thread_key": "18c2f0a9d4e7b311"
+              },
               "schema": {
                 "$ref": "#/components/schemas/CardInput"
               }
@@ -6463,6 +6494,11 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "kind": "adjust",
+                "text": "Forward it to accounts instead",
+                "version": 2
+              },
               "schema": {
                 "$ref": "#/components/schemas/Decide"
               }
@@ -6830,6 +6866,25 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "cards": [
+                  {
+                    "card_id": 41,
+                    "kind": "approve",
+                    "version": 1
+                  },
+                  {
+                    "card_id": 42,
+                    "kind": "adjust",
+                    "text": "Say we'll pay on Friday",
+                    "version": 3
+                  }
+                ],
+                "timeline": [
+                  118,
+                  119
+                ]
+              },
               "schema": {
                 "$ref": "#/components/schemas/ApproveAll"
               }
@@ -6982,6 +7037,9 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "batch": "b_7f3a"
+              },
               "schema": {
                 "$ref": "#/components/schemas/UndoBatch"
               }
@@ -11941,63 +11999,63 @@
   ],
   "tags": [
     {
-      "description": "The deck itself: its version, settings and the live event stream.",
+      "description": "The deck itself. `GET /info` says who you are and carries the settings and accounts a frontend needs to start; `GET /events` is a server-sent event stream naming what changed, so a frontend reloads only that.",
       "name": "deck"
     },
     {
-      "description": "Passkey sign-in for the owner's browsers.",
+      "description": "Passkey sign-in for the owner's browsers. The first passkey takes a one-time setup code from the deck's host; signing in sets an HttpOnly cookie, which the `owner` security scheme names.",
       "name": "auth"
     },
     {
-      "description": "Machines enrolled with the deck, and the WebSocket their runners keep open.",
+      "description": "Machines enrolled with the deck. A node enrols once with a one-time code, then keeps a WebSocket open (the node protocol, which frontends don't need) and issues session tokens to the agents on it.",
       "name": "nodes"
     },
     {
-      "description": "Cards: what an agent proposes, one per thread, each with its versions and actions.",
+      "description": "A card is what an agent proposes about one email thread: a summary, why, and the actions it would take (archive, label, reply, forward and more). One card per thread: posting again for the same thread makes a new version. A decision names the version on screen, so the person never approves something they didn't see.",
       "name": "cards"
     },
     {
-      "description": "The owner's decisions on cards, the undo window, Stop, and the runner taking approved work.",
+      "description": "The owner's decisions. Approve All sends every card on screen with its decision; the batch waits out the undo window (Settings), then the runner takes it. `undo` cancels a batch inside its window; `stop` holds everything approved that hasn't started.",
       "name": "decisions"
     },
     {
-      "description": "The runner carrying approved actions out and reporting the results.",
+      "description": "The runner carrying approved actions out: it marks each one started, then reports the results, which finish the card. The round routes tell the woken agent where the mail watch is.",
       "name": "actions"
     },
     {
-      "description": "The Inbox and Later views, and the mail tabs' lists.",
+      "description": "Read views for a frontend: the Inbox (open cards by section, the unread timeline, the batch in its undo window), Later, and the mail tabs' lists and badges.",
       "name": "inbox"
     },
     {
-      "description": "The timeline of automatic actions, History, comments, pings and thread watches.",
+      "description": "What happened without a card: automatic actions the agents carried out, History over a time range, the owner's comments on either, pings (agents asking for attention, against a weekly budget) and thread watches.",
       "name": "timeline"
     },
     {
-      "description": "Agent sessions across every node: listing, transcripts, starting, resuming and closing them.",
+      "description": "Agent sessions on every node: list and search them, read a transcript or a catch-up, and start, resume, interrupt or close one.",
       "name": "sessions"
     },
     {
-      "description": "Messages between sessions, chat messages the deck keeps, and handoffs between sessions.",
+      "description": "Messages between sessions by address (`tab@node`), chat messages the deck keeps for agents to read, and handoffs that move a session's work to a new one.",
       "name": "messages"
     },
     {
-      "description": "Rules: what may be done without asking, and reading rules for mail held while the owner reads.",
+      "description": "Rules decide what may be carried out without asking: a card that matches an active rule skips the Inbox. Reading rules decide what may still arrive while the owner is reading the Inbox.",
       "name": "rules"
     },
     {
-      "description": "Leases: Gmail filters and heavy-build slots that agents ask for and hand back.",
+      "description": "Leases are things agents ask for and give back: a Gmail filter while they watch something themselves (proposed, then approved by the owner) or a heavy-build slot on a machine (acquired, queued if busy).",
       "name": "leases"
     },
     {
-      "description": "Webhook endpoints that wake agents.",
+      "description": "Webhook endpoints that wake agents. An agent proposes one; it receives nothing until the owner approves it.",
       "name": "hooks"
     },
     {
-      "description": "Web push devices.",
+      "description": "Web push: the deck's VAPID key, and the browsers subscribed to notifications.",
       "name": "push"
     },
     {
-      "description": "The default web app's report: the triage agent's write-up of the Inbox, its answers, chat and snapshots. A frontend of its own can ignore these (they carry `x-quietdeck-ui: report`).",
+      "description": "The default web app's report: the triage agent's write-up of the Inbox, its answers, chat and snapshots. A frontend of its own can ignore these (they carry `x-quietdeck-ui: report`), and with the `report` setting off they answer 404.",
       "name": "report"
     },
     {

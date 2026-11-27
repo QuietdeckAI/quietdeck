@@ -6,7 +6,7 @@ import type { HookKind } from "./HookKind";
  */
 export type HookCreate = { 
 /**
- * What it's for, as the person reads it ("Talira alerts").
+ * What it's for, as the person reads it ("Ops alerts").
  */
 label: string, kind: HookKind, 
 /**

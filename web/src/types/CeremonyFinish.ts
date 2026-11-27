@@ -3,4 +3,8 @@
 /**
  * The browser's answer to a ceremony.
  */
-export type CeremonyFinish = { ceremony: string, credential: unknown, };
+export type CeremonyFinish = { ceremony: string, 
+/**
+ * The WebAuthn credential as JSON, from `navigator.credentials.create()` or `.get()`.
+ */
+credential: unknown, };

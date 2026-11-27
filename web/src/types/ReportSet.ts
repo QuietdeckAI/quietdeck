@@ -14,7 +14,7 @@ base: number | null,
  */
 new: boolean, 
 /**
- * What this edit changes, in a line, for the toast the person sees ("New: CI failure on homeserver (c_67)").
+ * What this edit changes, in a line, for the toast the person sees ("New: CI failure on web (c_67)").
  * Left out, the deck works one out from the defaults that changed.
  */
 change: string | null, };

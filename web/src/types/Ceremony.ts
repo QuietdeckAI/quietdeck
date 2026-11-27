@@ -4,4 +4,8 @@
  * A WebAuthn ceremony in progress: `options` goes to `navigator.credentials`, and the result comes back with
  * `ceremony`.
  */
-export type Ceremony = { ceremony: string, options: unknown, };
+export type Ceremony = { ceremony: string, 
+/**
+ * WebAuthn options as JSON: pass them to `navigator.credentials.create()` (registering) or `.get()` (signing in).
+ */
+options: unknown, };

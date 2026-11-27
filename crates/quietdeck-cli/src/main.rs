@@ -216,8 +216,8 @@ enum ReportCommand {
         /// Start a new report: everything on the current one is approved or handled.
         #[arg(long)]
         new: bool,
-        /// What this edit changes, in a line, for the toast the person sees ("New: CI failure on homeserver
-        /// (c_67)"). Left out, the deck works one out from the defaults that changed.
+        /// What this edit changes, in a line, for the toast the person sees ("New: CI failure on web (c_67)"). Left
+        /// out, the deck works one out from the defaults that changed.
         #[arg(long)]
         change: Option<String>,
     },
@@ -237,7 +237,7 @@ enum HooksCommand {
     /// Propose an endpoint. Prints its URL once (the secret isn't kept); it receives nothing until the person approves
     /// it in Settings.
     Create {
-        /// What it's for, as the person reads it ("Talira alerts").
+        /// What it's for, as the person reads it ("Ops alerts").
         #[arg(long)]
         label: String,
         /// How to read what arrives: `generic` (any JSON or text) or `alertmanager` (its webhook_configs format).

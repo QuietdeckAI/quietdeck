@@ -7,7 +7,6 @@ import type { CardDecision } from "./CardDecision";
  */
 export type ApproveAll = { cards: Array<CardDecision>, timeline: Array<number>, 
 /**
- * One default's own Approve rather than Approve All: the same undo window, but no Inbox snapshot in History
- * (Nathan, 26 Nov 2026).
+ * One default's own Approve rather than Approve All: the same undo window, but no Inbox snapshot in History.
  */
 single?: boolean, };

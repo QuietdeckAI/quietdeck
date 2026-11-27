@@ -152,6 +152,7 @@ pub struct RegisterStart {
 #[ts(export)]
 pub struct Ceremony {
     pub ceremony: String,
+    /// WebAuthn options as JSON: pass them to `navigator.credentials.create()` (registering) or `.get()` (signing in).
     #[ts(type = "unknown")]
     pub options: serde_json::Value,
 }
@@ -161,6 +162,7 @@ pub struct Ceremony {
 #[ts(export)]
 pub struct CeremonyFinish {
     pub ceremony: String,
+    /// The WebAuthn credential as JSON, from `navigator.credentials.create()` or `.get()`.
     #[ts(type = "unknown")]
     pub credential: serde_json::Value,
 }

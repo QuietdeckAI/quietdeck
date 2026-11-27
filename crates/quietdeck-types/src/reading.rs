@@ -34,8 +34,8 @@ pub struct Presence {
     #[ts(type = "string | null")]
     #[schemars(with = "Option<String>")]
     pub active_until: Option<Timestamp>,
-    /// New items the runner holds until the person is idle, e.g. "2 DocSpring, 1 in Infrastructure Alerts
-    /// (Matrix)". None when nothing waits.
+    /// New items the runner holds until the person is idle, e.g. "2 Work, 1 in Ops alerts (Matrix)".
+    /// None when nothing waits.
     pub held: Option<String>,
     pub held_count: u64,
 }

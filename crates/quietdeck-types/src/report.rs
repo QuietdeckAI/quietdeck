@@ -61,7 +61,7 @@ pub struct ReportSet {
     #[serde(default)]
     #[garde(skip)]
     pub new: bool,
-    /// What this edit changes, in a line, for the toast the person sees ("New: CI failure on homeserver (c_67)").
+    /// What this edit changes, in a line, for the toast the person sees ("New: CI failure on web (c_67)").
     /// Left out, the deck works one out from the defaults that changed.
     #[serde(default)]
     #[garde(inner(length(min = 1, max = 300)))]
