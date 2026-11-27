@@ -13,7 +13,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
 
 ## Running agents
 
-- **Moving a session to another machine.** Handoffs, the access manifest, `handoff claim`, closing the old session.
+- ~~**Moving a session to another machine.**~~ Written: `docs/guides/move-a-session.md`. Handoffs, the access manifest, `handoff claim`, closing the old session.
   Now: `skills/move-session/SKILL.md`, and the quietdeck move (h_2, 24 November).
 - **Agents addressed by role, not tab name.** Why a role setting beats a tab name hard-coded across runner configs,
   lease fallbacks, instructions and skills; lightweight agents any session can take on. Now: build plan "Agents are
@@ -94,7 +94,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   answers no CORS preflight, which is what keeps a page from sending a Bearer token cross-origin. Each refusal has a
   test. Footgun: passkeys (webauthn-rs) refuse an IP address as the relying party, so the deck's public URL is
   `http://localhost:<port>` while links use 127.0.0.1. Now: `crates/quietdeck-server/src/solo.rs` (27 November).
-- **"Text file busy" in tests that write a script and run it.** A test that writes a fake CLI and executes it at
+- ~~**"Text file busy" in tests that write a script and run it.**~~ Written: `docs/guides/mail-through-gog.md`. A test that writes a fake CLI and executes it at
   once fails now and then under a parallel run: another thread's fork can hold the new file open for writing until
   its exec, and the kernel refuses to run a file open for writing (ETXTBSY). The runner retries a spawn briefly on
   that error, which also covers a CLI being upgraded in place. Now: `spawn` in
@@ -112,7 +112,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   pid while it runs (removed when the child exits, times out or is killed, so a reused pid inherits nothing) and gives
   the CLI calls it starts the agent's tab and the turn's session ID; a new conversation gets its ID up front
   (`--session-id`). Now: `crates/quietdeck-node/src/runner/headless.rs` and `local.rs` (`HeadlessTurns`).
-- **Mail through gog, without Executor.** For Quietdeck solo, `runner.mail: gog` runs the user's own gog CLI
+- ~~**Mail through gog, without Executor.**~~ Written: `docs/guides/mail-through-gog.md`. For Quietdeck solo, `runner.mail: gog` runs the user's own gog CLI
   (signed in with `gog auth add <address> --services gmail`) for every mail tool. Footguns: gog's `gmail history`
   asks Gmail for new messages only and prints bare IDs (no labels, threads, archives or deletions), and gog has no
   getProfile. So the runner reads each new message's labels with `gog gmail raw <id> --format minimal`, starts from
@@ -122,7 +122,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   only if it looks like a Gmail ID and every value as `--flag=value`, so mail content can't become a flag, and a
   draft's body goes on stdin. Now: `crates/quietdeck-node/src/runner/gog.rs` (27 November). Not yet run against a
   real mailbox.
-- **The triage agent on its own Unix user and node.** It reads untrusted mail with permissions skipped, so no
+- ~~**The triage agent on its own Unix user and node.**~~ Written: `docs/guides/triage-agent-own-user.md`. It reads untrusted mail with permissions skipped, so no
   credentials or repos may share its user; its own node and herdr; how other sessions reach it. Now:
   `docs/drafts/homeserver-guides.md`, the homeserver repo's agents VM role.
 - ~~**While you read the Inbox, nothing new lands.**~~ Written: `docs/guides/while-you-read.md`. Presence, held wake-ups, "while I'm reading" rules (RE2), toasts,
@@ -143,7 +143,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
 
 ## Inputs beyond email
 
-- **Matrix as a message source.** A service user, an end-to-end encrypted room, the device and crypto store kept on
+- ~~**Matrix as a message source.**~~ Written: `docs/guides/matrix-source.md`. A service user, an end-to-end encrypted room, the device and crypto store kept on
   one node, `quietdeck messages`, `quietdeck-node matrix-check`, cards with account `matrix`. Now: sc-7779,
   `deploy/node.example.yaml`, commits ec81b71 to 23de605.
 - **Alerts forwarded to the agent that owns the service.** Subscriptions from a channel to a role, written by agents

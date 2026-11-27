@@ -20,8 +20,9 @@ It also means one place to see what agents called (Executor's call log), and one
   sessions. Quietdeck doesn't see any of it: the agent posts cards to the deck with what it found and what it proposes.
 - **The runner**, inside the node on the triage agent's machine, carries out the approved actions that need no
   thought (archive, mark read, labels, drafts, stories, calendar events) with its own Executor token, and watches
-  Gmail's history to wake the triage agent when mail arrives. It reads message IDs and labels only, never a subject,
-  sender or body. Forwards to sessions, resumes and new sessions go through the deck and herdr instead, and need no
+  Gmail's history to wake the triage agent when mail arrives. It reads each new message's labels, headers and snippet, to sort it and to
+  decide what may interrupt you while you read, and logs none of them; with `mail_watch.message_text` it also reads the
+  text, for an agent with no mail tools ([how that's done safely](guides/headless-agent-one-cli.md)). Forwards to sessions, resumes and new sessions go through the deck and herdr instead, and need no
   Executor tool.
 
 Anything the runner can't do goes to the triage agent, which does it with its own tools. A missing tool costs a few
