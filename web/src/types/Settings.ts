@@ -16,4 +16,10 @@ require_filter_proposal: boolean,
  * "Show the pending count on the tab icon": the number of cards in the Inbox on the deck's favicon and in its
  * title. On unless switched off.
  */
-show_pending_count: boolean, };
+show_pending_count: boolean, 
+/**
+ * The triage report: the default web app's write-up of the Inbox. Off, the deck is cards only: the report's
+ * routes answer 404, and the Inbox, History, Approve All and the runner ignore any report kept from before. On
+ * unless switched off.
+ */
+report: boolean, };

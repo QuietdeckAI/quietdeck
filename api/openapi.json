@@ -4991,6 +4991,11 @@
       "Settings": {
         "description": "The deck's settings (the Settings screen).",
         "properties": {
+          "report": {
+            "default": true,
+            "description": "The triage report: the default web app's write-up of the Inbox. Off, the deck is cards only: the report's\nroutes answer 404, and the Inbox, History, Approve All and the runner ignore any report kept from before. On\nunless switched off.",
+            "type": "boolean"
+          },
           "require_filter_proposal": {
             "description": "\"Require a proposal for every new filter\". A hard rule in code while on.",
             "type": "boolean"
@@ -5813,7 +5818,7 @@
     }
   },
   "info": {
-    "description": "Build your own frontend for a Quietdeck deck. Every route is under `/api/v1`. Within v1, changes are additive only: new routes, new optional fields in requests, new fields in responses (ignore the ones you don't know) and new enum values (handle the ones you don't know). Anything that would break a client goes in `/api/v2`, and v1 keeps working alongside it. Operations tagged `report` or `presence` (with `x-quietdeck-ui`) belong to the default web app's own screens: a frontend of its own can ignore them. Errors answer `ApiError` with a 4xx or 5xx status.",
+    "description": "Build your own frontend for a Quietdeck deck. Every route is under `/api/v1`. Within v1, changes are additive only: new routes, new optional fields in requests, new fields in responses (ignore the ones you don't know) and new enum values (handle the ones you don't know). Anything that would break a client goes in `/api/v2`, and v1 keeps working alongside it. Operations tagged `report` or `presence` (with `x-quietdeck-ui`) belong to the default web app's own screens: a frontend of its own can ignore them, and with the `report` setting off the report's routes answer 404 and the rest of the API works on cards alone. Errors answer `ApiError` with a 4xx or 5xx status.",
     "license": {
       "identifier": "Apache-2.0",
       "name": "Apache-2.0"

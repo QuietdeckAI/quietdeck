@@ -152,7 +152,7 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
     };
     let mut app = Router::new()
         .route("/healthz", get(health))
-        .merge(openapi::routes().0)
+        .merge(openapi::routes(state.clone()).0)
         .nest_service("/mcp", mcp::service(state.clone()));
     if local_only.is_some() {
         app = app.merge(solo::router());

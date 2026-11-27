@@ -84,7 +84,20 @@ async fn open_row(db: &Db) -> AppResult<Option<ReportRow>> {
 }
 
 /// The report the Inbox shows, with its answers.
+/// Whether the deck keeps a report (Settings: `report`). Off, every read here answers as if there were none.
+pub async fn enabled(db: &Db) -> anyhow::Result<bool> {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT value FROM settings WHERE name = 'report'").fetch_optional(db).await?;
+    Ok(row.is_none_or(|(v,)| v == "true"))
+}
+
+/// What the report's routes answer while it's off.
+pub const OFF: &str = "this deck has no report (Settings: report is off): use the cards and decisions";
+
 pub async fn current(db: &Db) -> AppResult<Option<Report>> {
+    if !enabled(db).await? {
+        return Ok(None);
+    }
     let Some(r) = open_row(db).await? else { return Ok(None) };
     let answers: Vec<AnswerRow> = sqlx::query_as(
         "SELECT id, report_version, control, kind, about, value, answered_at, picked_up_at, cards \
@@ -512,6 +525,9 @@ const CHANGES_WINDOW_MS: i64 = 30 * 24 * 3600 * 1000;
 /// The person's changes to a card's default, oldest first: those on a `<Default>` that names it in the current
 /// report (by its `id` or its `cards`), and any `cards:` change that names it, whatever the report says now.
 pub async fn changes_for_card(db: &Db, card_id: i64) -> anyhow::Result<Vec<String>> {
+    if !enabled(db).await? {
+        return Ok(vec![]);
+    }
     let markdown: Option<(String,)> =
         sqlx::query_as("SELECT markdown FROM reports WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1")
             .fetch_optional(db)
@@ -611,6 +627,9 @@ pub async fn snapshot_get(db: &Db, id: i64) -> AppResult<ReportSnapshot> {
 
 /// The snapshots taken in a time window, newest first, for History.
 pub async fn snapshots_between(db: &Db, since_ms: i64, until_ms: i64) -> AppResult<Vec<ReportSnapshotSummary>> {
+    if !enabled(db).await? {
+        return Ok(vec![]);
+    }
     let rows: Vec<(i64, i64, i64, String)> = sqlx::query_as(
         "SELECT id, taken_at, approved, snapshot FROM report_snapshots WHERE taken_at >= ? AND taken_at < ? \
          ORDER BY taken_at DESC",

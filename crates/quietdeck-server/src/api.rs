@@ -903,6 +903,7 @@ pub async fn load_settings(db: &crate::db::Db) -> anyhow::Result<Settings> {
             "undo_seconds" => s.undo_seconds = value.parse().unwrap_or(s.undo_seconds),
             "require_filter_proposal" => s.require_filter_proposal = value == "true",
             "show_pending_count" => s.show_pending_count = value == "true",
+            "report" => s.report = value == "true",
             _ => {}
         }
     }

@@ -17,9 +17,11 @@ use std::sync::Arc;
 use aide::generate::GenContext;
 use aide::openapi::{MediaType, OpenApi, Operation, Response, SchemaObject, StatusCode};
 use aide::{OperationInput, OperationOutput};
-use axum::Json;
-use axum::Router;
+use axum::extract::{MatchedPath, Request, State};
+use axum::middleware::Next;
+use axum::response::IntoResponse;
 use axum::routing::get;
+use axum::{Json, Router};
 use indexmap::IndexMap;
 use quietdeck_types::api::ApiError;
 use quietdeck_types::card::CardInput;
@@ -233,14 +235,40 @@ pub const OPERATIONS: &[Doc] = &[
 ];
 
 /// The API's routes, at `/api/v1` and at `/api`, with `/api/v1/openapi.json`; and the spec they serve.
-pub fn routes() -> (Router<AppState>, Arc<Value>) {
+pub fn routes(state: AppState) -> (Router<AppState>, Arc<Value>) {
     let (v1, legacy, spec) = build(None);
     let spec = Arc::new(spec);
     let served = spec.clone();
     let router = v1
         .merge(legacy)
+        .route_layer(axum::middleware::from_fn_with_state(state, report_gate))
         .route(&format!("{V1}/openapi.json"), get(move || std::future::ready(Json(served.as_ref().clone()))));
     (router, spec)
+}
+
+/// Whether a matched route (at either prefix) is one of the report's: `OPERATIONS` with `ui: report`.
+fn is_report(method: &axum::http::Method, matched: &str) -> bool {
+    let path = matched.strip_prefix(V1).or_else(|| matched.strip_prefix("/api"));
+    OPERATIONS
+        .iter()
+        .any(|d| d.ui == Some("report") && Some(d.path) == path && method.as_str().eq_ignore_ascii_case(d.method))
+}
+
+/// The report's routes answer 404 while the deck has no report (Settings: `report` off).
+async fn report_gate(
+    State(state): State<AppState>,
+    matched: Option<MatchedPath>,
+    req: Request,
+    next: Next,
+) -> axum::response::Response {
+    if matched.is_some_and(|m| is_report(req.method(), m.as_str())) {
+        match crate::reports::enabled(&state.db).await {
+            Ok(true) => {}
+            Ok(false) => return AppError::NotFound(crate::reports::OFF.into()).into_response(),
+            Err(e) => return AppError::Internal(e).into_response(),
+        }
+    }
+    next.run(req).await
 }
 
 /// The spec alone, as the committed `api/openapi.json` has it.
@@ -295,7 +323,8 @@ fn describe(spec: &mut Value, card_input: Value) {
             the ones you don't know) and new enum values (handle the ones you don't know). Anything that would break \
             a client goes in `/api/v2`, and v1 keeps working alongside it. Operations tagged `report` or `presence` \
             (with `x-quietdeck-ui`) belong to the default web app's own screens: a frontend of its own can ignore \
-            them. Errors answer `ApiError` with a 4xx or 5xx status.",
+            them, and with the `report` setting off the report's routes answer 404 and the rest of the API works \
+            on cards alone. Errors answer `ApiError` with a 4xx or 5xx status.",
         "license": { "name": "Apache-2.0", "identifier": "Apache-2.0" },
     });
     spec["tags"] = TAGS.iter().map(|(name, description)| json!({ "name": name, "description": description })).collect();
@@ -577,8 +606,8 @@ mod tests {
         use http_body_util::BodyExt;
         use tower::ServiceExt;
 
-        let (router, spec) = routes();
         let state = crate::state::AppState::for_tests().await;
+        let (router, spec) = routes(state.clone());
         let app = router.with_state(state);
         for uri in ["/api/v1/info", "/api/info"] {
             let res = app.clone().oneshot(axum::http::Request::get(uri).body(axum::body::Body::empty()).unwrap()).await;
@@ -593,5 +622,38 @@ mod tests {
         let body: Value = serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
         assert_eq!(&body, spec.as_ref());
         assert_eq!(body["info"]["version"], API_VERSION);
+    }
+
+    /// With the report off, its routes answer 404 at both prefixes, and the core forgets a report kept from before.
+    #[tokio::test]
+    async fn the_report_can_be_off() {
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+
+        let state = crate::state::AppState::for_tests().await;
+        let session =
+            quietdeck_types::SessionRef { node: "laptop".into(), tab: "triage".into(), session_id: Some("s1".into()) };
+        let report =
+            quietdeck_types::report::ReportSet { markdown: "# Inbox".into(), base: None, new: true, change: None };
+        crate::reports::set(&state, &session, report).await.unwrap();
+        let (router, _) = routes(state.clone());
+        let app = router.with_state(state.clone());
+        let get = |uri: &str| axum::http::Request::get(uri).body(axum::body::Body::empty()).unwrap();
+        // On: routed to the handler, which wants a sign-in.
+        assert_eq!(app.clone().oneshot(get("/api/v1/report")).await.unwrap().status(), 401);
+
+        let off = quietdeck_types::api::Settings { report: false, ..Default::default() };
+        crate::ops::save_settings(&state, off).await.unwrap();
+        for uri in ["/api/v1/report", "/api/report", "/api/v1/report/snapshots/1"] {
+            let res = app.clone().oneshot(get(uri)).await.unwrap();
+            assert_eq!(res.status(), 404, "{uri}");
+            let body: Value = serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+            assert_eq!(body["error"], crate::reports::OFF);
+        }
+        // Not a report route: still routed.
+        assert_eq!(app.oneshot(get("/api/v1/inbox")).await.unwrap().status(), 401);
+        assert!(crate::reports::current(&state.db).await.unwrap().is_none());
+        let inbox = crate::ops::inbox(&state, None).await.unwrap();
+        assert!(inbox.report.is_none() && inbox.finished_cards.is_empty());
     }
 }

@@ -56,6 +56,12 @@ pub struct Settings {
     #[serde(default = "yes")]
     #[garde(skip)]
     pub show_pending_count: bool,
+    /// The triage report: the default web app's write-up of the Inbox. Off, the deck is cards only: the report's
+    /// routes answer 404, and the Inbox, History, Approve All and the runner ignore any report kept from before. On
+    /// unless switched off.
+    #[serde(default = "yes")]
+    #[garde(skip)]
+    pub report: bool,
 }
 
 fn yes() -> bool {
@@ -64,7 +70,7 @@ fn yes() -> bool {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { undo_seconds: 3, require_filter_proposal: true, show_pending_count: true }
+        Settings { undo_seconds: 3, require_filter_proposal: true, show_pending_count: true, report: true }
     }
 }
 
