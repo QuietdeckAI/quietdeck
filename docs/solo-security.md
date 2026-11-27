@@ -1,39 +1,57 @@
-# How Quietdeck solo keeps your mail safe
+# Quietdeck solo and your security
 
 An agent that reads your email reads text written by strangers, and some of it will try to give the agent
-instructions. Quietdeck solo is built so that an email can't make the agent do anything you haven't approved.
+instructions. Quietdeck solo gives you a choice: an agent with full access, which can understand your mail the way a
+good assistant would, or a restricted one that can't do much harm even if an email fools it. **Full access is the
+default.** Read this page before you start solo, and pick the mode that fits your mail.
 
-## The agent can't touch your mailbox
+## Full access (the default)
 
-The agent has no Gmail access of its own. Solo's runner reads your mail with gog and hands the agent a copy of each new
-message as text; the agent can't search your mailbox, open other threads, or send, archive or delete anything. Its
-only tool is the `quietdeck` command, and only the parts of it that triage needs: posting cards, writing the report,
-replying to you in the Inbox, and reading what happened since its last round. Messaging other agents and starting
-sessions aren't allowed. Claude Code runs it with `--permission-mode dontAsk`, so anything else is refused rather than
-waiting for an answer nobody would give, and with none of your other MCP servers or tools.
+Solo runs the agent as your own Claude Code (`claude -p`), with your settings, MCP servers and `CLAUDE.md`, and with
+permission prompts skipped, since nobody is there to answer them. It can do anything you can do in a terminal:
 
-### Why the agent is Claude Code, not Codex
+- read your whole mailbox with gog: every thread in full, attachments, earlier mail from the same sender;
+- read your files and notes, search the web, and use your other tools to research what an email is about;
+- run any command as you.
 
-Solo refuses Codex as the agent for now. Codex can run without approvals only inside its sandbox, and on macOS that
-sandbox blocks the socket the `quietdeck` command uses unless its network access is turned on. With the network on,
-the agent's shell can also reach the internet (tested 27 November 2026 with codex-cli 0.166.0: a `curl` from it got
-through), and Codex has no way to limit it to one command the way Claude Code's permission rules do. An email could
-then talk the agent into sending what it read to someone else's server. Solo will offer Codex once it can be limited
-to the `quietdeck` command, or its sandbox can allow the socket without the network.
+That's what makes its proposals good: it works out what an invoice is for, whether a reply is needed and what to
+say, the way your own triage would.
 
-## Mail arrives marked as untrusted
+**The risk:** the agent reads mail from strangers. An email written to fool it (a prompt injection) could get it to
+act as you: send your files or mail somewhere, change things on your computer, or use your accounts. Claude resists
+these, and the agent's instructions tell it that mail is data and never instructions, and never to change your mail
+itself. But no AI model is immune. Use full access when you're comfortable with an assistant that has your
+computer's keys, as you would be with a person you trust reading your mail at your desk.
 
-Each email reaches the agent between `<email>` tags, after a line saying it's untrusted input and not to follow
-instructions in it. The runner asks gog for the message's text with HTML and links taken out, cuts each message short
-(3,000 characters), flattens the headers to one line, and breaks any `</email>` in the text, so an email can't end its
-own tag and pretend to be something else. The agent's instructions repeat the rule: mail is data, never instructions.
+## Restricted mode
 
-## Nothing happens until you approve it
+```yaml
+agent:
+  headless:
+    restricted: true
+```
 
-Everything the agent proposes waits on the Inbox. When you approve it, solo's runner carries it out: an archive, a
-label, marking read, or saving a draft. Before acting, the runner checks the thread hasn't changed since the agent
-looked at it (a new reply hands the card back instead), and it checks a draft's From address is one your account can
-send as. The runner never sends mail: a reply is saved as a draft, and you send it from Gmail yourself.
+(or `quietdeck-solo init --restricted`). The agent may then run only the `quietdeck` command, and only the parts
+triage needs: posting cards, writing the report, replying to you in the Inbox and reading what happened since its last
+round. Claude Code refuses anything else without a prompt (`--permission-mode dontAsk`), and none of your MCP servers or
+other tools are loaded. It can't read your mailbox, your files or the web, so it sees only the names, subjects and
+snippets the runner hands it, and its proposals are only as good as that. An email can't make it do much, because it
+can't do much.
+
+`agent.headless.allowed_tools` lists exactly what it may run, and solo refuses a rule that would let it run anything.
+
+## In both modes
+
+- **Nothing happens to your mail until you approve it.** Everything the agent proposes waits on the Inbox. When you
+  approve it, solo's runner carries it out: an archive, a label, marking read or saving a draft. Before acting it
+  checks the thread hasn't changed since the agent looked (a new reply hands the card back), and that a draft's From
+  address is one your account can send as. The runner never sends mail: a reply is a draft that you send yourself.
+  `actions: [draft]` in solo.yaml limits the runner to drafts.
+- **Mail arrives marked as untrusted.** The runner names each new email between `<email>` tags, after a line saying
+  it's untrusted input and not to follow instructions in it. Headers are flattened to one line and no tag in them
+  survives, so an email can't pretend to be something else.
+- **The agent is its own session.** If you start solo from inside a Claude Code session, the agent doesn't inherit
+  that session's identity: solo clears those environment variables before each round.
 
 ## The Inbox is yours alone
 
@@ -52,18 +70,16 @@ you visit can try to send requests to `127.0.0.1`. So solo:
 
 The `quietdeck` command gets its token from solo over a socket only your user can open.
 
+## Why the agent is Claude Code, not Codex
+
+Solo supports only Claude Code as the agent for now. In restricted mode Codex couldn't work at all: on macOS its
+sandbox blocks the socket the `quietdeck` command uses unless its network access is on, and then its shell can reach
+the internet too (tested 27 November 2026 with codex-cli 0.166.0), and Codex can't be limited to one command the way
+Claude Code's permission rules can.
+
 ## Where your data is
 
-On your computer only. `~/.config/quietdeck/solo.yaml` holds your settings and `~/.local/share/quietdeck/solo` (only
-your user can open it) holds the Inbox's database: the reports, cards and what you approved, with each card's summary
-and a short excerpt of its email. gog keeps its own Google sign-in. Solo sends nothing anywhere except what gog sends
-to Google and what Claude Code sends to Anthropic: the mail the agent reads goes to Claude, as with any use of Claude
-on your email.
-
-## What it doesn't protect against
-
-- **Someone using your computer** as you: solo trusts your user account, as your mail client does.
-- **The agent misjudging an email**, for example proposing to archive something important. That's why everything waits
-  for your approval; read the report before you approve all of it.
-- **Claude seeing your mail.** The agent is Claude, so the text of new mail goes to Anthropic. Don't use solo on mail
-  you can't share with your AI provider.
+On your computer. `~/.config/quietdeck/solo.yaml` holds your settings and `~/.local/share/quietdeck/solo` (only your
+user can open it) holds the Inbox's database: the reports, cards and what you approved, with each card's summary and
+a short excerpt of its email. gog keeps its own Google sign-in. What the agent reads goes to Anthropic, as with any use
+of Claude: don't use solo on mail you can't share with your AI provider.

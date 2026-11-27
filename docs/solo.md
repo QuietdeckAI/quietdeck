@@ -10,16 +10,19 @@ public address and no account with anyone: your mail stays between your computer
 ## How it works
 
 - **The runner** watches your Gmail with [gog](https://github.com/steipete/gogcli), a command-line tool you sign in to
-  once. When mail arrives, it reads it and hands it to the agent. It's also what carries out what you approve:
+  once. When mail arrives, it tells the agent which emails are new. It's also what carries out what you approve:
   archiving, marking read, labelling and saving drafts.
-- **The agent** is [Claude Code](https://docs.anthropic.com/en/docs/claude-code), run once for each batch of new mail.
-  It has no access to your mailbox: it reads only what the runner gives it, and all it can do is post proposals
-  (cards) and write the report, through the `quietdeck` command.
+- **The agent** is your [Claude Code](https://docs.anthropic.com/en/docs/claude-code), run once for each batch of new
+  mail. It reads each email in full with gog, researches with your files, notes and the web, and posts its proposals
+  (cards) and the report through the `quietdeck` command. By default it has full access to your computer, like your
+  own Claude Code; you can restrict it instead.
 - **The Inbox** is a web page on your computer, at `http://127.0.0.1:7350`. It shows the agent's report, with what it
   proposes for each email. You approve one item, change it, or approve everything at once.
 
-The agent never sends mail. A reply it proposes is saved as a Gmail draft for you to read, change and send yourself.
-[How solo keeps your mail safe](solo-security.md) explains the rest.
+The agent never changes your mail itself, and solo never sends mail: a reply it proposes is saved as a Gmail draft
+for you to read, change and send yourself. **The agent reads mail from strangers with full access to your computer,
+so read [Quietdeck solo and your security](solo-security.md) before you start**: it explains the risk and the
+restricted mode.
 
 ## What you need
 

@@ -726,7 +726,12 @@ async fn the_wakeup_carries_the_new_mail_when_the_runner_can_read_it() {
     let text = &told[0].1;
     assert!(text.starts_with("New mail: 1 Personal. Run your triage round."), "{text}");
     assert!(text.contains(quietdeck_types::relay::UNTRUSTED_LINE));
-    assert!(text.contains("<email account=\"Personal\" thread=\"m1\" message=\"m1\">"), "{text}");
+    assert!(
+        text.contains(
+            "<email account=\"personal\" label=\"Personal\" address=\"me@example.com\" thread=\"m1\" message=\"m1\">"
+        ),
+        "the account's ID, which cards take: {text}"
+    );
     assert!(text.contains("\nFrom: Bob ‹bob@example.com›\n"), "{text}");
     assert!(text.contains("\nSubject: Lunch on Friday\n"), "one line: {text}");
     assert!(
@@ -738,7 +743,7 @@ async fn the_wakeup_carries_the_new_mail_when_the_runner_can_read_it() {
         !text.contains("</EMAIL") && !text.contains("</cross-session-message") && !text.contains("<runner>"),
         "{text}"
     );
-    assert!(text.contains("[… cut at 3000 characters]"));
+    assert!(text.contains("[… cut at 3000 characters: read the rest yourself]"));
     assert_eq!(text.matches("</email>").count(), 1);
     assert!(text.len() < 4000, "{}", text.len());
 
@@ -748,6 +753,39 @@ async fn the_wakeup_carries_the_new_mail_when_the_runner_can_read_it() {
     runner.check_mail().await;
     let second = agent.told.lock().unwrap()[1].1.clone();
     assert!(second.contains("message=\"m2\"") && !second.contains("message=\"m1\""), "{second}");
+}
+
+/// With gog, the wake-up only names each email (who, what, Gmail's snippet as a hint): the agent reads it itself.
+#[tokio::test]
+async fn the_wakeup_names_each_email_and_marks_the_snippet_as_a_hint() {
+    let head = Arc::new(StdMutex::new(100u64));
+    let added: Added = Arc::default();
+    let (url, _) = executor(feed(head.clone(), added.clone())).await;
+    let dir = tempfile::tempdir().unwrap();
+    let agent = Arc::new(FakeAgent::default());
+    let mut cfg = config(&url, "");
+    cfg.mail_watch.as_mut().unwrap().message_text = Some(super::config::ToolSpec {
+        path: None,
+        command: Some(vec![
+            "sh".into(),
+            "-c".into(),
+            r#"cat >/dev/null; printf '{"from":"Bob <bob@example.com>","subject":"Lunch?","snippet":"Are you free on"}'"#
+                .into(),
+        ]),
+        gog: None,
+        input: serde_json::json!({"id": "${message_id}"}),
+    });
+    let tools = ConfiguredTools::new(Some((cfg.executor.clone().unwrap(), "t".into())));
+    let runner =
+        Runner::new(cfg, Arc::new(FakeDeck::default()), Arc::new(tools), agent.clone(), dir.path().to_path_buf());
+    runner.check_mail().await;
+    added.lock().unwrap().push((101, "m1", "INBOX"));
+    *head.lock().unwrap() = 101;
+    runner.check_mail().await;
+    let text = agent.told.lock().unwrap()[0].1.clone();
+    assert!(text.contains("Read every thread in full yourself"), "{text}");
+    assert!(text.contains("\nSubject: Lunch?\n"), "{text}");
+    assert!(text.contains("Snippet (Gmail's preview of the first lines, not the email): Are you free on"), "{text}");
 }
 
 /// More new mail than one wake-up carries: the rest waits, text and all, and comes in the next one.
