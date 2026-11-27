@@ -185,8 +185,9 @@ another session's terminal instead.
 
 Messages going the other way are where to be careful. An agent that reads strangers' mail is the one most likely to be
 asked, by an email, to message another agent or start a session. In the full deck, forwards and new sessions are card
-actions that wait for your approval, so triage doesn't need to send them itself. If you run it headless, leave
-`msg send` and `session start` out of its allowed commands, as solo does.
+actions that wait for your approval, so triage doesn't need to send them itself. The deck refuses `session start`
+and `session resume` from a session a runner works for, so a new session always comes as a card. If you run it
+headless, leave `msg send` and `session start` out of its allowed commands too, as solo does.
 
 ## Checking it
 

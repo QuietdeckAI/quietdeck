@@ -72,9 +72,14 @@ list (`quietdeck watches`), but adding or stopping a watch on the deck takes you
 The triage agent proposes a session with a `new_session` action on a card: the machine, the tab, the working directory
 and the first prompt. A `resume` action brings back a session that ended. Approving the card starts it.
 
-A running session can also start or resume one itself, with `quietdeck session start` or `quietdeck session resume`,
-the same as running herdr on that machine. The deck records each start in History with who asked for it ("asked by
-`<tab>@<machine>`"). Permission flags never come from the deck: each machine sets them in its own `node.yaml`.
+The triage agent can't do it any other way. It reads strangers' mail, so the deck refuses `quietdeck session start`
+and `quietdeck session resume` from any session a runner works for, and says to post a `new_session` or `resume` card
+instead.
+
+Other sessions can start or resume one themselves, with `quietdeck session start` or `quietdeck session resume`, the
+same as running herdr on that machine: a session starting a helper is ordinary work. The deck records each start in
+History with who asked for it ("asked by `<tab>@<machine>`"). Permission flags never come from the deck: each machine
+sets them in its own `node.yaml`.
 
 ### Rules
 
