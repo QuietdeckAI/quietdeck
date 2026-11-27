@@ -270,3 +270,22 @@
     display: none;
   }
 }
+
+.mock__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.mock__choices span {
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--m-rule);
+  border-radius: 7px;
+  background: var(--m-panel);
+  color: var(--m-ink);
+  font-size: 0.875rem;
+}
+.mock__choices .on {
+  border-color: var(--m-accent);
+  color: var(--m-accent);
+}

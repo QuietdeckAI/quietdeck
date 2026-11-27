@@ -32,6 +32,16 @@ you.
 - **Alerts go to the agent that owns them.** A service's alerts go straight to its agent, and the report gets a count.
   An agent watching CI can keep those emails out of your inbox while it works.
 
+## Your agents' work, on the same kind of page
+
+The Work tab is one more document, kept by an agent that watches your other sessions. At the top is what's waiting on
+you: a session stuck on a prompt, a question, a finished session to wrap up, a pull request to review, today's tasks.
+Progress and completions go in an FYI list underneath. Every entry has its own thread and proposed actions, and its
+session icon shows a summary and the transcript.
+
+Park a project you won't touch this week, or snooze it until Monday. Name your own tabs and split Work into documents,
+one for each part of your life. Work: https://quietdeck.ai/work.md
+
 ## Nothing happens without you seeing it
 
 The agent proposes, and you approve. Plain code carries out what you approved, exactly as you approved it.

@@ -11,6 +11,7 @@ const description = site.summary;
 const chat = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
 const mail = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>`;
 const check = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`;
+const term = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>`;
 const done = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="currentColor"/><path d="m7 12.5 3.2 3L17 9" fill="none" stroke="oklch(18% 0.02 250)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 ---
 <!doctype html>
@@ -220,6 +221,61 @@ const done = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12
                 </div>
               </li>
             </ol>
+          </div>
+        </figure>
+      </section>
+
+      <section class="feature" aria-labelledby="work-title">
+        <div class="feature__copy">
+          <h2 id="work-title">Your agents' work, on the same kind of page</h2>
+          <p>
+            The Work tab is one more document, kept by an agent that watches your other sessions. At the top is what's
+            waiting on you: a session stuck on a prompt, a question, a finished session to wrap up, a pull request to
+            review, today's tasks. Progress and completions go in an FYI list underneath. Every entry has its own thread
+            and proposed actions, and its session icon shows a summary and the transcript.
+          </p>
+          <p>
+            Park a project you won't touch this week, or snooze it until Monday. Name your own tabs and split Work into
+            documents, one for each part of your life.
+          </p>
+        </div>
+        <figure class="mock" aria-label="The Work tab: a session stopped on a permission prompt shown as a small form, a finished session with Wrap up session proposed, a task for today, and an FYI list of completions under Archive all">
+          <div class="mock__nav" aria-hidden="true">
+            <span class="mock__brand">Quietdeck</span>
+            <span class="mock__tab">Inbox<span class="mock__count">4</span></span>
+            <span class="mock__tab mock__tab--on">Work<span class="mock__count">3</span></span>
+            <span class="mock__tab">History</span>
+            <span class="mock__tab">Rules</span>
+          </div>
+          <div class="mock__body">
+            <h4>Work</h4>
+            <ol>
+              <li>
+                <b><code>billing</code> is waiting on a prompt:</b> it wants to run the invoice script against the
+                staging database.
+                <div class="mock__choices" aria-hidden="true"><span class="on">Yes</span><span>Yes, and don't ask again</span><span>No</span></div>
+              </li>
+              <li>
+                <b><code>web</code> finished the Playwright fix:</b> pull request #143 is merged and deployed. Wrap it up,
+                then close it.
+                <div class="mock__default"><span>Wrap up session, then close it</span><span class="mock__icons"><Fragment set:html={chat} /><Fragment set:html={term} /><Fragment set:html={check} /></span></div>
+              </li>
+              <li>
+                <b>Renew the domain for sign.example.com:</b> due today. Only you can pay for it.
+                <div class="mock__default"><span>Mark it done in the thread</span><span class="mock__icons"><Fragment set:html={chat} /><Fragment set:html={term} /></span></div>
+              </li>
+            </ol>
+            <h5>FYI</h5>
+            <ul>
+              <li><code>certs</code> installed the new certificate and checked it.</li>
+              <li><code>release</code> shipped 0.4.2.</li>
+              <li>Parked: the enterprise pilot, until Monday.</li>
+            </ul>
+          </div>
+          <div class="mock__bar" aria-hidden="true">
+            <span class="mock__state">Idle</span>
+            <span class="mock__input">Message overseer</span>
+            <span class="mock__approve">Approve All</span>
           </div>
         </figure>
       </section>
