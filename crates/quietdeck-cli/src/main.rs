@@ -2,6 +2,7 @@
 //! token, then calls the deck's REST API with it. `--json` prints the deck's answer as it came.
 
 mod client;
+mod fleetlayer;
 mod print;
 
 use std::io::Read;
@@ -560,7 +561,8 @@ enum HandoffCommand {
 #[derive(Subcommand)]
 enum MsgCommand {
     /// Send a message to `tab` or `tab@node`. Fails at once when that session is offline, or when no session has
-    /// that name (the error suggests close names; `quietdeck sessions` lists them all).
+    /// that name (the error suggests close names; `quietdeck sessions` lists them all). Where this machine runs a
+    /// Fleetlayer node it goes through Fleetlayer, as `fleetlayer msg send` would.
     Send {
         #[arg(long)]
         to: String,
@@ -840,8 +842,12 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             print::out(json, &r, |_| "Shown on the Inbox page.".to_string())
         }
         Command::Msg { command: MsgCommand::Send { to, text } } => {
-            // 5 seconds end to end: the token, the deck, and the deck's delivery to the session (4 seconds).
             let text = read_arg(&text)?;
+            // Through Fleetlayer where this machine runs its node; the deck's relay otherwise.
+            if let Some(r) = fleetlayer::send(&fleetlayer::node_socket(), &to, &text).await {
+                return print::out(json, &r?, |_| format!("Delivered to {to}."));
+            }
+            // 5 seconds end to end: the token, the deck, and the deck's delivery to the session (4 seconds).
             let send = async {
                 let c = Client::connect_with(MSG_TIMEOUT).await?;
                 let r: quietdeck_types::node::Delivered = c.post("/api/msg", &MsgSend { to: to.clone(), text }).await?;

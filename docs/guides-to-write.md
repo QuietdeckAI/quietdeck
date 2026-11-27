@@ -192,7 +192,9 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   node.yaml as a plugin (`name: runner`, `command: quietdeck-node`, `args: [fleetlayer-plugin]`,
   `grants: [message.send]`). The runner's forwards and its wake-ups then go through Fleetlayer as
   `plugin:runner@<node>`, the sender access rules name, with an email forward marked as outside data (`untrusted`).
-  Without it, or with no Fleetlayer at all (Quietdeck solo on a laptop), the node keeps its own delivery. Footgun: a
+  Without it, or with no Fleetlayer at all (Quietdeck solo on a laptop), the node keeps its own delivery.
+  `quietdeck msg send` goes through Fleetlayer's node socket whenever one answers, exactly as `fleetlayer msg send`
+  would (Fleetlayer's access rules apply, and replies say `fleetlayer msg send`), and through the deck otherwise. Footgun: a
   Unix socket path must be under about 107 bytes, so a test node's sockets can't live in a deep scratch folder. Now:
   `crates/quietdeck-node/src/fleetlayer.rs` (27 November, the cutover), smoke-tested against a real fleetlayer-node.
 - **A server VM for agents.** Login user without sudo, lingering, Tailscale SSH, herdr, the node. Now:
