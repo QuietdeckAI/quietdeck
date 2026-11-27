@@ -366,6 +366,23 @@ pub struct Card {
     pub input: CardInput,
     /// The current version's actions, in order.
     pub action_records: Vec<ActionRecord>,
+    /// The person's decision on this version while it waits out the undo window: the card still reads `open` until
+    /// the batch is released (or undone, when this goes away).
+    #[serde(default)]
+    pub pending: Option<PendingDecision>,
+}
+
+/// A decision in its undo window (`Card.pending`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct PendingDecision {
+    pub kind: DecisionKind,
+    /// The Approve All batch: `POST /api/v1/decisions/undo` with it cancels the decision.
+    pub batch: String,
+    /// When the batch is released to the runner.
+    #[ts(type = "string")]
+    #[schemars(with = "String")]
+    pub release_at: Timestamp,
 }
 
 /// `quietdeck card add`'s answer.

@@ -335,7 +335,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Server-sent events naming what changed, so a frontend knows what to reload */
+        /**
+         * Server-sent events naming what changed, so a frontend knows what to reload
+         * @description Server-sent events. Every event is named `changed` (listen with `addEventListener("changed", …)`: `onmessage` sees only unnamed events), and its `data` is a JSON string naming what changed (`Changed`), never the data itself: refetch that. `all` means the stream fell behind: refetch everything. A comment line every 20 seconds keeps the connection open. The stream ends when the deck restarts: reconnect (EventSource does) and refetch.
+         */
         get: operations["events"];
         put?: never;
         post?: never;
@@ -1877,6 +1880,12 @@ export interface components {
              * @default false
              */
             needs_agent?: boolean;
+            /**
+             * @description The person's decision on this version while it waits out the undo window: the card still reads `open` until
+             *     the batch is released (or undone, when this goes away).
+             * @default null
+             */
+            pending?: components["schemas"]["PendingDecision"] | null;
             posted_by: components["schemas"]["SessionRef"];
             prepared_at: string;
             reason: string;
@@ -2109,6 +2118,11 @@ export interface components {
             /** @description The WebAuthn credential as JSON, from `navigator.credentials.create()` or `.get()`. */
             credential: unknown;
         };
+        /**
+         * @description One message on the event stream (`GET /api/v1/events`): what changed, so it refetches that. Never the data
+         *     itself.
+         */
+        Changed: ("cards" | "timeline" | "sessions" | "settings" | "nodes" | "rules" | "leases") | "pings" | "push" | "mail" | "all";
         /** @description A message the deck keeps. */
         ChannelMessage: {
             body: string;
@@ -2610,6 +2624,14 @@ export interface components {
         };
         PasskeyRename: {
             device_name: string;
+        };
+        /** @description A decision in its undo window (`Card.pending`). */
+        PendingDecision: {
+            /** @description The Approve All batch: `POST /api/v1/decisions/undo` with it cancels the decision. */
+            batch: string;
+            kind: components["schemas"]["DecisionKind"];
+            /** @description When the batch is released to the runner. */
+            release_at: string;
         };
         Ping: {
             account?: string | null;
@@ -4227,12 +4249,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description A stream of events, each naming what changed (`Changed`), as `data:` lines. */
+            /** @description The event stream. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example event: changed
+                     *     data: "cards"
+                     */
                     "text/event-stream": string;
                 };
             };

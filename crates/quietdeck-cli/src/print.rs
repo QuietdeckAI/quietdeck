@@ -6,9 +6,17 @@ use quietdeck_types::directory::{HitSource, SessionRow, WhoHas};
 use quietdeck_types::timeline::History;
 use serde::Serialize;
 
+/// `--json` prints the deck's answer as it came when the command made one request (fields this CLI doesn't know
+/// included), and the typed value otherwise (a command that combines several answers).
 pub fn out<T: Serialize>(json: bool, value: &T, text: impl Fn(&T) -> String) -> anyhow::Result<()> {
     if json {
-        println!("{}", serde_json::to_string_pretty(value)?);
+        let raw = crate::client::only_answer();
+        // Only when it's this value's answer: a command that read one answer and printed something else prints that.
+        let same = raw.as_ref().is_some_and(|r| covers(r, &serde_json::to_value(value).unwrap_or_default()));
+        match raw {
+            Some(raw) if same => println!("{}", serde_json::to_string_pretty(&raw)?),
+            _ => println!("{}", serde_json::to_string_pretty(value)?),
+        }
     } else {
         let t = text(value);
         if !t.is_empty() {
@@ -16,6 +24,23 @@ pub fn out<T: Serialize>(json: bool, value: &T, text: impl Fn(&T) -> String) -> 
         }
     }
     Ok(())
+}
+
+/// Whether `raw` holds everything in `typed`: the same value, perhaps with more fields in its objects. Values this CLI
+/// filled in with defaults (absent from `raw`) count as covered.
+fn covers(raw: &serde_json::Value, typed: &serde_json::Value) -> bool {
+    use serde_json::Value;
+    match (raw, typed) {
+        (Value::Object(r), Value::Object(t)) => {
+            t.iter().all(|(k, tv)| r.get(k).map_or(tv.is_null() || is_empty(tv), |rv| covers(rv, tv)))
+        }
+        (Value::Array(r), Value::Array(t)) => r.len() == t.len() && r.iter().zip(t).all(|(r, t)| covers(r, t)),
+        _ => raw == typed,
+    }
+}
+
+fn is_empty(v: &serde_json::Value) -> bool {
+    matches!(v, serde_json::Value::Array(a) if a.is_empty()) || v == &serde_json::Value::Bool(false)
 }
 
 fn snake<T: Serialize>(v: &T) -> String {
@@ -443,4 +468,22 @@ pub fn round_status(r: &quietdeck_types::api::RoundStatus) -> String {
     }
     out.push("Mail from before the watch started never woke you.".into());
     out.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::covers;
+
+    #[test]
+    fn a_newer_decks_answer_covers_the_typed_one() {
+        let raw = json!({"settings": {"undo_seconds": 3, "report": false}, "cards": [{"id": 1, "new": "x"}]});
+        assert!(covers(&raw, &json!({"settings": {"undo_seconds": 3}, "cards": [{"id": 1}]})));
+        // Defaults this CLI filled in.
+        assert!(covers(&raw, &json!({"settings": {"undo_seconds": 3}, "cards": [{"id": 1, "tags": []}], "x": null})));
+        assert!(!covers(&raw, &json!({"settings": {"undo_seconds": 4}})));
+        assert!(!covers(&raw, &json!({"cards": []})));
+        assert!(!covers(&json!([1, 2]), &json!({"a": 1})));
+    }
 }

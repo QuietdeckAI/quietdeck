@@ -4,6 +4,7 @@ import type { ActionRecord } from "./ActionRecord";
 import type { CardSection } from "./CardSection";
 import type { CardState } from "./CardState";
 import type { Fact } from "./Fact";
+import type { PendingDecision } from "./PendingDecision";
 import type { Sender } from "./Sender";
 import type { SenderAuth } from "./SenderAuth";
 import type { SessionRef } from "./SessionRef";
@@ -16,6 +17,11 @@ export type Card = { id: number, version: number, posted_by: SessionRef, state: 
  * The current version's actions, in order.
  */
 action_records: Array<ActionRecord>, 
+/**
+ * The person's decision on this version while it waits out the undo window: the card still reads `open` until
+ * the batch is released (or undone, when this goes away).
+ */
+pending: PendingDecision | null, 
 /**
  * An account label from deck config.
  */

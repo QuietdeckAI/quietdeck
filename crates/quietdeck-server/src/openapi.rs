@@ -369,10 +369,12 @@ fn build(errors: Option<Rc<RefCell<Vec<String>>>>) -> (Router<AppState>, Router<
     let legacy = Router::new().nest("/api", Router::from(core.clone()));
     // `POST /cards` reads its body as text, to name the field a bad card got wrong: its schema is `CardInput`'s.
     let card_input = aide::generate::in_context(|ctx| ctx.schema.subschema_for::<CardInput>());
+    // The event stream's payload, which no handler's type names.
+    let changed = aide::generate::in_context(|ctx| ctx.schema.subschema_for::<quietdeck_types::api::Changed>());
     let mut api = OpenApi::default();
     let v1 = aide::axum::ApiRouter::new().nest(V1, core).finish_api(&mut api);
     let mut spec = serde_json::to_value(&api).expect("the spec serialises");
-    describe(&mut spec, card_input.to_value());
+    describe(&mut spec, card_input.to_value(), changed.to_value());
     let mut spec = sorted(spec);
     prune_unused_schemas(&mut spec);
     (v1, legacy, spec)
@@ -390,7 +392,7 @@ const OPEN: &[&str] = &[
 ];
 
 /// Info, tags, security schemes, each operation's ID, tag and summary, the event stream, and the card body.
-fn describe(spec: &mut Value, card_input: Value) {
+fn describe(spec: &mut Value, card_input: Value, changed: Value) {
     spec["info"] = json!({
         "title": "Quietdeck API",
         "version": API_VERSION,
@@ -441,13 +443,26 @@ fn describe(spec: &mut Value, card_input: Value) {
     paths[format!("{V1}/events")] = json!({
         "get": {
             "security": [{ "owner": [] }],
+            "description": "Server-sent events. Every event is named `changed` (listen with \
+                `addEventListener(\"changed\", …)`: `onmessage` sees only unnamed events), and its `data` is a JSON \
+                string naming what changed (`Changed`), never the data itself: refetch that. `all` means the stream \
+                fell behind: refetch everything. A comment line every 20 seconds keeps the connection open. The \
+                stream ends when the deck restarts: reconnect (EventSource does) and refetch.",
             "responses": {
                 "200": {
-                    "description": "A stream of events, each naming what changed (`Changed`), as `data:` lines.",
-                    "content": { "text/event-stream": { "schema": { "type": "string" } } },
+                    "description": "The event stream.",
+                    "content": { "text/event-stream": {
+                        "schema": {
+                            "type": "string",
+                            "description": "`event: changed` lines, each with a `data:` line holding a `Changed`.",
+                            "contentSchema": changed.clone(),
+                        },
+                        "example": "event: changed\ndata: \"cards\"\n\n",
+                    } },
                 },
                 "default": error_response_json(),
             },
+            "x-quietdeck-events": { "changed": changed },
         },
     });
     paths[format!("{V1}/cards")]["post"]["requestBody"] =

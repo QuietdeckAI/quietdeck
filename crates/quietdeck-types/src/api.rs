@@ -190,7 +190,7 @@ pub struct PasskeyRename {
     pub device_name: String,
 }
 
-/// One message on the web app's event stream (`GET /api/events`): what changed, so it refetches that. Never the data
+/// One message on the event stream (`GET /api/v1/events`): what changed, so it refetches that. Never the data
 /// itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
 #[serde(rename_all = "snake_case")]

@@ -48,6 +48,11 @@ pub struct Env {
     /// webhook receiver. See `solo.rs`.
     #[arg(long, env = "QUIETDECK_LOCAL_ONLY", action = clap::ArgAction::SetTrue, value_parser = clap::builder::BoolishValueParser::new())]
     pub local_only: bool,
+    /// A frontend of your own: serve this directory's built files in place of the web app built into the deck, with
+    /// its index.html for any other path. Served from the deck's origin, its pages sign in as the owner like the
+    /// default web app's. A directory with no index.html serves no UI at all.
+    #[arg(long, env = "QUIETDECK_UI_DIR")]
+    pub ui_dir: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, clap::Args)]

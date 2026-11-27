@@ -16,7 +16,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Run the deck: the app on QUIETDECK_LISTEN, the webhook receiver on QUIETDECK_HOOKS_LISTEN.
-    Serve(Env),
+    Serve(Box<Env>),
     /// Print a new Web Push (VAPID) key pair for QUIETDECK_VAPID_PUBLIC_KEY and QUIETDECK_VAPID_PRIVATE_KEY.
     VapidKeys,
     /// Print a one-time code for `quietdeck node enroll`, without the web app (run it in the deck's container).
@@ -48,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
     match Cli::parse().command {
-        Command::Serve(env) => serve(env).await,
+        Command::Serve(env) => serve(*env).await,
         Command::VapidKeys => {
             let (public, private) = vapid_keys();
             println!("QUIETDECK_VAPID_PUBLIC_KEY={public}");

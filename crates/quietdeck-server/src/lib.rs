@@ -157,7 +157,15 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
     if local_only.is_some() {
         app = app.merge(solo::router());
     }
-    let mut app = app.fallback(web::serve).with_state(state.clone());
+    let mut app = match env.ui_dir.clone() {
+        Some(dir) => {
+            tracing::info!(dir = %dir.display(), "serving the frontend in QUIETDECK_UI_DIR, not the built-in web app");
+            let dir = Arc::new(dir);
+            app.fallback(move |uri: axum::http::Uri| web::serve_dir(dir.clone(), uri))
+        }
+        None => app.fallback(web::serve),
+    }
+    .with_state(state.clone());
     if let Some(lo) = local_only {
         app = app.layer(axum::middleware::from_fn_with_state(lo, solo::guard));
     }

@@ -29,6 +29,42 @@ client library or a tool that works with a deck.
 - **Unversioned `/api/...` paths** answer the same routes as `/api/v1/...`, for the nodes, CLIs and web apps that
   predate v1. They're not part of the published API: new clients use `/api/v1`.
 
+## Serving your own frontend
+
+The owner signs in with a passkey, and the session is a cookie on the deck's own origin: a page served from
+anywhere else can't act as the owner. Until sign-in for other origins arrives (through Fleetlayer), serve your
+frontend from the deck's origin, one of two ways:
+
+- **The deck serves it:** build it to static files and start the deck with `QUIETDECK_UI_DIR=/path/to/dist`. The deck
+  serves those files in place of its own web app, and `index.html` for any path that isn't a file (so client-side
+  routes work on reload). `/api/...` stays the API. Your pages sign in at `/api/v1/auth/*` like the default app's.
+- **A proxy:** serve your pages and pass `/api/` through to the deck on the same origin (a dev server's proxy, a
+  reverse proxy in front of both). `examples/inbox` does this with Vite in development.
+
+Agents and scripts don't need either: they send a bearer token (`session` or `node`) from anywhere.
+
+## Making decisions
+
+Two routes, by what the decision does:
+
+- **Approve, edit or adjust: `POST /api/v1/decisions/approve-all`.** These carry work out, so they go through the
+  undo window (Settings: `undo_seconds`): the answer, `Approving`, names the batch, and
+  `POST /api/v1/decisions/undo` with it cancels everything in it until `release_at`. Send every card on screen, or
+  one with `single: true`. Each decision names the card version on screen; a card that changed since is skipped (the
+  answer's `skipped` says why).
+- **Later, move up, move down: `POST /api/v1/cards/{id}/decide`.** These only move the card, at once, with no undo
+  window.
+
+While a decision waits out its window, the card still reads `state: open` and carries `pending` (the decision's kind,
+its batch and `release_at`); the Inbox's `approving` names the batch too.
+
+## Live updates
+
+`GET /api/v1/events` is a server-sent event stream. Every event is named `changed` (listen for it by name:
+`onmessage` sees only unnamed events), and its data is a JSON string naming what changed (the `Changed` schema:
+`"cards"`, `"timeline"`, and so on; `"all"` after the stream fell behind). Refetch that view. The stream ends when the
+deck restarts: reconnect and refetch.
+
 ## Sign-in
 
 Three security schemes, named on each operation:

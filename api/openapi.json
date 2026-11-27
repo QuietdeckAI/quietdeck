@@ -1156,6 +1156,18 @@
             "description": "The agent wants to carry the card out itself, whatever the runner could do.",
             "type": "boolean"
           },
+          "pending": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingDecision"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The person's decision on this version while it waits out the undo window: the card still reads `open` until\nthe batch is released (or undone, when this goes away)."
+          },
           "posted_by": {
             "$ref": "#/components/schemas/SessionRef"
           },
@@ -1707,6 +1719,43 @@
           "credential"
         ],
         "type": "object"
+      },
+      "Changed": {
+        "description": "One message on the event stream (`GET /api/v1/events`): what changed, so it refetches that. Never the data\nitself.",
+        "oneOf": [
+          {
+            "enum": [
+              "cards",
+              "timeline",
+              "sessions",
+              "settings",
+              "nodes",
+              "rules",
+              "leases"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "pings",
+            "description": "Pings, their feedback and thread watches.",
+            "type": "string"
+          },
+          {
+            "const": "push",
+            "description": "Devices that take pushes.",
+            "type": "string"
+          },
+          {
+            "const": "mail",
+            "description": "The Drafts and Sent tabs.",
+            "type": "string"
+          },
+          {
+            "const": "all",
+            "description": "The stream fell behind: refetch everything.",
+            "type": "string"
+          }
+        ]
       },
       "ChannelMessage": {
         "description": "A message the deck keeps.",
@@ -3209,6 +3258,28 @@
         },
         "required": [
           "device_name"
+        ],
+        "type": "object"
+      },
+      "PendingDecision": {
+        "description": "A decision in its undo window (`Card.pending`).",
+        "properties": {
+          "batch": {
+            "description": "The Approve All batch: `POST /api/v1/decisions/undo` with it cancels the decision.",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DecisionKind"
+          },
+          "release_at": {
+            "description": "When the batch is released to the runner.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "batch",
+          "release_at"
         ],
         "type": "object"
       },
@@ -6805,17 +6876,23 @@
     },
     "/api/v1/events": {
       "get": {
+        "description": "Server-sent events. Every event is named `changed` (listen with `addEventListener(\"changed\", …)`: `onmessage` sees only unnamed events), and its `data` is a JSON string naming what changed (`Changed`), never the data itself: refetch that. `all` means the stream fell behind: refetch everything. A comment line every 20 seconds keeps the connection open. The stream ends when the deck restarts: reconnect (EventSource does) and refetch.",
         "operationId": "events",
         "responses": {
           "200": {
             "content": {
               "text/event-stream": {
+                "example": "event: changed\ndata: \"cards\"\n\n",
                 "schema": {
+                  "contentSchema": {
+                    "$ref": "#/components/schemas/Changed"
+                  },
+                  "description": "`event: changed` lines, each with a `data:` line holding a `Changed`.",
                   "type": "string"
                 }
               }
             },
-            "description": "A stream of events, each naming what changed (`Changed`), as `data:` lines."
+            "description": "The event stream."
           },
           "default": {
             "content": {
@@ -6836,7 +6913,12 @@
         "summary": "Server-sent events naming what changed, so a frontend knows what to reload",
         "tags": [
           "deck"
-        ]
+        ],
+        "x-quietdeck-events": {
+          "changed": {
+            "$ref": "#/components/schemas/Changed"
+          }
+        }
       }
     },
     "/api/v1/handoffs": {

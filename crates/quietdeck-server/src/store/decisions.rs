@@ -997,6 +997,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_card_in_the_undo_window_says_so_until_released_or_undone() {
+        let db = crate::db::memory().await;
+        let card = post(&db, "t1").await;
+        assert_eq!(card.pending, None);
+        let req = ApproveAll { cards: vec![approve(&card)], timeline: vec![], single: None };
+        let a = approve_all(&db, &req, 60).await.unwrap();
+        let pending = cards::get(&db, card.id).await.unwrap().unwrap().pending.expect("pending in the window");
+        assert_eq!((pending.kind, pending.batch.as_str()), (DecisionKind::Approve, a.batch.as_str()));
+        undo(&db, &a.batch).await.unwrap();
+        assert_eq!(cards::get(&db, card.id).await.unwrap().unwrap().pending, None);
+
+        let a = approve_all(&db, &req, 0).await.unwrap();
+        release_due(&db).await.unwrap();
+        assert_eq!(cards::get(&db, card.id).await.unwrap().unwrap().pending, None, "released: {}", a.batch);
+    }
+
+    #[tokio::test]
     async fn approving_a_default_closes_its_no_action_keep_in_inbox_cards() {
         let db = crate::db::memory().await;
         let fwd = post(&db, "t1").await;

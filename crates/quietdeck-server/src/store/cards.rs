@@ -2,7 +2,7 @@
 
 use quietdeck_types::SessionRef;
 use quietdeck_types::card::{
-    ActionRecord, ActionStatus, Card, CardInput, CardResolution, CardSection, CardState, RunBy,
+    ActionRecord, ActionStatus, Card, CardInput, CardResolution, CardSection, CardState, PendingDecision, RunBy,
 };
 
 use crate::db::{Db, enum_str, from_json, json, now_ms, parse_enum, ts, ts_opt};
@@ -76,8 +76,25 @@ pub async fn actions_for(db: &Db, card_id: i64, version: i64) -> anyhow::Result<
     rows.into_iter().map(ActionRow::into_record).collect()
 }
 
+/// The decision on this card version still in its undo window, if any.
+async fn pending_for(db: &Db, card_id: i64, version: i64) -> anyhow::Result<Option<PendingDecision>> {
+    let row: Option<(String, String, i64)> = sqlx::query_as(
+        "SELECT d.kind, b.id, b.release_after FROM decisions d JOIN decision_batches b ON b.id = d.batch \
+         WHERE d.card_id = ? AND d.card_version = ? AND b.released_at IS NULL ORDER BY d.id DESC LIMIT 1",
+    )
+    .bind(card_id)
+    .bind(version)
+    .fetch_optional(db)
+    .await?;
+    row.map(|(kind, batch, release_after)| {
+        Ok(PendingDecision { kind: parse_enum(&kind)?, batch, release_at: ts(release_after) })
+    })
+    .transpose()
+}
+
 async fn hydrate(db: &Db, r: CardRow) -> anyhow::Result<Card> {
     let action_records = actions_for(db, r.id, r.version).await?;
+    let pending = pending_for(db, r.id, r.version).await?;
     let mut input: CardInput = from_json(&r.input)?;
     // The deck moves cards between sections (Move up, Move down, handled elsewhere): its column wins.
     input.section = parse_enum(&r.section)?;
@@ -94,6 +111,7 @@ async fn hydrate(db: &Db, r: CardRow) -> anyhow::Result<Card> {
         updated_at: ts(r.updated_at),
         input,
         action_records,
+        pending,
     })
 }
 

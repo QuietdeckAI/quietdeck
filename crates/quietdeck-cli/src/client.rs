@@ -149,11 +149,26 @@ fn sent(e: reqwest::Error) -> anyhow::Error {
     }
 }
 
+/// Every answer the deck gave this run, as it came: `--json` prints it when the command made one request, so a
+/// newer deck's fields reach the caller even through an older CLI whose types don't name them.
+static ANSWERS: std::sync::Mutex<Vec<serde_json::Value>> = std::sync::Mutex::new(Vec::new());
+
+/// The deck's one answer this run, as it came, or None when there were none or several.
+pub fn only_answer() -> Option<serde_json::Value> {
+    let answers = ANSWERS.lock().ok()?;
+    (answers.len() == 1).then(|| answers[0].clone())
+}
+
 pub async fn read<T: DeserializeOwned>(resp: reqwest::Response) -> anyhow::Result<T> {
     let status = resp.status();
     let bytes = resp.bytes().await.map_err(sent)?;
     if status.is_success() {
-        return serde_json::from_slice(&bytes).map_err(|e| anyhow::anyhow!("reading the deck's answer: {e}"));
+        let raw: serde_json::Value =
+            serde_json::from_slice(&bytes).map_err(|e| anyhow::anyhow!("reading the deck's answer: {e}"))?;
+        if let Ok(mut answers) = ANSWERS.lock() {
+            answers.push(raw.clone());
+        }
+        return serde_json::from_value(raw).map_err(|e| anyhow::anyhow!("reading the deck's answer: {e}"));
     }
     match serde_json::from_slice::<ApiError>(&bytes) {
         Ok(e) => anyhow::bail!("{}", e.error),

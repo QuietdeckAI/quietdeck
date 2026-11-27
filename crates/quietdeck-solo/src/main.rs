@@ -292,6 +292,7 @@ async fn run(c: SoloConfig) -> anyhow::Result<()> {
         hooks_listen: String::new(),
         dev_trust_local: false,
         local_only: true,
+        ui_dir: None,
     };
     tracing::info!(url = %deck_url(&c), "Quietdeck solo: open the Inbox with `quietdeck-solo open`");
     let opts = quietdeck_node::RunOptions { watch_orchestrator: false };
@@ -673,6 +674,7 @@ mod tests {
             hooks_listen: String::new(),
             dev_trust_local: false,
             local_only: true,
+            ui_dir: None,
         };
         let deck = tokio::spawn(quietdeck_server::serve(env));
         let base = deck_url(&c);
