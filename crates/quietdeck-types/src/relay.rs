@@ -97,6 +97,26 @@ impl Delivery {
 }
 
 impl DeliveryKind {
+    /// The deck's own words or the runner's to its agent (the person's chat, report answers, handoffs, wake-ups,
+    /// runner reports), as opposed to outside data (forwards, webhooks) and messages between sessions. Fleetlayer
+    /// carries these from the deck as a trusted service, never through a plugin on an agent's own Unix user.
+    pub fn is_deck_words(&self) -> bool {
+        matches!(self, DeliveryKind::Deck | DeliveryKind::Handoff | DeliveryKind::Wakeup | DeliveryKind::RunnerReport)
+    }
+
+    /// Its name for Fleetlayer's `subkind`.
+    pub fn subkind(&self) -> &'static str {
+        match self {
+            DeliveryKind::Message { .. } => "message",
+            DeliveryKind::Forward { .. } => "forward",
+            DeliveryKind::Webhook { .. } => "webhook",
+            DeliveryKind::Wakeup => "wakeup",
+            DeliveryKind::Handoff => "handoff",
+            DeliveryKind::RunnerReport => "runner_report",
+            DeliveryKind::Deck => "deck",
+        }
+    }
+
     /// The fixed header for this kind, then the body: what a session sees, whichever program delivers it.
     pub fn render(&self, body: &str) -> String {
         match self {

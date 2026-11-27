@@ -73,6 +73,77 @@ impl Client {
     }
 }
 
+/// The deck sending to sessions through the control plane (`POST /v1/messages`), as `service:<token name>` with a
+/// send-scoped token: decided by Fleetlayer's access rules, delivered from "Quietdeck" and not marked as outside data.
+#[derive(Debug, Clone)]
+pub struct Sender {
+    http: reqwest::Client,
+    base: String,
+    token: String,
+}
+
+/// How a send through the control plane ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sent {
+    Delivered(quietdeck_types::node::Delivered),
+    /// Fleetlayer doesn't know the session (a machine without Fleetlayer): the caller tries the node.
+    Unknown,
+    /// Refused (403), offline or busy (503), or anything else: Fleetlayer's own words, with the HTTP status.
+    Failed {
+        status: u16,
+        message: String,
+    },
+}
+
+impl Sender {
+    pub fn new(base: &str, token: &str) -> anyhow::Result<Sender> {
+        let http = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(3))
+            .timeout(Duration::from_secs(SEND_WITHIN_SECS))
+            .build()?;
+        Ok(Sender { http, base: base.trim_end_matches('/').to_string(), token: token.to_string() })
+    }
+
+    /// Send to `<tab>@<node>`. A connection that fails before the request is sent counts as Unknown (the node path
+    /// is safe then); a timeout after it's sent is Failed, since Fleetlayer may still have delivered it.
+    pub async fn send(&self, to: &str, text: &str, subkind: &str) -> Sent {
+        let res = self
+            .http
+            .post(format!("{}/v1/messages", self.base))
+            .bearer_auth(&self.token)
+            .json(&serde_json::json!({"to": to, "text": text, "label": "Quietdeck", "subkind": subkind}))
+            .send()
+            .await;
+        let res = match res {
+            Ok(r) => r,
+            Err(e) if e.is_connect() => {
+                tracing::warn!(error = %e, "Fleetlayer's control plane is unreachable: delivering through the node");
+                return Sent::Unknown;
+            }
+            Err(e) => return Sent::Failed { status: 0, message: format!("Fleetlayer didn't answer: {e}") },
+        };
+        let status = res.status().as_u16();
+        let body: serde_json::Value = res.json().await.unwrap_or_default();
+        match status {
+            200 => Sent::Delivered(match body["via"].as_str() {
+                Some("harness_channel") => quietdeck_types::node::Delivered::Socket,
+                _ => quietdeck_types::node::Delivered::Orchestrator,
+            }),
+            404 => Sent::Unknown,
+            _ => Sent::Failed {
+                status,
+                message: body["message"]
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("Fleetlayer answered {status}")),
+            },
+        }
+    }
+}
+
+/// The relay waits 4 seconds for a node; Fleetlayer's own delivery is cut off at 5, and a cross-node one at 12.
+const SEND_WITHIN_SECS: u64 = 13;
+
 /// A page of `/v1/summaries?since=`.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -263,6 +334,78 @@ pub async fn ticker(state: AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fake control plane: answers POST /v1/messages by the `to` it gets, and keeps what it got.
+    async fn control_plane() -> (String, std::sync::Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>) {
+        use axum::http::StatusCode;
+        let seen: std::sync::Arc<tokio::sync::Mutex<Vec<serde_json::Value>>> = Default::default();
+        let kept = seen.clone();
+        let app = axum::Router::new().route(
+            "/v1/messages",
+            axum::routing::post(move |headers: axum::http::HeaderMap, axum::Json(m): axum::Json<serde_json::Value>| {
+                let kept = kept.clone();
+                async move {
+                    assert_eq!(headers["authorization"], "Bearer send-token");
+                    kept.lock().await.push(m.clone());
+                    let (status, body) = match m["to"].as_str().unwrap() {
+                        "email triage@agents-triage" => (StatusCode::OK, serde_json::json!({"via": "harness_channel"})),
+                        "laptop tab@laptop" => (StatusCode::NOT_FOUND, serde_json::json!({"code": -32014, "message": "no such node"})),
+                        "ci@agents" => (StatusCode::SERVICE_UNAVAILABLE, serde_json::json!({"code": -32010, "message": "ci on agents isn't running"})),
+                        _ => (StatusCode::FORBIDDEN, serde_json::json!({"code": -32011, "message": "service:quietdeck may not message that session"})),
+                    };
+                    (status, axum::Json(body))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (url, seen)
+    }
+
+    #[tokio::test]
+    async fn the_deck_sends_as_quietdeck_and_an_unknown_session_falls_back_to_the_node() {
+        let (url, seen) = control_plane().await;
+        let fl = Sender::new(&url, "send-token").unwrap();
+        assert_eq!(
+            fl.send("email triage@agents-triage", "Nathan wrote: hi", "deck").await,
+            Sent::Delivered(quietdeck_types::node::Delivered::Socket)
+        );
+        let got = seen.lock().await[0].clone();
+        assert_eq!(got["label"], "Quietdeck");
+        assert_eq!(got["subkind"], "deck");
+        assert_eq!(got["text"], "Nathan wrote: hi");
+        assert_eq!(fl.send("laptop tab@laptop", "x", "deck").await, Sent::Unknown);
+        assert_eq!(
+            fl.send("ci@agents", "x", "deck").await,
+            Sent::Failed { status: 503, message: "ci on agents isn't running".into() }
+        );
+        assert_eq!(
+            fl.send("api@agents", "x", "deck").await,
+            Sent::Failed { status: 403, message: "service:quietdeck may not message that session".into() }
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unreachable_control_plane_means_the_node_delivers() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let fl = Sender::new(&url, "send-token").unwrap();
+        assert_eq!(fl.send("email triage@agents-triage", "x", "deck").await, Sent::Unknown);
+    }
+
+    #[test]
+    fn only_the_decks_own_words_go_as_the_deck() {
+        use quietdeck_types::relay::DeliveryKind;
+        assert!(DeliveryKind::Deck.is_deck_words());
+        assert!(DeliveryKind::Handoff.is_deck_words());
+        let forward =
+            DeliveryKind::Forward { account: "a".into(), refs: vec![], rule: None, sent_mail: false, note: None };
+        assert!(!forward.is_deck_words());
+        let from = quietdeck_types::action::SessionRef { node: "agents".into(), tab: "ci".into(), session_id: None };
+        assert!(!DeliveryKind::Message { from }.is_deck_words());
+    }
 
     fn wire(session: &str, kind: &str, key: &str, to: i64, written: i64, sentence: &str) -> serde_json::Value {
         serde_json::json!({

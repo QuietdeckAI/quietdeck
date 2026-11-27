@@ -69,25 +69,17 @@ pub struct Outgoing {
 /// sessions do. What carries the person's own words or the runner's instructions to its agent (the Inbox chat, report
 /// answers, handoffs, wake-ups, runner reports) stays on the node's own delivery for now: on a node in Fleetlayer's
 /// untrusted group (agents-triage) every send from the plugin arrives marked as outside data, and the agent mustn't
-/// read the person's words that way (homeserver, 27 Nov 2026). It moves once Fleetlayer can deliver the deck's
-/// words as the deck's.
+/// read the person's words that way (homeserver, 27 Nov 2026). The deck sends those through Fleetlayer's control plane
+/// as a trusted service instead (quietdeck-server's fleetlayer.rs), and the node's own delivery where it can't.
 pub fn carries(kind: &DeliveryKind) -> bool {
-    matches!(kind, DeliveryKind::Forward { .. } | DeliveryKind::Webhook { .. } | DeliveryKind::Message { .. })
+    !kind.is_deck_words()
 }
 
 impl Outgoing {
     /// A Quietdeck delivery, rendered as the session sees it, with its kind and whether it's outside data.
     pub fn of(to: &str, kind: &DeliveryKind, body: &str, local: bool) -> Outgoing {
-        let (subkind, untrusted) = match kind {
-            DeliveryKind::Message { .. } => ("message", false),
-            DeliveryKind::Forward { .. } => ("forward", true),
-            DeliveryKind::Webhook { .. } => ("webhook", true),
-            DeliveryKind::Wakeup => ("wakeup", false),
-            DeliveryKind::Handoff => ("handoff", false),
-            DeliveryKind::RunnerReport => ("runner_report", false),
-            DeliveryKind::Deck => ("deck", false),
-        };
-        Outgoing { to: to.into(), text: kind.render(body), local, untrusted, subkind: Some(subkind.into()) }
+        let untrusted = matches!(kind, DeliveryKind::Forward { .. } | DeliveryKind::Webhook { .. });
+        Outgoing { to: to.into(), text: kind.render(body), local, untrusted, subkind: Some(kind.subkind().into()) }
     }
 }
 

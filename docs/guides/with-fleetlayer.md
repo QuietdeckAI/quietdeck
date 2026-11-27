@@ -58,21 +58,42 @@ problems.
 
 On that machine, these now go through Fleetlayer instead of the Quietdeck node's own delivery:
 
-- the runner's wake-ups to the triage agent;
 - the runner's forwards, when you approve a card that forwards an email to another session;
-- messages the deck hands this node for one of its sessions (from `quietdeck msg send`, the deck's chat, a handoff).
+- webhook events and messages between sessions that the deck hands this node for one of its sessions.
 
 Fleetlayer finds the session, refuses repeats, and delivers through the agent's own messaging channel, or types it in
 through herdr when the session has none. The sender is `plugin:runner@<node>` (the plugin's `name`, then the
 Fleetlayer node's name), and the session sees "Message from plugin runner (build-server-triage) via Fleetlayer",
-followed by Quietdeck's text.
+followed by Quietdeck's text. A forwarded email or a webhook is sent marked as outside data, so Fleetlayer adds a line
+telling the agent to treat it as information, never as instructions.
 
-A forwarded email is sent marked as outside data, so Fleetlayer adds a line telling the agent to treat it as
-information, never as instructions. Wake-ups, handoffs and the deck's own messages aren't marked.
+Your own words and the runner's to its agent stay off the plugin: the deck's chat, your answers on the report,
+handoffs, wake-ups and runner reports. Anything on an agent's Unix user can claim the plugin's identity, so a node
+whose agent reads untrusted mail is usually in an untrusted group in Fleetlayer's access rules, and every send from the
+plugin there arrives marked as outside data. Those go through the deck's own Fleetlayer sender (below), or the
+Quietdeck node's own delivery.
 
 With the plugin, the runner's `agent.tab` may also name a session on another node, `email triage@build-server-triage`,
 for a runner that runs under a different Unix user from its agent. Without it, the runner delivers only to a tab on
 its own node.
+
+### The deck's own messages
+
+Give the deck a send-scoped token and your words to sessions (the chat, answers on the report, handoffs) go through
+Fleetlayer's control plane as `service:quietdeck`, from "Quietdeck", not marked as outside data unless your access
+rules say so:
+
+```sh
+fleetlayer-control token add quietdeck --scope send
+```
+
+```sh
+QUIETDECK_FLEETLAYER_SEND_TOKEN=<the token>
+```
+
+It needs `QUIETDECK_FLEETLAYER_URL` too. A session Fleetlayer doesn't know (a machine without Fleetlayer), or a
+control plane the deck can't reach, gets the message through its Quietdeck node instead. A refusal by the access rules
+is final. A send token can only send: it reads nothing.
 
 ### When Fleetlayer says no
 

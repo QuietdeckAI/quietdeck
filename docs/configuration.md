@@ -227,6 +227,7 @@ has the ports, volume and ingress around them.
 | `QUIETDECK_HOOKS_PUBLIC_URL` | for webhooks | | The public origin of the hooks port, such as `https://hooks.example.com`, for printing endpoint URLs ([Send alerts to the agent that owns them](guides/alerts-to-owners.md)). |
 | `QUIETDECK_FLEETLAYER_URL` | no | | Fleetlayer's control plane. With the token, the deck pulls the summaries Fleetlayer's summaries plugin writes. |
 | `QUIETDECK_FLEETLAYER_TOKEN` | with the URL | | A read-scoped Fleetlayer token. A secret. Set both or neither. |
+| `QUIETDECK_FLEETLAYER_SEND_TOKEN` | no | | A send-scoped Fleetlayer token. With the URL, the deck's own words to sessions (the chat, report answers, handoffs) go through Fleetlayer as `service:quietdeck`. A secret. |
 | `QUIETDECK_VAPID_PUBLIC_KEY` | for push | | Web Push public key, base64url. `quietdeck-server vapid-keys` makes a pair. |
 | `QUIETDECK_VAPID_PRIVATE_KEY` | for push | | The matching private key. A secret. Changing the pair drops every device's push subscription. |
 | `QUIETDECK_VAPID_SUBJECT` | no | `QUIETDECK_PUBLIC_URL` | A contact for push services: `mailto:you@example.com` or an `https://` URL. Needed when the public URL isn't HTTPS. |

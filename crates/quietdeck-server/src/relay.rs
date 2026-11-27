@@ -70,6 +70,9 @@ pub async fn send(
     deliver_to(db, hub, &row, kind, body).await
 }
 
+/// Fleetlayer's control plane, when the deck has a send token for it (set once at start).
+pub static FLEETLAYER: std::sync::OnceLock<crate::fleetlayer::Sender> = std::sync::OnceLock::new();
+
 pub async fn deliver_to(
     db: &Db,
     hub: &Hub,
@@ -77,6 +80,27 @@ pub async fn deliver_to(
     kind: DeliveryKind,
     body: String,
 ) -> Result<Delivered, DeliveryError> {
+    // The deck's own words go through Fleetlayer as service:quietdeck where it knows the session; outside data and
+    // messages between sessions never do (they'd arrive as the deck's), and go to the node.
+    if kind.is_deck_words()
+        && let (Some(fl), Some(tab)) = (FLEETLAYER.get(), row.info.tab.as_deref())
+    {
+        let address = row.address();
+        match fl.send(&format!("{tab}@{}", row.node), &kind.render(&body), kind.subkind()).await {
+            crate::fleetlayer::Sent::Delivered(how) => {
+                count(db, &row.node, true).await;
+                return Ok(how);
+            }
+            crate::fleetlayer::Sent::Unknown => {}
+            crate::fleetlayer::Sent::Failed { status, message } => {
+                count(db, &row.node, false).await;
+                return Err(match status {
+                    503 => DeliveryError::SessionOffline { address },
+                    _ => DeliveryError::Failed { address, error: message },
+                });
+            }
+        }
+    }
     let delivery = Delivery { id: new_delivery_id(), target: target_of(row), kind, body };
     let address = row.address();
     let result = match hub.request(&row.node, DeckRequest::Deliver { delivery }, DELIVERY_TIMEOUT).await {

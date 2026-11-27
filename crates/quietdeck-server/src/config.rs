@@ -22,6 +22,11 @@ pub struct Env {
     /// A read-scoped Fleetlayer token (`fleetlayer-control token add quietdeck-deck --scope read`).
     #[arg(long, env = "QUIETDECK_FLEETLAYER_TOKEN", hide_env_values = true)]
     pub fleetlayer_token: Option<String>,
+    /// A send-scoped Fleetlayer token (`fleetlayer-control token add quietdeck --scope send`): the deck's own words to
+    /// sessions (the Inbox chat, report answers, handoffs) then go through Fleetlayer as service:quietdeck, and through
+    /// the session's node only where Fleetlayer doesn't know the session.
+    #[arg(long, env = "QUIETDECK_FLEETLAYER_SEND_TOKEN", hide_env_values = true)]
+    pub fleetlayer_send_token: Option<String>,
     #[arg(long, env = "QUIETDECK_VAPID_PUBLIC_KEY", hide_env_values = true)]
     pub vapid_public_key: Option<String>,
     #[arg(long, env = "QUIETDECK_VAPID_PRIVATE_KEY", hide_env_values = true)]

@@ -124,6 +124,16 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
     tokio::spawn(leases::ticker(state.clone()));
     tokio::spawn(reading::ticker(state.clone()));
     tokio::spawn(fleetlayer::ticker(state.clone()));
+    match (&env.fleetlayer_url, &env.fleetlayer_send_token) {
+        (Some(url), Some(token)) => {
+            let _ = relay::FLEETLAYER.set(fleetlayer::Sender::new(url, token)?);
+            tracing::info!("the deck's words to sessions go through Fleetlayer as service:quietdeck");
+        }
+        (None, Some(_)) => tracing::warn!(
+            "QUIETDECK_FLEETLAYER_SEND_TOKEN needs QUIETDECK_FLEETLAYER_URL: not sending through Fleetlayer"
+        ),
+        _ => {}
+    }
     ready.store(true, Ordering::SeqCst);
 
     let health = {
