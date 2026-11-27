@@ -236,3 +236,12 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   written with every object's keys sorted. Now: `crates/quietdeck-server/src/openapi.rs`, `api/README.md`
   (27 November, the quietdeck api tab). Still open: the API reference page on quietdeck.ai, and Fleetlayer sign-in
   for frontends served from elsewhere.
+- **A typed client from the spec, and the two traps it showed.** `clients/typescript` (Apache-2.0) is generated from
+  `api/openapi.json` by openapi-typescript over openapi-fetch; CI regenerates it and fails on a diff. Trap 1:
+  openapi-typescript 7 makes every field with a `default` required (`defaultNonNullable`), right for answers but
+  wrong for requests, so a client had to send every optional field: generate with `--default-non-nullable false`.
+  Trap 2: axum answers requests it can't read (bad JSON, wrong content type, bad query) in plain text, so a client's
+  error type was `ApiError | string` and `if (error)` didn't narrow; the deck now turns those into `ApiError` JSON
+  (`json_errors` in `crates/quietdeck-server/src/openapi.rs`). Both found by building a small third-party frontend
+  on the client (`examples/inbox`), which is the test worth repeating for any published API. Now: those files and
+  `~/Notes/Agents/quietdeck api/example-frontend-findings.md` (27 November, the quietdeck api tab).
