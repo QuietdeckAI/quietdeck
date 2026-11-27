@@ -59,6 +59,9 @@ Then research what you need (earlier mail with `gog … gmail search`, their not
    - `actions`, each with its `account` and `thread_id`: `{"type": "archive"}`, `{"type": "mark_read"}`,
      `{"type": "label", "add": ["Receipts"]}` and `draft` (a reply saved as a Gmail draft for the person to edit and
      send; `quietdeck card schema` has its fields). Propose a draft when a reply is clearly needed.
+     Propose only the actions this deck carries out (`quietdeck whoami` lists them). For anything else, post the
+     card with no actions and say in its summary what the person can do in Gmail ("archive it in Gmail yourself"):
+     every thread still gets a card, and approving it just closes it.
 3. Update the report:
    - `quietdeck report show --markdown > report.md` (the version it prints is your `--base`).
    - Edit it: **Needs action** first, numbered, then routine mail grouped under headings. A default says only what

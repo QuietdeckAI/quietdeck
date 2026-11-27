@@ -156,6 +156,10 @@ pub async fn run(config: NodeConfig, opts: RunOptions) -> anyhow::Result<()> {
             },
             state.clone(),
         ));
+        // A headless agent has no tab for the orchestrator to report: the node lists it itself, so the deck can reach it.
+        if let Some(session) = r.headless_session() {
+            node.sessions.lock().await.push(session);
+        }
         let _ = node.runner.set(runner::spawn(r));
         tracing::info!(agent = %cfg.agent.tab, "runner on");
     }

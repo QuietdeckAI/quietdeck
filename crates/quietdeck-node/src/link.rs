@@ -222,6 +222,18 @@ async fn connect_once(node: &Arc<Node>) -> anyhow::Result<Outcome> {
 async fn answer(node: &Node, request: DeckRequest) -> Reply {
     match request {
         DeckRequest::Deliver { delivery } => {
+            // The runner's headless agent (solo) has no session to deliver to: the runner hands it over.
+            if let Some(r) = node.runner.get()
+                && let Some(told) = r
+                    .runner
+                    .tell_headless_agent(&delivery.target.tab, delivery.kind.clone(), delivery.body.clone())
+                    .await
+            {
+                return match told {
+                    Ok(()) => Reply::ok(&quietdeck_types::node::Delivered::Headless),
+                    Err(error) => Reply::Err { error },
+                };
+            }
             // Through Fleetlayer where it runs Quietdeck's plugin, else the node's own delivery.
             let sent = match crate::fleetlayer::deliver(&delivery).await {
                 Some(sent) => sent,

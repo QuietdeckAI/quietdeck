@@ -59,6 +59,11 @@ pub trait DeckApi: Send + Sync {
     }
     /// The runner's health, after each mail check. A deck that doesn't take it is never sent it.
     async fn health(&self, _health: quietdeck_types::node::RunnerHealth) {}
+    /// Whether the deck can be reached now. Mail isn't checked until it can: a wake-up the agent acts on needs the
+    /// deck (in solo, the node connects a moment after the runner starts).
+    fn connected(&self) -> bool {
+        true
+    }
 }
 
 #[async_trait]
@@ -138,6 +143,9 @@ impl DeckApi for LinkDeck {
         back: Vec<quietdeck_types::mail::LeftThread>,
     ) -> Result<Vec<quietdeck_types::mail::LeftCard>, String> {
         self.ask(NodeRequest::ThreadsLeftInbox { left, back }, ASK).await
+    }
+    fn connected(&self) -> bool {
+        self.0.link.is_connected()
     }
     async fn health(&self, health: quietdeck_types::node::RunnerHealth) {
         if self.0.link.deck_supports(quietdeck_types::node::FEATURE_RUNNER_HEALTH) {

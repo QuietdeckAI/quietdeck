@@ -583,6 +583,36 @@ impl Runner {
         }
     }
 
+    /// A delivery from the deck for `tab`: when that's this runner's agent and the agent is headless (solo), it has no
+    /// session to deliver to, so the runner hands it over, and it starts or joins a turn as mail does. None when it
+    /// isn't this runner's headless agent.
+    pub async fn tell_headless_agent(&self, tab: &str, kind: DeliveryKind, body: String) -> Option<Result<(), String>> {
+        if self.cfg.agent.headless.is_none() || self.cfg.agent.tab != tab {
+            return None;
+        }
+        Some(self.agent.tell(kind, body).await)
+    }
+
+    /// The headless agent as a session in this node's directory, so the deck can address it (report answers, chat,
+    /// hand-offs) like any session. None for an agent in a tab, which the orchestrator reports.
+    pub fn headless_session(&self) -> Option<quietdeck_types::directory::SessionInfo> {
+        let h = self.cfg.agent.headless.as_ref()?;
+        Some(quietdeck_types::directory::SessionInfo {
+            session_id: format!("headless:{}", self.cfg.agent.tab),
+            agent: AgentKind::Claude,
+            workspace: None,
+            tab: Some(self.cfg.agent.tab.clone()),
+            address: None,
+            cwd: h.cwd.clone(),
+            status: quietdeck_types::AgentStatus::Idle,
+            status_changed_at: jiff::Timestamp::now(),
+            resume_command: None,
+            running: true,
+            open_url: None,
+            opens_in: None,
+        })
+    }
+
     /// Take, sort and carry out everything released for the agent.
     pub async fn process(&self) -> Result<BatchOutcome, String> {
         let taken = self.deck.take().await?;
@@ -1224,6 +1254,10 @@ pub fn spawn(runner: Arc<Runner>) -> RunnerHandle {
                 },
                 _ = drafts_tick.tick() => task.sync_drafts().await,
                 _ = tick.tick() => {
+                    if !task.deck.connected() {
+                        tracing::debug!("not connected to the deck yet: mail waits for the next check");
+                        continue;
+                    }
                     task.check_mail().await;
                     // Also take what's waiting on every tick: a release nudge the deck couldn't deliver (the node was
                     // reconnecting, a timeout) then costs at most one tick, never a stranded card.

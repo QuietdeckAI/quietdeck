@@ -122,6 +122,11 @@ pub struct DeckInfo {
     /// the runner or its agent is failing.
     #[serde(default)]
     pub solo: bool,
+    /// Quietdeck solo: the actions its runner carries out once the person approves them. A card proposing another is
+    /// refused when posted. Absent on other decks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub actions: Option<Vec<crate::ActionType>>,
 }
 
 /// `GET /api/auth/state`: what the sign-in screen shows.
