@@ -150,6 +150,10 @@ impl Outbox {
         self.queue.lock().await.len()
     }
 
+    pub async fn is_empty(&self) -> bool {
+        self.queue.lock().await.is_empty()
+    }
+
     /// Hand everything waiting to `send`, a batch at a time, removing each batch it takes. Stops at the first failure.
     pub async fn flush<F, Fut>(&self, send: F) -> Result<u32, String>
     where
