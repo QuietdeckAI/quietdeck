@@ -290,9 +290,13 @@ impl Turns {
     async fn claude(&self, conversation: Conversation<'_>, prompt: &str) -> Result<TurnResult, String> {
         let cwd = self.cwd();
         std::fs::create_dir_all(&cwd).map_err(|e| format!("{}: {e}", cwd.display()))?;
+        // The mail the agent reads and the cards it drafts stay in a folder only this user can open, for this turn
+        // only: never world-readable /tmp, and never mixed with another turn's.
+        let scratch = Scratch::new(&cwd.join("tmp")).map_err(|e| format!("making the turn's scratch folder: {e}"))?;
         let args = claude_args(&self.cfg, conversation);
         let bin = &self.cfg.bin;
         let mut cmd = tokio::process::Command::new(bin);
+        cmd.env("TMPDIR", &scratch.0).env("TMP", &scratch.0).env("TEMP", &scratch.0);
         // A solo started from inside a Claude Code session or a herdr pane would hand its agent that session's
         // identity (its session ID, messaging socket, pane): the agent is its own session.
         for (k, _) in std::env::vars_os() {
@@ -333,6 +337,36 @@ impl Turns {
         let said = if stderr.trim().is_empty() { stdout.trim() } else { stderr.trim() };
         Err(format!("{bin} exited ({}): {}", out.status, super::tools::short(&Value::String(said.to_string()))))
     }
+}
+
+/// A turn's private scratch folder (mode 700, under the agent's folder), removed when the turn ends however it ends.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new(parent: &std::path::Path) -> std::io::Result<Scratch> {
+        private_dir(parent)?;
+        let dir = parent.join(format!("turn-{}", hex::encode(rand::random::<[u8; 6]>())));
+        private_dir(&dir)?;
+        Ok(Scratch(dir))
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        if let Err(e) = std::fs::remove_dir_all(&self.0) {
+            tracing::warn!(error = %e, path = %self.0.display(), "removing a turn's scratch folder");
+        }
+    }
+}
+
+fn private_dir(dir: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
 }
 
 /// `claude -p` with the prompt on stdin, limited to the allowed commands and no MCP servers.
@@ -514,6 +548,46 @@ echo '{{"type":"result","is_error":false,"result":"ok","session_id":"s-new"}}'
         assert!(turns.registry.caller(std::process::id()).await.is_none(), "no turn is registered after it ends");
         let prompts = std::fs::read_to_string(dir.path().join("prompts")).unwrap();
         assert!(prompts.starts_with("first\n---\nsecond"), "the prompt goes on stdin: {prompts}");
+    }
+
+    #[tokio::test]
+    async fn each_turn_gets_a_private_scratch_folder_that_goes_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("claude");
+        std::fs::write(
+            &script,
+            format!(
+                r#"#!/usr/bin/env bash
+cat > /dev/null
+echo "$TMPDIR" > {d}/tmpdir
+stat -c %a "$TMPDIR" > {d}/mode 2>/dev/null || stat -f %Lp "$TMPDIR" > {d}/mode
+echo mail > "$TMPDIR/thread.json"
+echo '{{"type":"result","is_error":false,"result":"ok","session_id":"s-1"}}'
+"#,
+                d = dir.path().display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut c = cfg(&script.to_string_lossy());
+        let agent_dir = dir.path().join("agent");
+        c.cwd = Some(agent_dir.to_string_lossy().into_owned());
+        let turns = Turns {
+            cfg: c,
+            timeout: Duration::from_secs(10),
+            session_path: dir.path().join("s.json"),
+            tab: "email triage".into(),
+            registry: Arc::default(),
+        };
+        turns.turn("hi").await.unwrap();
+        let tmpdir = std::fs::read_to_string(dir.path().join("tmpdir")).unwrap();
+        let tmpdir = std::path::Path::new(tmpdir.trim());
+        assert!(tmpdir.starts_with(agent_dir.join("tmp")), "TMPDIR is under the agent's folder: {}", tmpdir.display());
+        assert_eq!(std::fs::read_to_string(dir.path().join("mode")).unwrap().trim(), "700");
+        assert!(!tmpdir.exists(), "gone after the turn, with what the agent left in it");
+        let parent = std::fs::metadata(agent_dir.join("tmp")).unwrap().permissions().mode() & 0o777;
+        assert_eq!(parent, 0o700);
     }
 
     #[tokio::test]
