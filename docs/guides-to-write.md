@@ -205,6 +205,10 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   straight after fails with "5: Input/output error" and leaves the service down. Wait until `launchctl print
   gui/<uid>/<label>` fails, then bootstrap, retrying a few times. Now: `crates/quietdeck-node/src/service.rs`
   (26 November), and Fleetlayer's `fleetlayer-node/src/service.rs`.
+- **Many agents on one GitHub account share one API limit.** `gh run watch` polls every 3 seconds by default, so
+  five sessions watching CI used up the account's 5,000 calls an hour, and every session's gh calls failed (HTTP 403)
+  for about 35 minutes. Pass `--interval 60`, and check `gh api rate_limit` when gh starts refusing. Now: this entry,
+  and the quietdeck tab's memory (27 November).
 - **"No route to host" right after installing a new binary on macOS.** A launchd service started from a new path logs
   `No route to host (os error 65)` for its first few seconds, then connects. That's macOS settling its local network
   permission for that binary, not a network fault. The node retries, so nothing needs doing. Seen on the Mac's
