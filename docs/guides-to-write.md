@@ -76,11 +76,16 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
 - **A headless agent limited to one CLI.** For Quietdeck solo, each message is one `claude -p` turn on the same
   conversation (`--resume=<id>`, the ID from `--output-format=json`'s result, kept in the state directory), the prompt
   on stdin. `--permission-mode=dontAsk` refuses whatever isn't allowed without a prompt nobody would answer,
-  `--tools=Bash` with `--allowedTools=Bash(quietdeck:*)` leaves only the quietdeck CLI, and `--strict-mcp-config`
+  `--tools=Bash` with one `--allowedTools=Bash(quietdeck <subcommand>:*)` per triage subcommand leaves only those
+  (not `msg send` or `session start`: the agent reads untrusted mail), and `--strict-mcp-config`
   drops the user's MCP servers, so the agent has no mail tools of its own. Footgun: `--allowedTools` takes a list,
   so write it `--allowedTools=<rule>`, or a bare value after it swallows the next argument. Checked for real on 27
   November with Claude Code 2.1.332: `quietdeck --version` ran, `ls /` was refused and listed in
-  `permission_denials`, and a resumed turn remembered the last. Now: `crates/quietdeck-node/src/runner/headless.rs`.
+  `permission_denials`, a resumed turn remembered the last, and with the narrowed rules `quietdeck cards` ran while
+  `quietdeck msg` and `quietdeck session` were refused. Identity: a turn has no tab, so the node records each turn's
+  pid while it runs (removed when the child exits, times out or is killed, so a reused pid inherits nothing) and gives
+  the CLI calls it starts the agent's tab and the turn's session ID; a new conversation gets its ID up front
+  (`--session-id`). Now: `crates/quietdeck-node/src/runner/headless.rs` and `local.rs` (`HeadlessTurns`).
 - **Mail through gog, without Executor.** For Quietdeck solo, `runner.mail: gog` runs the user's own gog CLI
   (signed in with `gog auth add <address> --services gmail`) for every mail tool. Footguns: gog's `gmail history`
   asks Gmail for new messages only and prints bare IDs (no labels, threads, archives or deletions), and gog has no

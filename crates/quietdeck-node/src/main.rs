@@ -77,6 +77,8 @@ pub struct Node {
     pub summaries: Option<summaries::SummariesHandle>,
     pub usage: Option<usage::UsageHandle>,
     pub tokens: local::TokenCache,
+    /// The runner's headless agent turns running now, for the identity of the CLI calls they make.
+    pub headless_turns: Arc<local::HeadlessTurns>,
     /// Set once at start when node.yaml switches the runner on.
     pub runner: std::sync::OnceLock<runner::RunnerHandle>,
 }
@@ -197,6 +199,7 @@ async fn run() -> anyhow::Result<()> {
         summaries,
         usage,
         tokens: local::TokenCache::default(),
+        headless_turns: Arc::default(),
         runner: std::sync::OnceLock::new(),
     });
 
@@ -213,8 +216,12 @@ async fn run() -> anyhow::Result<()> {
                 None => runner::ConfiguredTools::new(executor),
             }),
             match &cfg.agent.headless {
-                Some(h) => Arc::new(runner::HeadlessAgent::spawn(h.clone(), cfg.agent.tab.clone(), state.clone()))
-                    as Arc<dyn runner::AgentInbox>,
+                Some(h) => Arc::new(runner::HeadlessAgent::spawn(
+                    h.clone(),
+                    cfg.agent.tab.clone(),
+                    state.clone(),
+                    node.headless_turns.clone(),
+                )) as Arc<dyn runner::AgentInbox>,
                 None => Arc::new(runner::LocalAgent { node: node.clone(), tab: cfg.agent.tab.clone() }),
             },
             state.clone(),

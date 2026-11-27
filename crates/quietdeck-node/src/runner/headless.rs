@@ -8,6 +8,7 @@
 //! touches the mailbox.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -50,8 +51,13 @@ fn default_bin() -> String {
     "claude".into()
 }
 
+/// The quietdeck subcommands triage needs, and no more: the agent reads untrusted mail, so `msg send`, `session
+/// start` and the like stay one config change away rather than one prompt injection away.
+pub const TRIAGE_COMMANDS: [&str; 10] =
+    ["whoami", "card", "cards", "report", "round", "chat", "decisions", "action", "actions", "history"];
+
 fn default_allowed() -> Vec<String> {
-    vec!["Bash(quietdeck:*)".into()]
+    TRIAGE_COMMANDS.iter().map(|c| format!("Bash(quietdeck {c}:*)")).collect()
 }
 
 fn default_turn_timeout() -> String {
@@ -86,12 +92,20 @@ pub struct HeadlessAgent {
 
 impl HeadlessAgent {
     /// Start the turn loop. `tab` is the agent's name in messages (`runner.agent.tab`).
-    pub fn spawn(cfg: HeadlessConfig, tab: String, state_dir: PathBuf) -> HeadlessAgent {
+    /// Each turn's `claude` process is in `registry` while it runs, so the CLI calls it makes are the agent's.
+    pub fn spawn(
+        cfg: HeadlessConfig,
+        tab: String,
+        state_dir: PathBuf,
+        registry: Arc<crate::local::HeadlessTurns>,
+    ) -> HeadlessAgent {
         let (tx, rx) = mpsc::channel(QUEUE);
         let turns = Turns {
             timeout: super::config::parse_duration(&cfg.turn_timeout).unwrap_or(Duration::from_secs(900)),
             cfg,
             session_path: state_dir.join("headless-agent.json"),
+            tab: tab.clone(),
+            registry,
         };
         tokio::spawn(turns.run(rx));
         HeadlessAgent { tab, tx }
@@ -119,6 +133,33 @@ struct Turns {
     cfg: HeadlessConfig,
     timeout: Duration,
     session_path: PathBuf,
+    tab: String,
+    registry: Arc<crate::local::HeadlessTurns>,
+}
+
+/// Which conversation a turn is in: an old one to resume, or a new one under an ID chosen here, so the turn's
+/// identity carries its session ID from its first call.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Conversation<'a> {
+    Resume(&'a str),
+    New(&'a str),
+}
+
+impl Conversation<'_> {
+    fn id(&self) -> &str {
+        match self {
+            Conversation::Resume(id) | Conversation::New(id) => id,
+        }
+    }
+}
+
+/// A random version 4 UUID, which `--session-id` needs.
+fn new_session_id() -> String {
+    let mut b: [u8; 16] = rand::random();
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    let h = hex::encode(b);
+    format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
 }
 
 /// What one `claude -p --output-format json` printed.
@@ -167,10 +208,15 @@ impl Turns {
     /// One turn, resuming the saved conversation. A conversation Claude Code no longer has starts a new one.
     async fn turn(&self, prompt: &str) -> Result<(), String> {
         let resume = self.saved();
-        let r = match self.claude(resume.as_deref(), prompt).await {
+        let fresh = new_session_id();
+        let first = match &resume {
+            Some(id) => Conversation::Resume(id),
+            None => Conversation::New(&fresh),
+        };
+        let r = match self.claude(first, prompt).await {
             Err(e) if resume.is_some() && e.contains("No conversation found") => {
                 tracing::warn!("the headless agent's conversation is gone: starting a new one");
-                self.claude(None, prompt).await
+                self.claude(Conversation::New(&fresh), prompt).await
             }
             other => other,
         }?;
@@ -193,10 +239,10 @@ impl Turns {
         }
     }
 
-    async fn claude(&self, resume: Option<&str>, prompt: &str) -> Result<TurnResult, String> {
+    async fn claude(&self, conversation: Conversation<'_>, prompt: &str) -> Result<TurnResult, String> {
         let cwd = self.cwd();
         std::fs::create_dir_all(&cwd).map_err(|e| format!("{}: {e}", cwd.display()))?;
-        let args = claude_args(&self.cfg, resume);
+        let args = claude_args(&self.cfg, conversation);
         let bin = &self.cfg.bin;
         let mut child = tokio::process::Command::new(bin)
             .args(&args)
@@ -212,6 +258,10 @@ impl Turns {
                 }
                 _ => format!("{bin}: {e}"),
             })?;
+        // The turn is the agent until this goes out of scope: when the child exits, times out or this future is
+        // dropped (which kills the child too).
+        let _registration =
+            child.id().map(|pid| self.registry.begin(pid, self.tab.clone(), conversation.id().to_string()));
         if let Some(mut stdin) = child.stdin.take() {
             stdin.write_all(prompt.as_bytes()).await.map_err(|e| format!("{bin}: {e}"))?;
         }
@@ -230,7 +280,7 @@ impl Turns {
 }
 
 /// `claude -p` with the prompt on stdin, limited to the allowed commands and no MCP servers.
-fn claude_args(cfg: &HeadlessConfig, resume: Option<&str>) -> Vec<String> {
+fn claude_args(cfg: &HeadlessConfig, conversation: Conversation<'_>) -> Vec<String> {
     let mut a: Vec<String> = vec![
         "-p".into(),
         "--output-format=json".into(),
@@ -248,9 +298,10 @@ fn claude_args(cfg: &HeadlessConfig, resume: Option<&str>) -> Vec<String> {
     if let Some(f) = &cfg.instructions_file {
         a.push(format!("--append-system-prompt-file={}", crate::config::expand(f).display()));
     }
-    if let Some(id) = resume {
-        a.push(format!("--resume={id}"));
-    }
+    a.push(match conversation {
+        Conversation::Resume(id) => format!("--resume={id}"),
+        Conversation::New(id) => format!("--session-id={id}"),
+    });
     a
 }
 
@@ -281,13 +332,24 @@ mod tests {
 
     #[test]
     fn turns_are_limited_to_the_quietdeck_cli() {
-        let a = claude_args(&cfg("claude"), Some("abc"));
+        let a = claude_args(&cfg("claude"), Conversation::Resume("abc"));
         assert!(a.contains(&"--permission-mode=dontAsk".to_string()));
         assert!(a.contains(&"--tools=Bash".to_string()));
-        assert!(a.contains(&"--allowedTools=Bash(quietdeck:*)".to_string()));
+        assert!(a.contains(&"--allowedTools=Bash(quietdeck card:*)".to_string()));
+        assert!(
+            !a.iter().any(|x| x.contains("quietdeck msg")
+                || x.contains("quietdeck session")
+                || x == "--allowedTools=Bash(quietdeck:*)"),
+            "no messages to other sessions or new sessions by default: {a:?}"
+        );
         assert!(a.contains(&"--strict-mcp-config".to_string()), "none of the user's MCP servers");
         assert_eq!(a.last().unwrap(), "--resume=abc");
-        assert!(!claude_args(&cfg("claude"), None).iter().any(|x| x.starts_with("--resume")));
+        let n = claude_args(&cfg("claude"), Conversation::New("0f0e"));
+        assert_eq!(n.last().unwrap(), "--session-id=0f0e");
+        assert!(!n.iter().any(|x| x.starts_with("--resume")));
+        let id = new_session_id();
+        assert_eq!(id.len(), 36);
+        assert_eq!(&id[14..15], "4");
 
         let mut c = cfg("claude");
         c.allowed_tools = vec!["Bash".into()];
@@ -315,6 +377,7 @@ mod tests {
 dir={dir}
 printf '%s\n' "$*" >> "$dir/calls"
 cat >> "$dir/prompts"; printf '\n---\n' >> "$dir/prompts"
+if grep -q slow "$dir/prompts"; then sleep 1; fi
 for a in "$@"; do
   if [ "$a" = "--resume=gone" ]; then echo "No conversation found with session ID: gone" >&2; exit 1; fi
 done
@@ -334,7 +397,13 @@ echo '{{"type":"result","is_error":false,"result":"ok","session_id":"s-new"}}'
         let dir = tempfile::tempdir().unwrap();
         let mut c = cfg(&fake_claude(dir.path()));
         c.cwd = Some(dir.path().join("agent").to_string_lossy().into_owned());
-        let turns = Turns { cfg: c, timeout: Duration::from_secs(10), session_path: dir.path().join("s.json") };
+        let turns = Turns {
+            cfg: c,
+            timeout: Duration::from_secs(10),
+            session_path: dir.path().join("s.json"),
+            tab: "email triage".into(),
+            registry: Arc::default(),
+        };
 
         turns.turn("first").await.unwrap();
         assert_eq!(turns.saved().as_deref(), Some("s-new"));
@@ -345,11 +414,42 @@ echo '{{"type":"result","is_error":false,"result":"ok","session_id":"s-new"}}'
 
         let calls = std::fs::read_to_string(dir.path().join("calls")).unwrap();
         let lines: Vec<&str> = calls.lines().collect();
-        assert!(!lines[0].contains("--resume"), "the first turn starts a conversation");
+        assert!(!lines[0].contains("--resume") && lines[0].contains("--session-id="), "the first turn starts one");
         assert!(lines[1].ends_with("--resume=s-new"));
-        assert!(lines[2].ends_with("--resume=gone") && !lines[3].contains("--resume"));
+        assert!(lines[2].ends_with("--resume=gone") && lines[3].contains("--session-id="));
+        assert!(turns.registry.caller(std::process::id()).await.is_none(), "no turn is registered after it ends");
         let prompts = std::fs::read_to_string(dir.path().join("prompts")).unwrap();
         assert!(prompts.starts_with("first\n---\nsecond"), "the prompt goes on stdin: {prompts}");
+    }
+
+    #[tokio::test]
+    async fn a_turn_is_the_agent_only_while_it_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = cfg(&fake_claude(dir.path()));
+        c.cwd = Some(dir.path().join("agent").to_string_lossy().into_owned());
+        let registry: Arc<crate::local::HeadlessTurns> = Arc::default();
+        let turns = Arc::new(Turns {
+            cfg: c,
+            timeout: Duration::from_secs(10),
+            session_path: dir.path().join("s.json"),
+            tab: "email triage".into(),
+            registry: registry.clone(),
+        });
+        let t = turns.clone();
+        let running = tokio::spawn(async move { t.turn("slow").await });
+        let mut seen = None;
+        for _ in 0..80 {
+            if let Some(s) = registry.running().into_iter().next() {
+                seen = Some(s);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let s = seen.expect("the turn is registered while it runs");
+        assert_eq!(s.tab.as_deref(), Some("email triage"));
+        assert_eq!(s.session_id.as_ref().map(String::len), Some(36), "a new conversation's ID, known up front");
+        running.await.unwrap().unwrap();
+        assert!(registry.running().is_empty(), "and not after");
     }
 
     #[tokio::test]
@@ -357,7 +457,7 @@ echo '{{"type":"result","is_error":false,"result":"ok","session_id":"s-new"}}'
         let dir = tempfile::tempdir().unwrap();
         let mut c = cfg(&fake_claude(dir.path()));
         c.cwd = Some(dir.path().join("agent").to_string_lossy().into_owned());
-        let agent = HeadlessAgent::spawn(c, "email triage".into(), dir.path().to_path_buf());
+        let agent = HeadlessAgent::spawn(c, "email triage".into(), dir.path().to_path_buf(), Arc::default());
         agent.tell(DeliveryKind::Wakeup, "New mail: 1 Personal.".into()).await.unwrap();
         agent.tell(DeliveryKind::Handoff, "Card 7 needs you.".into()).await.unwrap();
         for _ in 0..100 {

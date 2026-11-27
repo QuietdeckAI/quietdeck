@@ -4,6 +4,10 @@
 //! A caller claiming to be a Claude Code session is checked: the claimed `CLAUDE_PID` must be an ancestor of the
 //! connecting process, and that process's registry entry must carry the claimed session ID. A caller that doesn't
 //! pass gets a token for a plain shell on this machine.
+//!
+//! A headless turn of the runner's agent (`claude -p`, see `runner::headless`) has no tab and no registry entry that
+//! names one, so the node keeps its own record of the turns running now ([`HeadlessTurns`]): a caller descended from
+//! one is that turn, with the agent's tab and the turn's session ID. Only the runner inside this process fills it.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -24,6 +28,66 @@ const REFRESH_BEFORE: i64 = 5 * 60;
 #[derive(Default)]
 pub struct TokenCache {
     by_caller: Mutex<HashMap<String, MintedToken>>,
+}
+
+/// The headless agent turns running now, by the pid of each turn's `claude` process.
+#[derive(Debug, Default)]
+pub struct HeadlessTurns(std::sync::Mutex<HashMap<u32, (u64, TokenSession)>>);
+
+/// A turn's place in [`HeadlessTurns`], given up when it's dropped: when the child exits, is stopped on a timeout
+/// or the turn's future is dropped, so a pid used again later never inherits the identity.
+pub struct TurnRegistration {
+    turns: Arc<HeadlessTurns>,
+    pid: u32,
+    seq: u64,
+}
+
+impl Drop for TurnRegistration {
+    fn drop(&mut self) {
+        let mut map = self.turns.0.lock().expect("headless turns");
+        if map.get(&self.pid).is_some_and(|(seq, _)| *seq == self.seq) {
+            map.remove(&self.pid);
+        }
+    }
+}
+
+impl HeadlessTurns {
+    /// Record a turn that has just started, for as long as the returned registration lives.
+    pub fn begin(self: &Arc<Self>, pid: u32, tab: String, session_id: String) -> TurnRegistration {
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let session = TokenSession { session_id: Some(session_id), tab: Some(tab), address: None };
+        self.0.lock().expect("headless turns").insert(pid, (seq, session));
+        TurnRegistration { turns: self.clone(), pid, seq }
+    }
+
+    /// The turns running now.
+    #[cfg(test)]
+    pub fn running(&self) -> Vec<TokenSession> {
+        self.0.lock().expect("headless turns").values().map(|(_, s)| s.clone()).collect()
+    }
+
+    fn get(&self, pid: u32) -> Option<TokenSession> {
+        self.0.lock().expect("headless turns").get(&pid).map(|(_, s)| s.clone())
+    }
+
+    /// The running turn `pid` is or descends from, if any.
+    pub async fn caller(&self, pid: u32) -> Option<TokenSession> {
+        if self.0.lock().expect("headless turns").is_empty() {
+            return None;
+        }
+        let mut current = pid;
+        for _ in 0..64 {
+            if let Some(s) = self.get(current) {
+                return Some(s);
+            }
+            match parent_of(current).await {
+                Some(p) if p > 1 && p != current => current = p,
+                _ => return None,
+            }
+        }
+        None
+    }
 }
 
 pub async fn serve(node: Arc<Node>, path: &Path) -> anyhow::Result<()> {
@@ -113,6 +177,11 @@ async fn verify_session(
     claude_pid: Option<u32>,
     address: Option<String>,
 ) -> Option<TokenSession> {
+    if let Some(peer) = peer_pid
+        && let Some(turn) = node.headless_turns.caller(peer).await
+    {
+        return Some(turn);
+    }
     let (peer, claude_pid) = (peer_pid?, claude_pid?);
     if !is_ancestor(claude_pid, peer).await {
         tracing::warn!(peer, claude_pid, "a caller claimed a Claude Code process that isn't its ancestor");
@@ -178,6 +247,37 @@ async fn parent_of(pid: u32) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn only_a_running_turn_and_what_it_starts_get_its_identity() {
+        let turns = Arc::new(HeadlessTurns::default());
+        let me = std::process::id();
+        let parent = parent_of(me).await.unwrap();
+        let mut child = tokio::process::Command::new("sleep").arg("5").spawn().unwrap();
+        let child_pid = child.id().unwrap();
+
+        // Nothing registered: nobody is a turn.
+        assert_eq!(turns.caller(child_pid).await, None);
+
+        let reg = turns.begin(me, "email triage".into(), "s-1".into());
+        let got = turns.caller(child_pid).await.expect("a process the turn started is the turn");
+        assert_eq!(got.tab.as_deref(), Some("email triage"));
+        assert_eq!(got.session_id.as_deref(), Some("s-1"));
+        assert_eq!(turns.caller(me).await.unwrap().tab.as_deref(), Some("email triage"));
+        // A process that doesn't descend from the turn (its parent) gets no tab.
+        assert_eq!(turns.caller(parent).await, None);
+
+        drop(reg);
+        assert_eq!(turns.caller(child_pid).await, None, "the identity ends with the turn");
+
+        // A later turn on the same pid isn't removed by an earlier registration going away.
+        let old = turns.begin(me, "a".into(), "s-old".into());
+        let new = turns.begin(me, "b".into(), "s-new".into());
+        drop(old);
+        assert_eq!(turns.caller(me).await.unwrap().session_id.as_deref(), Some("s-new"));
+        drop(new);
+        let _ = child.kill().await;
+    }
 
     #[tokio::test]
     async fn this_process_descends_from_its_parent() {
