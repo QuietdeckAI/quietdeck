@@ -150,6 +150,7 @@ mailbox stay in `~/.config/quietdeck` and `~/.local/share/quietdeck/solo`; delet
 ## What solo doesn't do yet
 
 Solo is the smallest Quietdeck: one computer, Gmail, one agent, and the Inbox's mail actions. It doesn't send mail or
-forward it to other agents, start other agent sessions, create tickets or calendar events, or work with Codex as the
-agent. The full Quietdeck, with a deck on a server and agents on several machines, is in
+forward it to other agents, start other agent sessions, or create tickets or calendar events. Its agent is Claude
+Code: Codex can't be limited the same way yet ([why](solo-security.md#why-the-agent-is-claude-code-not-codex)). The full
+Quietdeck, with a deck on a server and agents on several machines, is in
 [Getting started](getting-started.md).
