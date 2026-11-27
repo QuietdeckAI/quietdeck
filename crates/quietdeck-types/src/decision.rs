@@ -118,8 +118,9 @@ pub struct StopResult {
     pub decisions: i64,
 }
 
-/// One card's own decision outside Approve All: Leave for later, Move up, Move down, or an adjustment typed into its
-/// box.
+/// One card's own decision outside Approve All, which takes effect at once: `later`, `move_up` or `move_down` only.
+/// Approving, editing and adjusting a card go through Approve All (`POST /api/v1/decisions/approve-all`, with
+/// `single: true` for one card), so they get the undo window.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, JsonSchema, Validate)]
 #[ts(export)]
 pub struct Decide {

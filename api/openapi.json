@@ -1923,7 +1923,7 @@
         "type": "object"
       },
       "Decide": {
-        "description": "One card's own decision outside Approve All: Leave for later, Move up, Move down, or an adjustment typed into its\nbox.",
+        "description": "One card's own decision outside Approve All, which takes effect at once: `later`, `move_up` or `move_down` only.\nApproving, editing and adjusting a card go through Approve All (`POST /api/v1/decisions/approve-all`, with\n`single: true` for one card), so they get the undo window.",
         "properties": {
           "kind": {
             "$ref": "#/components/schemas/DecisionKind"
@@ -6384,7 +6384,7 @@
               }
             }
           },
-          "description": "One card's own decision outside Approve All: Leave for later, Move up, Move down, or an adjustment typed into its\nbox.",
+          "description": "One card's own decision outside Approve All, which takes effect at once: `later`, `move_up` or `move_down` only.\nApproving, editing and adjusting a card go through Approve All (`POST /api/v1/decisions/approve-all`, with\n`single: true` for one card), so they get the undo window.",
           "required": true
         },
         "responses": {

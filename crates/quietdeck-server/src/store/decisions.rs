@@ -906,7 +906,7 @@ pub async fn decide(db: &Db, card_id: i64, d: &Decide) -> Result<Card, AppError>
         }
         other => {
             return Err(AppError::BadRequest(format!(
-                "{} goes through Approve All (POST /api/decisions)",
+                "{} goes through Approve All (POST /api/v1/decisions/approve-all, with single: true for one card)",
                 enum_str(&other)
             )));
         }
