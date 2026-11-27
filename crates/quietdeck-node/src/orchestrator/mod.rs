@@ -4,6 +4,7 @@
 //! orchestrator is its *address*, a string only that orchestrator understands. `docs/orchestrators.md` describes the
 //! interface for people writing an adapter.
 
+pub mod fleetlayer;
 pub mod herdr;
 
 use async_trait::async_trait;

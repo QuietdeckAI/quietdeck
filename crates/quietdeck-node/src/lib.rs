@@ -81,10 +81,12 @@ impl Default for RunOptions {
 
 /// Run the node until SIGTERM or Ctrl-C.
 pub async fn run(config: NodeConfig, opts: RunOptions) -> anyhow::Result<()> {
-    let orchestrator: Arc<dyn orchestrator::Orchestrator> = Arc::new(orchestrator::herdr::Herdr {
-        program: config.programs.herdr.clone(),
-        machine: config.node.name.clone(),
-    });
+    // herdr acts on sessions; where this machine runs a Fleetlayer node, the list of sessions comes from its registry.
+    let orchestrator: Arc<dyn orchestrator::Orchestrator> =
+        Arc::new(orchestrator::fleetlayer::Fleetlayer::new(Box::new(orchestrator::herdr::Herdr {
+            program: config.programs.herdr.clone(),
+            machine: config.node.name.clone(),
+        })));
     // A message the orchestrator types into a session by itself is typed like a person's: it isn't one.
     for message in orchestrator.own_messages() {
         summaries::set_auto_continue_message(&message);

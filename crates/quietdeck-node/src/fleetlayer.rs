@@ -41,6 +41,18 @@ pub mod code {
     pub const NO_SUCH: i64 = -32014;
 }
 
+/// Fleetlayer's node's own local socket: `$FLEETLAYER_SOCKET`, else its default (under `$XDG_RUNTIME_DIR`, else
+/// `~/.local/state`), as the `fleetlayer` CLI finds it.
+pub fn node_socket() -> PathBuf {
+    if let Some(p) = std::env::var_os("FLEETLAYER_SOCKET") {
+        return PathBuf::from(p);
+    }
+    match std::env::var_os("XDG_RUNTIME_DIR") {
+        Some(d) => PathBuf::from(d).join("fleetlayer/node.sock"),
+        None => crate::config::home().join(".local/state/fleetlayer/node.sock"),
+    }
+}
+
 /// The plugin's socket: `$QUIETDECK_FLEETLAYER_SOCKET`, else beside the node's local socket.
 pub fn bridge_socket() -> PathBuf {
     if let Some(p) = std::env::var_os("QUIETDECK_FLEETLAYER_SOCKET") {
