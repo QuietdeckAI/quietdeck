@@ -4,17 +4,15 @@ The Inbox is one document: what came in today, what needs you at the top, the re
 under every item. **Work** is the same kind of document for what your agents are doing. It lists what's waiting on
 you, what's finished and what's still running. An agent called the **overseer** keeps it up to date.
 
-<!-- DRAFT: names and settings to confirm with the quietdeck work session before this ships. -->
-
-![The Work tab: under Needs you, a session waiting for a key only you can add, a pull request to review, a question with an answer box, and a finished session proposing stories and closing; then today's tasks, an FYI list with Archive all, and one parked session](https://quietdeck.ai/images/work.png)
+![The Work tab: a session blocked on a multiple-choice prompt at the top; then under Needs you, a session waiting for a key only you can add, a pull request to review, a finished session to wrap up, a question with an answer box, and a session proposing stories and closing; then today's tasks, an FYI list with Archive all, and one parked session](https://quietdeck.ai/images/work.png)
 
 ## Documents and tabs
 
 Every page you read in Quietdeck is a **document**. A document has a name, the tab it sits under, and the agent that
-writes it. A deck starts with two tabs:
+writes it. There are two kinds:
 
-- **Inbox:** today's mail, written by the triage agent ([How Quietdeck works](concepts.md)).
-- **Work:** your agents' work, written by the overseer.
+- **Inbox:** today's mail, written by the triage agent ([How Quietdeck works](concepts.md)). Every deck has one.
+- **Work:** your agents' work, written by the overseer. Add it in **Settings**, under **Documents**.
 
 You name tabs and documents yourself, and nest documents under a tab: Work could hold "Business", "Personal" and
 "Side projects", each kept separate by the overseer's instructions. A tab with one document shows no sub-tabs. Each
@@ -28,12 +26,16 @@ Some entries ask you something instead of proposing an action. A **question pane
 question and its own thread. Some offer answers as buttons, with a box for anything else. Others ask an open question and
 take a written answer. You answer in the thread, and the agent updates the entry. The Inbox has them too.
 
+## Blocked on a prompt
+
+When a session stops on one of its own menus ("Allow this command?", or a multiple-choice question), the deck puts it
+at the very top of Work, under **Blocked on a prompt**, as a small form with the menu's choices and an **Other** box.
+Your answer is typed into the session.
+
 ## Needs you
 
-The top of Work is **Needs you**:
+Under that, the overseer writes **Needs you**:
 
-- **A blocked prompt:** a session stopped on one of its own menus ("Allow this command?"). It shows as a small form,
-  and your choice is typed into the session.
 - **A question** an agent is asking you.
 - **A finished session** waiting to be wrapped up.
 - **Work waiting for your review:** a pull request, a draft.
@@ -59,8 +61,8 @@ What you can approve under an entry:
 
 - **Wrap up session:** asks the session to run its wrap-up: list loose ends, propose stories and comments. The
   overseer reads the result and puts those proposals under the entry, with **Close session** last.
-- **Close session.**
 - **Message session:** passes your words on.
+- **Close session.**
 - **Create a story, or comment on one.**
 
 The overseer never starts or closes a session without your approval.
@@ -74,8 +76,9 @@ back on its date.
 ## The overseer
 
 The overseer is an agent like the triage agent, with a different job. Instead of mail it reads your other sessions: a
-summary first, and only the new part of a transcript when it needs detail. It looks at a session when it goes idle,
-and skips one that's still waiting on CI or a background task. It also reads your task list for today.
+summary first, and only the new part of a transcript when it needs detail. The deck wakes it when a session goes idle (and
+stays idle two minutes) or stops on a prompt. It skips a session that's still waiting on CI or a background task, and
+one idle for more than six hours. It also reads your task list for today.
 
 It leaves out the triage agent and any session you mark with **Ignore this session**, unless one of them is stuck on
 a prompt.

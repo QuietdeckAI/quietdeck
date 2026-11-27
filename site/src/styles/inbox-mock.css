@@ -312,3 +312,21 @@
   color: var(--m-muted);
   font-size: 0.875rem;
 }
+.mock__prompt {
+  margin-bottom: 1.25rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid oklch(72% 0.12 85);
+  border-radius: 7px;
+  background: var(--m-panel);
+  color: var(--m-ink);
+}
+.mock__prompt p {
+  margin: 0 0 0.35rem;
+}
+.mock__prompt p:first-child {
+  color: var(--m-muted);
+  font-size: 0.875rem;
+}
+.mock h4 + ol {
+  margin-top: 0;
+}

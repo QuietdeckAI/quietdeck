@@ -239,7 +239,7 @@ const done = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12
             documents, one for each part of your life.
           </p>
         </div>
-        <figure class="mock" aria-label="The Work tab: a session stopped on a permission prompt shown as a small form, a finished session with Wrap up session proposed, a task for today, and an FYI list of completions under Archive all">
+        <figure class="mock" aria-label="The Work tab: a session stopped on a permission prompt shown as a small form, then under Needs you a question with an answer box and a finished session proposing a story and closing, and an FYI list under Archive all">
           <div class="mock__nav" aria-hidden="true">
             <span class="mock__brand">Quietdeck</span>
             <span class="mock__tab">Inbox<span class="mock__count">4</span></span>
@@ -248,13 +248,14 @@ const done = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12
             <span class="mock__tab">Rules</span>
           </div>
           <div class="mock__body">
+            <h4>Blocked on a prompt</h4>
+            <div class="mock__prompt">
+              <p><code>billing</code> on laptop is waiting on a question</p>
+              <p>Run the invoice script against the staging database?</p>
+              <div class="mock__choices" aria-hidden="true"><span class="on">Yes</span><span>Yes, and don't ask again</span><span>No</span></div>
+            </div>
             <h4>Needs you</h4>
             <ol>
-              <li>
-                <b><code>billing</code> is waiting on a prompt:</b> it wants to run the invoice script against the
-                staging database.
-                <div class="mock__choices" aria-hidden="true"><span class="on">Yes</span><span>Yes, and don't ask again</span><span>No</span></div>
-              </li>
               <li>
                 <b><code>mobile</code> asks which push provider to use.</b> It suggests the platform's own services.
                 <div class="mock__ask"><span>Which push provider should <code>mobile</code> use?</span><span class="mock__answer">Your answer</span></div>
