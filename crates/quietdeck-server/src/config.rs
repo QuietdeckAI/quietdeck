@@ -173,6 +173,7 @@ impl DeckConfig {
         self.accounts.is_empty()
             || self.accounts.iter().any(|a| a.id == account)
             || quietdeck_types::message::SOURCES.contains(&account)
+            || account == quietdeck_types::document::SESSIONS_ACCOUNT
     }
 
     /// The project a working directory belongs to, by the longest matching directory.

@@ -14,6 +14,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+/// The account a Work card names: it's about a session, not a mail thread, so it needs none of the deck's mail
+/// accounts. Its `thread_key` is the agent's own key for the entry (`session:search@laptop:wrap-up`).
+pub const SESSIONS_ACCOUNT: &str = "sessions";
+
 /// The ID of the Inbox document every deck has.
 pub const INBOX_ID: i64 = 1;
 
