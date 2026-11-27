@@ -65,6 +65,16 @@ pub struct Outgoing {
     pub subkind: Option<String>,
 }
 
+/// Whether this kind of delivery goes through Fleetlayer yet. Outside data (forwards, webhooks) and messages between
+/// sessions do. What carries the person's own words or the runner's instructions to its agent (the Inbox chat, report
+/// answers, handoffs, wake-ups, runner reports) stays on the node's own delivery for now: on a node in Fleetlayer's
+/// untrusted group (agents-triage) every send from the plugin arrives marked as outside data, and the agent mustn't
+/// read the person's words that way (homeserver, 27 Nov 2026). It moves once Fleetlayer can deliver the deck's
+/// words as the deck's.
+pub fn carries(kind: &DeliveryKind) -> bool {
+    matches!(kind, DeliveryKind::Forward { .. } | DeliveryKind::Webhook { .. } | DeliveryKind::Message { .. })
+}
+
 impl Outgoing {
     /// A Quietdeck delivery, rendered as the session sees it, with its kind and whether it's outside data.
     pub fn of(to: &str, kind: &DeliveryKind, body: &str, local: bool) -> Outgoing {
@@ -150,6 +160,9 @@ pub async fn deliver(d: &quietdeck_types::relay::Delivery) -> Option<Result<Deli
 }
 
 pub async fn deliver_via(socket: &Path, d: &quietdeck_types::relay::Delivery) -> Option<Result<Delivered, String>> {
+    if !carries(&d.kind) {
+        return None;
+    }
     let (to, local) = match (&d.target.session_id, d.target.agent) {
         (Some(id), quietdeck_types::AgentKind::Claude) => (id.as_str(), false),
         _ => (d.target.tab.as_str(), true),
@@ -411,7 +424,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_deck_delivery_goes_to_the_claude_session_by_id_and_not_here_is_offline() {
+    async fn a_webhook_goes_to_the_claude_session_by_id_and_not_here_is_offline() {
         let dir = tempfile::tempdir().unwrap();
         let socket = dir.path().join("fleetlayer-plugin.sock");
         let (mut nw, mut nr) = plugin(socket.clone()).await;
@@ -423,8 +436,12 @@ mod tests {
                 address: Some("w1:p3".into()),
                 agent: quietdeck_types::AgentKind::Claude,
             },
-            kind: DeliveryKind::Deck,
-            body: "Nathan wrote in the Inbox chat: hello".into(),
+            kind: DeliveryKind::Webhook {
+                source: "gatus".into(),
+                endpoint: "status".into(),
+                summary: "Fleetlayer_agents is down".into(),
+            },
+            body: "{}".into(),
         };
         let sent = tokio::spawn({
             let socket = socket.clone();
@@ -432,12 +449,36 @@ mod tests {
         });
         let req = line(&mut nr).await;
         assert_eq!(req["params"]["to"], "0de272d5-8e38-42e4-8eeb-dd5a6c41ba17");
-        assert_eq!(req["params"]["subkind"], "deck");
+        assert_eq!(req["params"]["subkind"], "webhook");
+        assert_eq!(req["params"]["untrusted"], true);
         let gone = json!({"jsonrpc": "2.0", "id": req["id"], "error": {"code": code::NOT_HERE,
             "message": "email triage on agents-triage isn't running"}});
         nw.write_all(format!("{gone}\n").as_bytes()).await.unwrap();
         let e = sent.await.unwrap().unwrap().unwrap_err();
         assert!(e.starts_with(crate::deliver::OFFLINE_PREFIX), "{e}");
+    }
+
+    #[tokio::test]
+    async fn the_persons_words_stay_on_the_nodes_own_delivery() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("fleetlayer-plugin.sock");
+        let (_nw, _nr) = plugin(socket.clone()).await;
+        for kind in [DeliveryKind::Deck, DeliveryKind::Wakeup, DeliveryKind::Handoff, DeliveryKind::RunnerReport] {
+            assert!(!carries(&kind));
+            let d = quietdeck_types::relay::Delivery {
+                id: "d2".into(),
+                target: quietdeck_types::relay::DeliveryTarget {
+                    tab: "email triage".into(),
+                    session_id: Some("s".into()),
+                    address: None,
+                    agent: quietdeck_types::AgentKind::Claude,
+                },
+                kind,
+                body: "Nathan wrote in the Inbox chat: archive them all".into(),
+            };
+            assert!(deliver_via(&socket, &d).await.is_none(), "the plugin was asked");
+        }
+        assert!(carries(&forward()));
     }
 
     #[tokio::test]

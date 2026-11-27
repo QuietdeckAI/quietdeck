@@ -146,8 +146,8 @@ impl DeckApi for LinkDeck {
     }
 }
 
-/// The agent, by its tab on this machine: through Fleetlayer where it runs Quietdeck's plugin, else the node's own
-/// delivery (its messaging socket, or the orchestrator).
+/// The agent, by its tab on this machine (the node's own delivery: its messaging socket, or the orchestrator), or by
+/// `<tab>@<node>` on another node through Fleetlayer.
 pub struct LocalAgent {
     pub node: Arc<Node>,
     pub tab: String,
@@ -160,17 +160,27 @@ impl AgentInbox for LocalAgent {
             let sessions = self.node.sessions.lock().await;
             sessions.iter().find(|s| s.running && s.tab.as_deref() == Some(self.tab.as_str())).cloned()
         };
-        // Through Fleetlayer where it runs Quietdeck's plugin: to the tab on this machine, or to `<tab>@<node>` when
-        // the agent runs on another node (a runner on its own Unix user, say).
-        let local = !self.tab.contains('@');
-        if let Some(sent) =
-            crate::fleetlayer::send(&crate::fleetlayer::Outgoing::of(&self.tab, &kind, &body, local)).await
-        {
-            sent.map_err(|e| e.to_string())?;
-            if let Some(s) = session {
-                self.node.mark_working(&s.session_id).await;
+        // An agent on another node (`<tab>@<node>`, a runner on a Unix user of its own) is reached through Fleetlayer.
+        // One on this machine gets the runner's words through the node's own delivery (see fleetlayer::carries).
+        let remote = self.tab.contains('@');
+        if remote || crate::fleetlayer::carries(&kind) {
+            let out = crate::fleetlayer::Outgoing::of(&self.tab, &kind, &body, !remote);
+            match crate::fleetlayer::send(&out).await {
+                Some(sent) => {
+                    sent.map_err(|e| e.to_string())?;
+                    if let Some(s) = session {
+                        self.node.mark_working(&s.session_id).await;
+                    }
+                    return Ok(());
+                }
+                None if remote => {
+                    return Err(format!(
+                        "{} is on another node, and Fleetlayer doesn't run Quietdeck's plugin here",
+                        self.tab
+                    ));
+                }
+                None => {}
             }
-            return Ok(());
         }
         let s = session.ok_or_else(|| format!("{} isn't running on this machine", self.tab))?;
         let delivery = Delivery {
