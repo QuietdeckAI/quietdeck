@@ -33,6 +33,12 @@ pub struct MailState {
     pub since: BTreeMap<String, Timestamp>,
     #[serde(default)]
     pub checked_at: Option<Timestamp>,
+    /// The last check in which every account was read.
+    #[serde(default)]
+    pub ok_at: Option<Timestamp>,
+    /// What went wrong in the last check, per account, when something did.
+    #[serde(default)]
+    pub error: Option<String>,
     #[serde(default)]
     pub woke_at: Option<Timestamp>,
     /// New chat messages since the last wake-up (Matrix and the like), per room as "source\troom name". The deck
@@ -51,6 +57,13 @@ pub struct MailState {
     /// involved instead of hunting the inbox for it (Nathan, 25 Nov).
     #[serde(default)]
     pub sent: Vec<String>,
+    /// The new mail itself, one block per message, for an agent with no mail tools (`mail_watch.message_text`), until
+    /// the next wake-up carries it.
+    #[serde(default)]
+    pub mail_text: Vec<String>,
+    /// New mail that didn't fit in a wake-up, oldest first: it goes in the next ones, a full wake-up at a time.
+    #[serde(default)]
+    pub mail_backlog: Vec<Waiting>,
     /// The last complete inbox listing per account (`mail_watch.inbox`), with the threads that arrived since. Kept in
     /// memory only: after a restart the first listing is the new baseline.
     #[serde(skip)]
@@ -109,6 +122,7 @@ impl MailState {
         self.urgent.clear();
         self.sent.clear();
         self.handled.clear();
+        self.mail_text.clear();
     }
 
     /// What waits, in a line ("2 Personal, 1 in Infrastructure Alerts (Matrix)"), and how many items.
@@ -180,6 +194,19 @@ impl MailState {
         if mail.is_some() || chat.is_some() {
             text.push_str("Run your triage round.");
         }
+        if !self.mail_text.is_empty() {
+            text.push_str(&format!(
+                "\n\nThe new mail follows, one <email> each. {}\n\n{}",
+                quietdeck_types::relay::UNTRUSTED_LINE,
+                self.mail_text.join("\n\n")
+            ));
+            if !self.mail_backlog.is_empty() {
+                text.push_str(&format!(
+                    "\n\n{} more new emails didn't fit in this message: they come in the next ones.",
+                    self.mail_backlog.len()
+                ));
+            }
+        }
         if !self.handled.is_empty() {
             let parts: Vec<String> = self
                 .handled
@@ -245,6 +272,14 @@ fn expired(error: &str) -> bool {
     error.contains("404")
 }
 
+/// A new message waiting for a wake-up with room for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Waiting {
+    pub account: String,
+    pub id: String,
+    pub thread_id: Option<String>,
+}
+
 /// A message the history says arrived in the inbox or was sent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewMail {
@@ -269,7 +304,10 @@ pub struct Checked {
 pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tools, state: &mut MailState) -> Checked {
     let mut found = vec![];
     let mut left_found: Vec<(String, String)> = vec![];
-    state.checked_at = Some(Timestamp::now());
+    let started = Timestamp::now();
+    state.checked_at = Some(started);
+    let mut all_read = true;
+    let mut errors: Vec<String> = vec![];
     for (id, account) in &cfg.accounts {
         let acct = json!({"id": id, "address": account.address, "label": cfg.account_label(id)});
         let mut acct = acct;
@@ -277,13 +315,45 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
             acct[k] = Value::String(v.clone());
         }
         let Some(start) = state.history.get(id).cloned() else {
-            // First run: start from now. Mail from before the runner is the agent's own first round.
+            // First run: start from now. Mail from before the runner is the agent's own first round, or, with
+            // `recent` (an agent with no mail tools of its own), the inbox's newest messages count as new.
             match profile(watch, tools, &acct).await {
                 Ok(h) => {
                     state.history.insert(id.clone(), h);
                     state.since.insert(id.clone(), Timestamp::now());
+                    if let Some(spec) = &watch.recent {
+                        let listed = match render(&spec.input, &json!({"account": acct})) {
+                            Ok(input) => tools.call(spec, input).await,
+                            Err(e) => Err(e),
+                        };
+                        match listed {
+                            Ok(v) => {
+                                for m in v.get("messages").and_then(Value::as_array).into_iter().flatten() {
+                                    let Some(mid) = m.get("id").and_then(Value::as_str) else { continue };
+                                    let labels: Vec<String> = m
+                                        .get("labelIds")
+                                        .and_then(Value::as_array)
+                                        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                                        .unwrap_or_else(|| vec!["INBOX".to_string()]);
+                                    found.push(NewMail {
+                                        account: id.clone(),
+                                        id: mid.to_string(),
+                                        thread_id: m.get("threadId").and_then(Value::as_str).map(str::to_string),
+                                        labels,
+                                    });
+                                }
+                            }
+                            Err(e) => tracing::warn!(account = %id, error = %e, "listing the inbox's newest mail"),
+                        }
+                    }
                 }
-                Err(e) => tracing::warn!(account = %id, error = %e, "reading the mailbox's history ID"),
+                Err(e) => {
+                    all_read = false;
+                    {
+                        errors.push(format!("{}: {e}", cfg.account_label(id)));
+                        tracing::warn!(account = %id, error = %e, "reading the mailbox's history ID");
+                    }
+                }
             }
             continue;
         };
@@ -297,7 +367,10 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
             let input = match render(&watch.history.input, &ctx) {
                 Ok(i) => i,
                 Err(e) => {
-                    tracing::warn!(account = %id, error = %e, "runner.mail_watch.history input");
+                    {
+                        errors.push(format!("{}: {e}", cfg.account_label(id)));
+                        tracing::warn!(account = %id, error = %e, "runner.mail_watch.history input");
+                    }
                     failed = true;
                     break;
                 }
@@ -358,19 +431,26 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
                             state.history.insert(id.clone(), h);
                             state.add(id, None);
                         }
-                        Err(e) => tracing::warn!(account = %id, error = %e, "reading the mailbox's history ID"),
+                        Err(e) => {
+                            errors.push(format!("{}: {e}", cfg.account_label(id)));
+                            tracing::warn!(account = %id, error = %e, "reading the mailbox's history ID")
+                        }
                     }
                     failed = true;
                     break;
                 }
                 Err(e) => {
-                    tracing::warn!(account = %id, error = %e, "reading the mailbox's history");
+                    {
+                        errors.push(format!("{}: {e}", cfg.account_label(id)));
+                        tracing::warn!(account = %id, error = %e, "reading the mailbox's history");
+                    }
                     failed = true;
                     break;
                 }
             }
         }
         if failed {
+            all_read = false;
             continue;
         }
         if latest != start {
@@ -395,6 +475,10 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
         found.extend(seen);
         left_found.extend(left);
     }
+    if all_read {
+        state.ok_at = Some(started);
+    }
+    state.error = (!errors.is_empty()).then(|| errors.join("; "));
     Checked { new: found, left: left_found }
 }
 
@@ -468,6 +552,63 @@ mod tests {
             let op = spec.gog.clone().unwrap_or_default();
             self.0.lock().unwrap().get_mut(&op).and_then(|q| q.pop_front()).unwrap_or_else(|| Err(format!("no {op}")))
         }
+    }
+
+    #[tokio::test]
+    async fn the_first_check_brings_the_inboxs_newest_mail_when_asked_to() {
+        let mut cfg: RunnerConfig =
+            yaml_serde::from_str("agent: { tab: t }\nmail: gog\naccounts:\n  personal: { address: me@example.com }\n")
+                .unwrap();
+        cfg.apply_presets();
+        let watch = cfg.mail_watch.clone().unwrap();
+        let mut q: BTreeMap<String, std::collections::VecDeque<Result<Value, String>>> = BTreeMap::new();
+        q.insert("profile".into(), [Ok(json!({"historyId": "5"}))].into());
+        q.insert(
+            "recent".into(),
+            [Ok(json!({"messages": [{"id": "m2", "threadId": "t2", "labelIds": ["INBOX", "UNREAD"]},
+                {"id": "m1", "threadId": "t1"}]}))]
+            .into(),
+        );
+        let tools = Scripted(std::sync::Mutex::new(q));
+        let mut state = MailState::default();
+        let found = check(&cfg, &watch, &tools, &mut state).await.new;
+        assert_eq!(found.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["m2", "m1"]);
+        assert_eq!(found[1].labels, vec!["INBOX".to_string()], "a message listed from the inbox is in it");
+        assert_eq!(state.history.get("personal").map(String::as_str), Some("5"));
+    }
+
+    #[test]
+    fn the_mail_text_rides_in_the_wakeup_and_clears_with_it() {
+        let cfg: RunnerConfig =
+            yaml_serde::from_str("agent: { tab: t }\naccounts:\n  personal: { address: a@example.com }\n").unwrap();
+        let mut s = MailState::default();
+        s.add("personal", Some(1));
+        s.mail_text.push("<email account=\"Personal\">\nhi\n</email>".into());
+        let text = s.wakeup_text(&cfg).unwrap();
+        assert!(text.contains("The new mail follows") && text.ends_with("</email>"), "{text}");
+        s.clear_pending();
+        assert!(s.mail_text.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_check_counts_as_good_only_when_every_account_was_read() {
+        let mut cfg: RunnerConfig =
+            yaml_serde::from_str("agent: { tab: t }\nmail: gog\naccounts:\n  personal: { address: me@example.com }\n")
+                .unwrap();
+        cfg.apply_presets();
+        let watch = cfg.mail_watch.clone().unwrap();
+        let mut q: BTreeMap<String, std::collections::VecDeque<Result<Value, String>>> = BTreeMap::new();
+        q.insert("history".into(), [Err("gog isn't signed in".into()), Ok(json!({"historyId": "2"}))].into());
+        q.insert("inbox".into(), [Ok(json!({"threads": []}))].into());
+        let tools = Scripted(std::sync::Mutex::new(q));
+        let mut state = MailState::default();
+        state.history.insert("personal".into(), "1".into());
+        check(&cfg, &watch, &tools, &mut state).await;
+        assert!(state.checked_at.is_some() && state.ok_at.is_none(), "a failed account isn't a good check");
+        assert_eq!(state.error.as_deref(), Some("Personal: gog isn't signed in"));
+        check(&cfg, &watch, &tools, &mut state).await;
+        assert_eq!(state.ok_at, state.checked_at);
+        assert_eq!(state.error, None, "a good check clears it");
     }
 
     #[tokio::test]

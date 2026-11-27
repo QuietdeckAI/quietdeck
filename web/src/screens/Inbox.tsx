@@ -5,6 +5,7 @@ import { ApproveAllBar } from "@/components/ApproveAllBar";
 import { notify } from "@/lib/notes";
 import { changedKeys, ReportBody, ReportChatBox, reportDefaults, TriageNotes, triageNotes } from "@/components/Report";
 import { ReportMeta, ReportToasts, UpdatedAt } from "@/components/ReportMeta";
+import { SoloHealthStack } from "@/components/SoloHealth";
 import { TimelineRow } from "@/components/TimelineRow";
 import { api, query } from "@/lib/api";
 import { usePresence } from "@/lib/presence";
@@ -135,6 +136,7 @@ export function InboxScreen() {
   return (
     // Fills the screen below the header, so the empty state sits in the middle of the screen.
     <main className="mx-auto flex max-w-3xl flex-1 flex-col px-4 pt-6 pb-4">
+      <SoloHealthStack />
       {inbox.isError && (
         <p role="alert" className="mt-8 text-danger">
           {inbox.error.message}

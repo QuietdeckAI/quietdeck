@@ -52,10 +52,12 @@ fn default_bin() -> String {
 }
 
 /// Every op `gog:` takes in a tool spec.
-pub const OPS: [&str; 12] = [
+pub const OPS: [&str; 14] = [
     "profile",
     "history",
     "message",
+    "message_text",
+    "recent",
     "drafts",
     "inbox",
     "thread",
@@ -92,6 +94,17 @@ impl Gog {
                 let id = gmail_id(input, "id")?;
                 let v = self.json(&account, true, &["gmail", "raw", &id, "--format=metadata"], None, None).await?;
                 Ok(unwrap_message(v))
+            }
+            "message_text" => {
+                let id = gmail_id(input, "id")?;
+                let args = ["gmail", "get", &id, "--format=full", "--sanitize-content"];
+                let v = self.json(&account, true, &args, None, None).await?;
+                Ok(normalize_message_text(&v))
+            }
+            "recent" => {
+                let args = ["gmail", "messages", "search", "--max=25", "--", "in:inbox"];
+                let v = self.json(&account, true, &args, None, None).await?;
+                Ok(normalize_recent(&v))
             }
             "thread" => {
                 let id = gmail_id(input, "thread_id")?;
@@ -275,19 +288,18 @@ impl Gog {
 
     async fn run(&self, args: &[String], stdin: Option<&[u8]>, timeout: Duration) -> Result<Output, String> {
         let bin = &self.bin;
-        let mut child = tokio::process::Command::new(bin)
-            .args(args)
+        let mut cmd = tokio::process::Command::new(bin);
+        cmd.args(args)
             .stdin(if stdin.is_some() { std::process::Stdio::piped() } else { std::process::Stdio::null() })
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| match e.kind() {
-                std::io::ErrorKind::NotFound => {
-                    format!("{bin} isn't installed or isn't on PATH (set runner.gog.bin to its full path)")
-                }
-                _ => format!("{bin}: {e}"),
-            })?;
+            .kill_on_drop(true);
+        let mut child = spawn(&mut cmd).await.map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => {
+                format!("{bin} isn't installed or isn't on PATH (set runner.gog.bin to its full path)")
+            }
+            _ => format!("{bin}: {e}"),
+        })?;
         if let (Some(data), Some(mut pipe)) = (stdin, child.stdin.take()) {
             pipe.write_all(data).await.map_err(|e| format!("{bin}: {e}"))?;
             drop(pipe);
@@ -301,6 +313,21 @@ impl Gog {
             stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
         })
+    }
+}
+
+/// Spawn, trying again briefly when the program is busy being written ("Text file busy"): an upgrade of the CLI
+/// in progress, or a script another thread has just written while a third forks.
+pub(super) async fn spawn(cmd: &mut tokio::process::Command) -> std::io::Result<tokio::process::Child> {
+    let mut tries = 0;
+    loop {
+        match cmd.spawn() {
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && tries < 20 => {
+                tries += 1;
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            other => return other,
+        }
     }
 }
 
@@ -393,6 +420,45 @@ pub fn normalize_thread(v: &Value) -> Value {
     json!({"id": thread.get("id"), "messages": messages})
 }
 
+/// `gog gmail get --format full --sanitize-content` → `{from, to, cc, subject, date, body}`: the headers by name and
+/// the message's text with HTML and links taken out, which is what goes in front of the agent.
+pub fn normalize_message_text(v: &Value) -> Value {
+    let header = |name: &str| -> Option<String> {
+        if let Some(h) = v.get("headers").and_then(|h| h.get(name)).and_then(Value::as_str).filter(|s| !s.is_empty()) {
+            return Some(h.to_string());
+        }
+        let msg = v.get("message").unwrap_or(v);
+        msg.pointer("/payload/headers").and_then(Value::as_array)?.iter().find_map(|h| {
+            h.get("name")?
+                .as_str()?
+                .eq_ignore_ascii_case(name)
+                .then(|| h.get("value")?.as_str().map(str::to_string))
+                .flatten()
+        })
+    };
+    let body = ["body", "text", "content"]
+        .iter()
+        .find_map(|k| v.get(*k).and_then(Value::as_str).filter(|s| !s.trim().is_empty()))
+        .or_else(|| v.get("message").and_then(|m| m.get("snippet")).and_then(Value::as_str))
+        .or_else(|| v.get("snippet").and_then(Value::as_str))
+        .unwrap_or_default();
+    json!({"from": header("from"), "to": header("to"), "cc": header("cc"), "subject": header("subject"),
+        "date": header("date"), "body": body})
+}
+
+/// `gog gmail messages search in:inbox` → `{messages: [{id, threadId, labelIds}]}`, newest first.
+pub fn normalize_recent(v: &Value) -> Value {
+    let list = v.get("messages").and_then(Value::as_array).or_else(|| v.as_array()).cloned().unwrap_or_default();
+    let out: Vec<Value> = list
+        .iter()
+        .filter_map(|m| {
+            let id = m.get("id")?.as_str()?;
+            Some(json!({"id": id, "threadId": m.get("threadId"), "labelIds": label_ids(m)}))
+        })
+        .collect();
+    json!({"messages": out})
+}
+
 /// `gog gmail drafts list` → `{drafts: [{id, message: {id, threadId}}]}`.
 pub fn normalize_drafts(v: &Value) -> Value {
     let list = v.get("drafts").and_then(Value::as_array).or_else(|| v.as_array()).cloned().unwrap_or_default();
@@ -471,7 +537,7 @@ pub fn preset_input(op: &str) -> Value {
     let account = json!("${account.address}");
     match op {
         "history" => json!({"account": account, "since": "${history_id}", "page": "${page_token}"}),
-        "message" => json!({"account": account, "id": "${message_id}"}),
+        "message" | "message_text" => json!({"account": account, "id": "${message_id}"}),
         "thread" | "archive" | "mark_read" => json!({"account": account, "thread_id": "${action.thread_id}"}),
         "label" => json!({"account": account, "thread_id": "${action.thread_id}", "add": "${action.add}",
             "remove": "${action.remove}"}),
@@ -538,6 +604,24 @@ mod tests {
     }
 
     #[test]
+    fn message_text_takes_gogs_headers_and_body_or_gmails_headers() {
+        let gog = json!({"headers": {"from": "Bob <b@example.com>", "to": "me@example.com", "subject": "Hi",
+            "date": "Fri, 27 Nov 2026", "cc": ""}, "body": "Hello\nthere"});
+        let n = normalize_message_text(&gog);
+        assert_eq!(n["from"], "Bob <b@example.com>");
+        assert_eq!(n["cc"], Value::Null, "an empty header is no header");
+        assert_eq!(n["body"], "Hello\nthere");
+        let gmail = json!({"message": {"snippet": "Just the snippet", "payload": {"headers": [
+            {"name": "Subject", "value": "Re: Hi"}]}}});
+        let n = normalize_message_text(&gmail);
+        assert_eq!(n["subject"], "Re: Hi");
+        assert_eq!(n["body"], "Just the snippet", "the snippet when there's no text");
+        // gog's messages search (fixture 02's shape) gives labels, not labelIds.
+        let r = normalize_recent(&json!({"messages": [{"id": "m1", "threadId": "t1", "labels": ["INBOX"]}]}));
+        assert_eq!(r, json!({"messages": [{"id": "m1", "threadId": "t1", "labelIds": ["INBOX"]}]}));
+    }
+
+    #[test]
     fn raw_messages_unwrap() {
         assert_eq!(unwrap_message(json!({"message": {"id": "m1"}})), json!({"id": "m1"}));
         let m = json!({"id": "m1", "historyId": "9"});
@@ -586,7 +670,7 @@ exit $(cat "$dir/$op.exit" 2>/dev/null || echo 0)
         std::fs::write(p.join("raw_m1.json"), r#"{"id":"m1","threadId":"t1","labelIds":["INBOX","UNREAD"]}"#).unwrap();
         std::fs::write(p.join("raw_m2.exit"), "5").unwrap();
         let gog = fake_gog(p);
-        let v = gog.call("history", &json!({"account": "me@example.com", "since": "100"})).await.unwrap();
+        let v = gog.call("history", &json!({"account": "me@example.com", "since": "100"})).await.expect("history");
         assert_eq!(
             v,
             json!({"historyId": "120", "history": [{"messagesAdded": [

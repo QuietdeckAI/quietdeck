@@ -5,4 +5,8 @@ import type { Reply } from "./Reply";
 /**
  * Deck → node.
  */
-export type DeckFrame = { "type": "welcome", node: string, } | { "type": "refused", reason: string, } | { "type": "request", id: number, request: DeckRequest, } | { "type": "response", id: number, reply: Reply, };
+export type DeckFrame = { "type": "welcome", node: string, 
+/**
+ * What this deck takes beyond the protocol version ([`FEATURE_RUNNER_HEALTH`]). Older decks send none.
+ */
+features: Array<string>, } | { "type": "refused", reason: string, } | { "type": "request", id: number, request: DeckRequest, } | { "type": "response", id: number, reply: Reply, };

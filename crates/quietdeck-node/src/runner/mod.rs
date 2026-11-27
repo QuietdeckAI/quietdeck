@@ -12,6 +12,7 @@
 mod config;
 mod deck;
 mod gog;
+mod headless;
 mod leases;
 mod mail;
 mod tools;
@@ -36,7 +37,8 @@ use tokio::sync::{Mutex, mpsc};
 use tokio::time::Instant;
 
 pub use config::RunnerConfig;
-pub use deck::{AgentInbox, DeckApi, LinkDeck, LocalAgent};
+pub use deck::{AgentInbox, AgentTurns, DeckApi, LinkDeck, LocalAgent};
+pub use headless::HeadlessAgent;
 use mail::MailState;
 pub use tools::{ConfiguredTools, Tools};
 
@@ -688,6 +690,21 @@ impl Runner {
     pub async fn check_mail(&self) {
         let Some(watch) = &self.cfg.mail_watch else { return };
         let mut state = self.mail.lock().await;
+        // Mail that didn't fit in the last wake-up goes in this one, once that one has gone.
+        if watch.message_text.is_some() && state.mail_text.is_empty() && !state.mail_backlog.is_empty() {
+            let n = state.mail_backlog.len().min(MAIL_TEXT_MAX);
+            let batch: Vec<mail::Waiting> = state.mail_backlog.drain(..n).collect();
+            for w in batch {
+                let m = mail::NewMail {
+                    account: w.account.clone(),
+                    id: w.id,
+                    thread_id: w.thread_id,
+                    labels: vec!["INBOX".into()],
+                };
+                state.mail_text.push(self.mail_block(watch, &m).await);
+                state.add(&w.account, Some(1));
+            }
+        }
         let checked = mail::check(&self.cfg, watch, self.tools.as_ref(), &mut state).await;
         let new = checked.new;
         self.threads_moved(&new, checked.left).await;
@@ -702,8 +719,18 @@ impl Runner {
                     if is_sent && !in_inbox {
                         // The person's own mail: not new mail to triage, and no wake-up of its own (Nathan, 25 Nov).
                         state.sent.push(sent_line(&self.cfg.account_label(&m.account), &f, meta.as_ref()));
+                    } else if watch.message_text.is_some() && state.mail_text.len() >= MAIL_TEXT_MAX {
+                        // A full wake-up already: this one waits for a later one, text and all.
+                        state.mail_backlog.push(mail::Waiting {
+                            account: m.account.clone(),
+                            id: m.id.clone(),
+                            thread_id: m.thread_id.clone(),
+                        });
                     } else {
                         facts.push((m.account.clone(), f));
+                        if watch.message_text.is_some() {
+                            state.mail_text.push(self.mail_block(watch, m).await);
+                        }
                     }
                     if is_sent && let Some(meta) = meta {
                         sent.push(mail_item(&m.account, quietdeck_types::mail::MailKind::Sent, &m.id, meta));
@@ -719,6 +746,17 @@ impl Runner {
         }
         self.wake_if_due(&mut state).await;
         state.save(&self.mail_state_path);
+        let turns = self.agent.turns();
+        let health = quietdeck_types::node::RunnerHealth {
+            mail_ok_at: state.ok_at,
+            mail_checked_at: state.checked_at,
+            mail_error: state.error.clone(),
+            agent_ok_at: turns.as_ref().and_then(|t| t.ok_at),
+            agent_failed_at: turns.as_ref().and_then(|t| t.failed.as_ref().map(|f| f.0)),
+            agent_error: turns.and_then(|t| t.failed.map(|f| f.1)),
+        };
+        drop(state);
+        self.deck.health(health).await;
     }
 
     /// Threads the person archived or deleted in Gmail themselves, and threads that came back with new mail: each
@@ -820,6 +858,45 @@ impl Runner {
             Err(e) if e.contains("404") => Ok(None),
             Err(e) => Err(e),
         }
+    }
+
+    /// One new message as the agent reads it: who, what and when, then its text (sanitised by the tool, cut at
+    /// [`MAIL_TEXT_CHARS`]), between `<email>` tags the text can't close.
+    async fn mail_block(&self, watch: &config::MailWatchConfig, m: &mail::NewMail) -> String {
+        let label = self.cfg.account_label(&m.account);
+        let thread = m.thread_id.as_deref().unwrap_or("");
+        let open = format!("<email account=\"{label}\" thread=\"{thread}\" message=\"{}\">", m.id);
+        let Some(spec) = &watch.message_text else { return format!("{open}\n</email>") };
+        let read = match self.account_ctx(&m.account) {
+            Some(acct) => match tools::render(&spec.input, &json!({"account": acct, "message_id": m.id})) {
+                Ok(input) => self.tools.call(spec, input).await,
+                Err(e) => Err(e),
+            },
+            None => Err(format!("account {} isn't in the runner's config", m.account)),
+        };
+        let v = match read {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(account = %m.account, error = %e, "reading a new message's text");
+                return format!("{open}\n(The runner couldn't read this message: {e})\n</email>");
+            }
+        };
+        let field = |k: &str| v.get(k).and_then(Value::as_str).filter(|s| !s.is_empty()).map(clean_line);
+        let mut out = open;
+        for (name, key) in [("From", "from"), ("To", "to"), ("Cc", "cc"), ("Subject", "subject"), ("Date", "date")] {
+            if let Some(val) = field(key) {
+                out.push_str(&format!("\n{name}: {val}"));
+            }
+        }
+        let body = v.get("body").and_then(Value::as_str).unwrap_or("").trim();
+        let mut text: String = body.chars().take(MAIL_TEXT_CHARS).collect();
+        if body.chars().count() > MAIL_TEXT_CHARS {
+            text.push_str(&format!("\n[… cut at {MAIL_TEXT_CHARS} characters]"));
+        }
+        out.push_str("\n\n");
+        out.push_str(&text.replace("</email", "</ email"));
+        out.push_str("\n</email>");
+        out
     }
 
     /// What's known about a new message without reading its body. None when it no longer exists.
@@ -1065,6 +1142,18 @@ fn derived_values(a: &Action, v: &mut Value) {
         v["agent_labels"] = json!([format!("agent:{tab}")]);
         v["agent_label_objects"] = json!([{"name": format!("agent:{tab}")}]);
     }
+}
+
+/// New messages whose text one wake-up carries; more are named as waiting.
+const MAIL_TEXT_MAX: usize = 25;
+/// Each message's text is cut here: enough to triage, never a whole newsletter.
+const MAIL_TEXT_CHARS: usize = 3000;
+
+/// A header value on one line, short, with nothing that could look like a tag.
+fn clean_line(s: &str) -> String {
+    let one: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let one = one.replace('<', "‹").replace('>', "›");
+    if one.chars().count() > 300 { one.chars().take(300).collect::<String>() + "…" } else { one }
 }
 
 fn story_number(id: &str) -> Option<u64> {

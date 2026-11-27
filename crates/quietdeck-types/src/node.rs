@@ -21,6 +21,32 @@ use crate::usage::{AccountUsage, UsageCommand};
 /// which side to upgrade.
 pub const PROTOCOL_VERSION: u32 = 1;
 
+/// In [`DeckFrame::Welcome`]'s `features`: the deck takes [`NodeFrame::RunnerHealth`]. A node sends that frame only to
+/// a deck that lists it, so either side can be upgraded first.
+pub const FEATURE_RUNNER_HEALTH: &str = "runner_health";
+
+/// How the runner and its agent are doing, for Quietdeck solo's health check and the Inbox's warning.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct RunnerHealth {
+    /// The last mail check in which every account was read.
+    #[ts(type = "string | null")]
+    pub mail_ok_at: Option<Timestamp>,
+    /// The last mail check, whatever happened.
+    #[ts(type = "string | null")]
+    pub mail_checked_at: Option<Timestamp>,
+    /// What went wrong in the last check ("Personal: gog isn't installed…"), when something did.
+    #[serde(default)]
+    pub mail_error: Option<String>,
+    /// A headless agent's last turn that ended well, and its last failure since then. None for an agent in a tab,
+    /// whose turns the runner doesn't see.
+    #[ts(type = "string | null")]
+    pub agent_ok_at: Option<Timestamp>,
+    #[ts(type = "string | null")]
+    pub agent_failed_at: Option<Timestamp>,
+    pub agent_error: Option<String>,
+}
+
 /// Node → deck.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -65,6 +91,10 @@ pub enum NodeFrame {
         id: u64,
         reply: Reply,
     },
+    /// The runner's health, after each mail check, only to a deck whose welcome lists [`FEATURE_RUNNER_HEALTH`].
+    RunnerHealth {
+        health: RunnerHealth,
+    },
 }
 
 /// What a node with its runner on tells the deck.
@@ -85,6 +115,9 @@ pub enum DeckFrame {
     /// The answer to `hello`: the name the deck knows this node by (from its token).
     Welcome {
         node: String,
+        /// What this deck takes beyond the protocol version ([`FEATURE_RUNNER_HEALTH`]). Older decks send none.
+        #[serde(default)]
+        features: Vec<String>,
     },
     /// The deck can't take this node (wrong protocol version). The node logs it and stops reconnecting.
     Refused {

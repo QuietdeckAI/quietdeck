@@ -2,6 +2,7 @@
 import type { AccountUsage } from "./AccountUsage";
 import type { NodeRequest } from "./NodeRequest";
 import type { Reply } from "./Reply";
+import type { RunnerHealth } from "./RunnerHealth";
 import type { RunnerInfo } from "./RunnerInfo";
 import type { SessionEnd } from "./SessionEnd";
 import type { SessionInfo } from "./SessionInfo";
@@ -10,4 +11,4 @@ import type { SummaryEvent } from "./SummaryEvent";
 /**
  * Node → deck.
  */
-export type NodeFrame = { "type": "hello", protocol: number, version: string, runner: RunnerInfo | null, } | { "type": "sessions", sessions: Array<SessionInfo>, } | { "type": "session", session: SessionInfo, } | { "type": "session_closed", session_id: string, at: string, ended: SessionEnd | null, } | { "type": "summary", event: SummaryEvent, } | { "type": "usage", accounts: Array<AccountUsage>, at: string, } | { "type": "request", id: number, request: NodeRequest, } | { "type": "response", id: number, reply: Reply, };
+export type NodeFrame = { "type": "hello", protocol: number, version: string, runner: RunnerInfo | null, } | { "type": "sessions", sessions: Array<SessionInfo>, } | { "type": "session", session: SessionInfo, } | { "type": "session_closed", session_id: string, at: string, ended: SessionEnd | null, } | { "type": "summary", event: SummaryEvent, } | { "type": "usage", accounts: Array<AccountUsage>, at: string, } | { "type": "request", id: number, request: NodeRequest, } | { "type": "response", id: number, reply: Reply, } | { "type": "runner_health", health: RunnerHealth, };

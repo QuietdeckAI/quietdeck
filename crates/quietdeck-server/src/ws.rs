@@ -68,7 +68,16 @@ async fn run(state: AppState, node: String, socket: WebSocket) {
     let mut reg = state.hub.register(&node).await;
     tracing::info!(%node, %version, runner = runner.is_some(), "node connected");
     state.changed(Changed::Nodes);
-    if send(&mut sink, &DeckFrame::Welcome { node: node.clone() }).await.is_err() {
+    if send(
+        &mut sink,
+        &DeckFrame::Welcome {
+            node: node.clone(),
+            features: vec![quietdeck_types::node::FEATURE_RUNNER_HEALTH.to_string()],
+        },
+    )
+    .await
+    .is_err()
+    {
         state.hub.unregister(&node, reg.conn_id).await;
         return;
     }
@@ -162,6 +171,14 @@ async fn handle(state: &AppState, node: &str, reg: &crate::hub::Registration, fr
     );
     let result = match frame {
         NodeFrame::Hello { .. } => Ok(()),
+        NodeFrame::RunnerHealth { health } => {
+            state
+                .runner_health
+                .lock()
+                .expect("runner health")
+                .insert(node.to_string(), (health, jiff::Timestamp::now()));
+            Ok(())
+        }
         NodeFrame::Sessions { sessions } => {
             let r = sessions::replace_snapshot(&state.db, &state.config, node, &sessions).await;
             follow_renames(state, node, &sessions).await;
@@ -256,6 +273,51 @@ mod tests {
 
     fn text(frame: &NodeFrame) -> Message {
         Message::Text(serde_json::to_string(frame).unwrap().into())
+    }
+
+    /// The welcome says the deck takes runner health, and the frame is kept for the node, while a frame this deck
+    /// can't read is logged and the connection stays up.
+    #[tokio::test]
+    async fn the_deck_takes_runner_health_and_says_so() {
+        let state = AppState::for_tests().await;
+        let code = nodes::create_enrolment_code(&state.db).await.unwrap();
+        let enrolled = nodes::enrol(&state.db, &code.code, "solo").await.unwrap();
+        let app =
+            axum::Router::new().route("/api/nodes/ws", axum::routing::get(super::upgrade)).with_state(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut req = format!("ws://{addr}/api/nodes/ws").into_client_request().unwrap();
+        req.headers_mut().insert("Authorization", format!("Bearer {}", enrolled.token).parse().unwrap());
+        let (ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+        let (mut sink, mut stream) = ws.split();
+        sink.send(text(&NodeFrame::Hello { protocol: PROTOCOL_VERSION, version: "t".into(), runner: None }))
+            .await
+            .unwrap();
+        let Some(Ok(Message::Text(t))) = stream.next().await else { panic!("no welcome") };
+        let DeckFrame::Welcome { features, .. } = serde_json::from_str::<DeckFrame>(&t).unwrap() else {
+            panic!("not a welcome: {t}")
+        };
+        assert!(features.iter().any(|f| f == quietdeck_types::node::FEATURE_RUNNER_HEALTH));
+
+        sink.send(Message::Text(r#"{"type":"from_a_newer_node"}"#.into())).await.unwrap();
+        let health =
+            quietdeck_types::node::RunnerHealth { mail_ok_at: Some(jiff::Timestamp::now()), ..Default::default() };
+        sink.send(text(&NodeFrame::RunnerHealth { health: health.clone() })).await.unwrap();
+        for _ in 0..100 {
+            if state.runner_health.lock().unwrap().contains_key("solo") {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert_eq!(state.runner_health.lock().unwrap().get("solo").map(|(h, _)| h.clone()), Some(health));
+    }
+
+    /// An older node reads a welcome with features it doesn't know, and a newer one reads an older deck's welcome.
+    #[test]
+    fn welcomes_read_across_versions() {
+        let old: DeckFrame = serde_json::from_str(r#"{"type":"welcome","node":"n"}"#).unwrap();
+        assert_eq!(old, DeckFrame::Welcome { node: "n".into(), features: vec![] });
     }
 
     /// A runner's relay to a session on its own node: the deck asks that node to deliver while the node's own

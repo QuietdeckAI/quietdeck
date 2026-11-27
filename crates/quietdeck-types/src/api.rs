@@ -112,6 +112,10 @@ pub struct DeckInfo {
     pub accounts: Vec<AccountLabel>,
     pub boards: Vec<String>,
     pub settings: Settings,
+    /// Quietdeck solo: the deck on the person's own machine. The Inbox then polls `/api/solo/health` and warns when
+    /// the runner or its agent is failing.
+    #[serde(default)]
+    pub solo: bool,
 }
 
 /// `GET /api/auth/state`: what the sign-in screen shows.

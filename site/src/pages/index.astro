@@ -1,0 +1,257 @@
+---
+// The homepage. Its Markdown twin for agents is src/homepage.md (served as /index.md and at the top of
+// /llms-full.txt): change both together. Adapted from Fleetlayer's homepage (Apache 2.0, see NOTICE): its layout and
+// classes, with Quietdeck's content.
+import "../styles/home.css";
+import mark from "../assets/mark.svg?raw";
+import { site, repo } from "../../site.config.mjs";
+
+const title = "Quietdeck: your email, triaged by an agent, approved by you";
+const description = site.summary;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="canonical" href={site.url + "/"} />
+    <link rel="alternate" type="text/markdown" href="/index.md" title="This page as Markdown" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={site.url + "/"} />
+    <meta property="og:type" content="website" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="nav">
+      <div class="nav__inner">
+        <a class="wordmark" href="/" aria-label="Quietdeck home">
+          <span class="wordmark__mark" set:html={mark} />
+          <span>Quietdeck</span>
+        </a>
+        <nav class="nav__links" aria-label="Main">
+          <a href="/solo/">Docs</a>
+          <a href="/solo-security/">Safety</a>
+          <a href={repo}>GitHub</a>
+        </nav>
+        <a class="btn btn--primary nav__cta" href="/solo/">Get started</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero__copy">
+          <p class="status-line"><span class="dot" aria-hidden="true"></span> Source-available · early · built in public</p>
+          <h1 id="hero-title">Your email, read and sorted before you open it.</h1>
+          <p class="lede">
+            An AI agent reads what arrives and writes one short report: what needs you, what it would reply, what can be
+            archived. You change what you'd do differently and approve. Nothing touches your mail until you do.
+          </p>
+          <div class="actions">
+            <a class="btn btn--primary" href="/solo/">Run it on your computer</a>
+            <a class="btn btn--quiet" href={repo}>Read the source on GitHub</a>
+          </div>
+        </div>
+
+        <figure class="term" aria-label="Setting up Quietdeck solo">
+          <figcaption class="term__bar">
+            <span>quietdeck-solo</span>
+            <span class="term__tag">example</span>
+          </figcaption>
+<pre class="term__body"><code><span class="t-prompt">$</span> quietdeck-solo init
+Using the accounts gog is signed in to: <span class="t-node">you@gmail.com</span>
+<span class="t-dim">Wrote ~/.config/quietdeck/solo.yaml and solo-agent.md.</span>
+
+<span class="t-prompt">$</span> quietdeck-solo install
+<span class="t-ok">Started.</span> <span class="t-dim">Logs: ~/Library/Logs/quietdeck-solo.log</span>
+
+<span class="t-prompt">$</span> quietdeck-solo open
+<span class="t-ok">Opened the Inbox in your browser.</span></code></pre>
+        </figure>
+      </section>
+
+      <section class="map" aria-labelledby="map-title">
+        <div class="map__head">
+          <h2 id="map-title">Three parts, all on your computer. Your mail never passes through anyone else's server.</h2>
+          <p>
+            Quietdeck solo is one program running in the background. It reads Gmail with gog, a command-line tool you
+            sign in to once, and runs Claude Code as the agent. The agent can't touch your mailbox: it only sees the
+            mail it's given, and only proposes.
+          </p>
+        </div>
+
+        <ol class="map__machines" aria-label="How Quietdeck solo works">
+          <li class="machine">
+            <p class="machine__name">Your mail</p>
+            <div class="box box--manager">
+              <p class="box__label">Gmail, through gog</p>
+              <ul class="sessions">
+                <li>personal</li>
+                <li>work</li>
+              </ul>
+            </div>
+            <div class="box box--node"><p class="box__label">runner</p><p>watches for mail, carries out what you approve</p></div>
+          </li>
+          <li class="machine">
+            <p class="machine__name">The agent</p>
+            <div class="box box--manager">
+              <p class="box__label">Claude Code</p>
+              <ul class="sessions"><li>email triage</li></ul>
+              <p class="box__note">reads the mail it's given, may only post proposals and the report</p>
+            </div>
+          </li>
+          <li class="machine">
+            <p class="machine__name">You</p>
+            <div class="box box--service">
+              <p class="box__label">the Inbox</p>
+              <p>one report in your browser, on this computer only</p>
+            </div>
+            <div class="box box--service">
+              <p class="box__label">approve, change, or approve all</p>
+              <p>nothing runs until you do</p>
+            </div>
+          </li>
+        </ol>
+
+        <div class="map__wire" aria-hidden="true"><span>mail in, proposals out, your approval back</span></div>
+
+        <dl class="legend">
+          <div><dt><span class="key key--manager"></span>Your tools</dt><dd>gog and Claude Code, signed in as you</dd></div>
+          <div><dt><span class="key key--node"></span>Runner</dt><dd>the only part that touches your mailbox</dd></div>
+          <div><dt><span class="key key--service"></span>Inbox</dt><dd>where you decide</dd></div>
+        </dl>
+      </section>
+
+      <section class="does" aria-labelledby="does-title">
+        <h2 id="does-title">What you get</h2>
+        <ul class="does__list">
+          <li>
+            <h3>One short report</h3>
+            <p>
+              What needs you comes first, numbered. Receipts, newsletters and sales pitches are grouped at the end
+              under one Archive all.
+            </p>
+          </li>
+          <li>
+            <h3>Replies drafted, never sent</h3>
+            <p>
+              When an email needs an answer, the agent writes one. It's saved as a Gmail draft for you to change and
+              send yourself.
+            </p>
+          </li>
+          <li>
+            <h3>Say it in your own words</h3>
+            <p>
+              "Keep this one, I'll reply myself." "Label it Receipts." Change any proposal in plain English; the agent
+              updates it and waits for you.
+            </p>
+          </li>
+          <li>
+            <h3>Nothing without you</h3>
+            <p>
+              The agent proposes, you approve. Mail you archive in Gmail yourself drops off the report on its own.
+            </p>
+          </li>
+          <li>
+            <h3>Safe with strangers' mail</h3>
+            <p>
+              Every email reaches the agent marked as untrusted, and the agent can't send, delete or search
+              anything.{" "}<a href="/solo-security/">How it's kept safe</a>.
+            </p>
+          </li>
+          <li>
+            <h3>On your computer</h3>
+            <p>
+              No server, no account, no public address. The Inbox answers only your own browser, signed in with a
+              one-time link.
+            </p>
+          </li>
+        </ul>
+        <p class="does__more">
+          <a href="/solo/">See how to set it up</a>
+        </p>
+      </section>
+
+      <section class="band" aria-labelledby="band-title">
+        <div class="band__inner">
+          <div class="band__copy">
+            <h2 id="band-title">Start on your own computer.</h2>
+            <p>
+              You need a Mac or a Linux machine, Gmail, gog and Claude Code. There are no prebuilt releases yet: build
+              it from the source in a few minutes, set it up with one command, and it runs as a service from then on.
+            </p>
+            <p class="band__link"><a href="/solo/">The guide</a></p>
+          </div>
+          <div class="band__code">
+            <p class="band__step">Build it</p>
+<pre><code><span class="t-prompt">$</span> git clone {repo}
+<span class="t-prompt">$</span> cd quietdeck && pnpm -C web install && pnpm -C web build
+<span class="t-prompt">$</span> cargo install --locked --path crates/quietdeck-solo</code></pre>
+            <p class="band__step">Set it up and open the Inbox</p>
+<pre><code><span class="t-prompt">$</span> quietdeck-solo init && quietdeck-solo install
+<span class="t-prompt">$</span> quietdeck-solo open</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="why" aria-labelledby="why-title">
+        <div class="why__col">
+          <h2 id="why-title">Agents propose, you approve</h2>
+          <p>
+            An inbox is full of small decisions. Quietdeck hands the reading and the sorting to an agent, and keeps the
+            deciding with you: every archive, label and draft waits on the report until you approve it, all in one
+            place.
+          </p>
+        </div>
+        <div class="why__col">
+          <h2>Then, a deck for all your agents</h2>
+          <p>
+            Solo is the smallest Quietdeck. The full one runs a deck on a server of your own and connects agents on
+            every machine you use: forwards from email to the agent that owns the work, agents that message each
+            other, and one place to approve what all of them propose. <a href="/getting-started/">Getting started</a>.
+          </p>
+        </div>
+      </section>
+
+      <section class="state" aria-labelledby="state-title">
+        <h2 id="state-title">Where it is today</h2>
+        <div class="state__grid">
+          <div>
+            <h3><span class="dot" aria-hidden="true"></span> Runs now</h3>
+            <p>
+              Quietdeck solo on macOS and Linux: Gmail through gog, Claude Code as the agent, the report with approve,
+              change and approve all, drafts, archive, labels, and a warning when something stops working.
+            </p>
+          </div>
+          <div>
+            <h3><span class="dot dot--next" aria-hidden="true"></span> Being built</h3>
+            <p>
+              Prebuilt releases, Codex as the agent, and moving from solo to a deck for many machines without starting
+              over.
+            </p>
+          </div>
+        </div>
+        <p class="state__note">
+          Source-available under <a href={`${repo}/blob/main/LICENSE.md`}>FSL-1.1-ALv2</a>: each release becomes Apache
+          2.0 two years after it's published. Expect breaking changes.
+        </p>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="foot__inner">
+        <a class="wordmark wordmark--small" href="/"><span class="wordmark__mark" set:html={mark} /><span>Quietdeck</span></a>
+        <p>Fair Source (FSL-1.1-ALv2)</p>
+        <nav aria-label="Footer">
+          <a href="/solo/">Docs</a>
+          <a href={repo}>GitHub</a>
+          <a href="/llms.txt">llms.txt</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,10 @@
+Quietdeck's site (this folder) is adapted from Fleetlayer's site (https://github.com/fleetlayer/fleetlayer, site/),
+Copyright 2026 Nathan Broadbent, licensed under the Apache License, Version 2.0
+(https://www.apache.org/licenses/LICENSE-2.0).
+
+Changed for Quietdeck: site.config.mjs (Quietdeck's pages and summary), scripts/sync-docs.mjs (unpublished folders,
+the site's name in llms.txt), scripts/check-links.mjs (a comment), src/styles/tokens.css and docs.css (Quietdeck's
+palette and fonts), src/assets/mark.svg and public/favicon.svg (Quietdeck's icon), src/pages/index.astro and
+src/homepage.md (Quietdeck's homepage), wrangler.jsonc and README.md. Each changed file says so at its top.
+
+The rest of Quietdeck is under its own licence, FSL-1.1-ALv2 (../LICENSE.md).

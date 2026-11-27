@@ -73,6 +73,42 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
 
 ## The triage agent
 
+- **Giving an agent with no mail tools the mail itself.** Quietdeck solo's agent can only run quietdeck commands, so
+  the runner reads each new message (gog's `--sanitize-content`: no HTML, no links) and puts it in the wake-up between
+  `<email>` tags, each message cut at 3,000 characters, at most 25 per wake-up, headers flattened to one line with
+  `<` and `>` replaced, and any `</email` in the text broken so it can't close its tag. The untrusted-input line goes
+  above them. On the very first run, the inbox's 25 newest messages count as new, so the first round has something to
+  triage. Now: `mail_block` in `crates/quietdeck-node/src/runner/mod.rs`, `recent` in `mail.rs` (27 November).
+- **rust-embed serves nothing from a debug build on another machine.** The deck embeds the web app with rust-embed,
+  which embeds only in release builds: a debug build reads `web/dist` from the build machine's disk at runtime, so a
+  debug binary copied elsewhere shows "This build has no web app". Copy release builds. Found while setting up the
+  solo toast QA (27 November).
+- **A local web app is not safe just because it's on localhost.** Quietdeck solo's deck has no passkeys, and any
+  page the person visits can post to `http://127.0.0.1:<port>` (CSRF: form posts and no-cors fetches carry no auth
+  but still act) or read it through DNS rebinding. So the deck checks every request's Host against its own loopback
+  address and port, signs a browser in only through a one-time link (`quietdeck-solo open`: 5 minutes, used up on
+  first visit) rather than trusting by address, needs its own Origin (or Referer) on anything that changes state, and
+  answers no CORS preflight, which is what keeps a page from sending a Bearer token cross-origin. Each refusal has a
+  test. Footgun: passkeys (webauthn-rs) refuse an IP address as the relying party, so the deck's public URL is
+  `http://localhost:<port>` while links use 127.0.0.1. Now: `crates/quietdeck-server/src/solo.rs` (27 November).
+- **"Text file busy" in tests that write a script and run it.** A test that writes a fake CLI and executes it at
+  once fails now and then under a parallel run: another thread's fork can hold the new file open for writing until
+  its exec, and the kernel refuses to run a file open for writing (ETXTBSY). The runner retries a spawn briefly on
+  that error, which also covers a CLI being upgraded in place. Now: `spawn` in
+  `crates/quietdeck-node/src/runner/gog.rs` (27 November).
+- **A headless agent limited to one CLI.** For Quietdeck solo, each message is one `claude -p` turn on the same
+  conversation (`--resume=<id>`, the ID from `--output-format=json`'s result, kept in the state directory), the prompt
+  on stdin. `--permission-mode=dontAsk` refuses whatever isn't allowed without a prompt nobody would answer,
+  `--tools=Bash` with one `--allowedTools=Bash(quietdeck <subcommand>:*)` per triage subcommand leaves only those
+  (not `msg send` or `session start`: the agent reads untrusted mail), and `--strict-mcp-config`
+  drops the user's MCP servers, so the agent has no mail tools of its own. Footgun: `--allowedTools` takes a list,
+  so write it `--allowedTools=<rule>`, or a bare value after it swallows the next argument. Checked for real on 27
+  November with Claude Code 2.1.332: `quietdeck --version` ran, `ls /` was refused and listed in
+  `permission_denials`, a resumed turn remembered the last, and with the narrowed rules `quietdeck cards` ran while
+  `quietdeck msg` and `quietdeck session` were refused. Identity: a turn has no tab, so the node records each turn's
+  pid while it runs (removed when the child exits, times out or is killed, so a reused pid inherits nothing) and gives
+  the CLI calls it starts the agent's tab and the turn's session ID; a new conversation gets its ID up front
+  (`--session-id`). Now: `crates/quietdeck-node/src/runner/headless.rs` and `local.rs` (`HeadlessTurns`).
 - **Mail through gog, without Executor.** For Quietdeck solo, `runner.mail: gog` runs the user's own gog CLI
   (signed in with `gog auth add <address> --services gmail`) for every mail tool. Footguns: gog's `gmail history`
   asks Gmail for new messages only and prints bare IDs (no labels, threads, archives or deletions), and gog has no

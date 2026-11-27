@@ -33,11 +33,18 @@ pub struct Link {
     pending: Mutex<HashMap<u64, oneshot::Sender<Reply>>>,
     next: AtomicU64,
     connected: AtomicBool,
+    /// What the deck said it takes in its welcome.
+    features: std::sync::Mutex<Vec<String>>,
 }
 
 impl Link {
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::SeqCst)
+    }
+
+    /// Whether the deck this node is connected to listed `feature` in its welcome.
+    pub fn deck_supports(&self, feature: &str) -> bool {
+        self.is_connected() && self.features.lock().expect("deck features").iter().any(|f| f == feature)
     }
 
     /// Send a frame if connected. Pushes made while disconnected are dropped: the next connection sends a fresh
@@ -142,8 +149,9 @@ async fn connect_once(node: &Arc<Node>) -> anyhow::Result<Outcome> {
     sink.send(Message::Text(serde_json::to_string(&hello)?.into())).await?;
     match tokio::time::timeout(Duration::from_secs(10), stream.next()).await {
         Ok(Some(Ok(Message::Text(t)))) => match serde_json::from_str::<DeckFrame>(&t)? {
-            DeckFrame::Welcome { node: name } => {
+            DeckFrame::Welcome { node: name, features } => {
                 tracing::info!(node = %name, "connected to the deck");
+                *node.link.features.lock().expect("deck features") = features;
                 // Decisions released while this node was away are waiting.
                 if let Some(r) = node.runner.get() {
                     r.signal(crate::runner::Signal::Released);
