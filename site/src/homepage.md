@@ -42,6 +42,16 @@ session icon shows a summary and the transcript.
 Park a project you won't touch this week, or snooze it until Monday. Name your own tabs and split Work into documents,
 one for each part of your life. Work: https://quietdeck.ai/work.md
 
+## Real mail out of spam, fake mail out of your inbox
+
+Gmail's spam filter gets it wrong in both directions. The agent reads what lands in spam as well as your inbox, and
+checks each email's sender, whether DKIM and SPF pass, and the domain letter by letter: `ledgerIine.com` with a
+capital I where the l should be.
+
+Obvious spam stays where it is. A real invoice that landed in spam comes to the report with Mark as not spam as its
+default. An email that fails those checks goes to the top as likely phishing, with what gave it away, and nothing in
+it is passed to an agent.
+
 ## Nothing happens without you seeing it
 
 The agent proposes, and you approve. Plain code carries out what you approved, exactly as you approved it.

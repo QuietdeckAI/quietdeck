@@ -68,7 +68,7 @@ const done = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12
           </div>
         </div>
 
-        <figure class="mock" aria-label="The Quietdeck Inbox: a report with four numbered items that need a decision, each with a default action, and routine mail grouped under Archive all">
+        <figure class="mock" aria-label="The Quietdeck Inbox: a report with five numbered items that need a decision, each with a default action, and routine mail grouped under Archive all">
           <div class="mock__nav" aria-hidden="true">
             <span class="mock__brand">Quietdeck</span>
             <span class="mock__tab mock__tab--on">Inbox<span class="mock__count">23</span></span>
@@ -99,6 +99,10 @@ const done = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12
               <li>
                 <b>Dentist moved your check-up to Thursday 3pm.</b> Reply only if the new time doesn't work.
                 <div class="mock__default"><span>Add to calendar, then archive</span><span class="mock__icons"><Fragment set:html={chat} /><Fragment set:html={mail} /><Fragment set:html={check} /></span></div>
+              </li>
+              <li>
+                <b>Ledgerline's November invoice landed in spam.</b> DKIM and SPF pass, and you pay them every month.
+                <div class="mock__default"><span>Mark as not spam, forward to <code>billing</code></span><span class="mock__icons"><Fragment set:html={chat} /><Fragment set:html={mail} /><Fragment set:html={check} /></span></div>
               </li>
             </ol>
             <h5>Archive all</h5>
@@ -278,6 +282,34 @@ const done = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12
             <span class="mock__state">Idle</span>
             <span class="mock__input">Message overseer</span>
             <span class="mock__approve">Approve All</span>
+          </div>
+        </figure>
+      </section>
+
+      <section class="feature" aria-labelledby="spam-title">
+        <div class="feature__copy">
+          <h2 id="spam-title">Real mail out of spam, fake mail out of your inbox</h2>
+          <p>
+            Gmail's spam filter gets it wrong in both directions. The agent reads what lands in spam as well as your
+            inbox, and checks each email's sender, whether DKIM and SPF pass, and the domain letter by letter:
+            <code>ledgerIine.com</code> with a capital I where the l should be.
+          </p>
+          <p>
+            Obvious spam stays where it is. A real invoice that landed in spam comes to the report with Mark as not spam
+            as its default. An email that fails those checks goes to the top as likely phishing, with what gave it away,
+            and nothing in it is passed to an agent.
+          </p>
+        </div>
+        <figure class="mock" aria-label="A report item flagging likely phishing: an email from a lookalike domain with a capital I in place of an l, failing SPF, proposing to move it to spam">
+          <div class="mock__body">
+            <ol>
+              <li>
+                <b>Likely phishing: "Your November invoice is overdue"</b> from <code>billing@ledgerIine.com</code>.
+                The domain has a capital I where Ledgerline's l should be, SPF fails, and the link goes to a page asking
+                for your card. Your real Ledgerline invoice came yesterday and is paid.
+                <div class="mock__default"><span>Move to spam</span><span class="mock__icons"><Fragment set:html={chat} /><Fragment set:html={mail} /><Fragment set:html={check} /></span></div>
+              </li>
+            </ol>
           </div>
         </figure>
       </section>
