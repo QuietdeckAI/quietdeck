@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Builds and pushes a commit's deck and node-bin images on docspring-dev, in the background there:
 #   harbor.home.ndbroadbent.com/quietdeck/deck:<sha>      (deploy/Dockerfile, with the commit and build time baked in)
-#   harbor.home.ndbroadbent.com/quietdeck/node-bin:<sha>  (the Linux quietdeck-node and quietdeck binaries)
+#   harbor.home.ndbroadbent.com/quietdeck/node-bin:<sha>  (the Linux quietdeck-node and quietdeck binaries, amd64)
+#   harbor.home.ndbroadbent.com/quietdeck/node-bin:<sha>-arm64  (the same for Linux arm64, cross-built, for agents in a
+#     Linux VM on an Apple silicon Mac; a tag of its own, not a multi-arch index, so each pins one layer digest)
 # The commit's tree goes to /opt/code/quietdeck/src (its target/ is kept between builds). Progress is in
-# /opt/code/quietdeck/deck-<sha>.log and bins-<sha>.log; /opt/code/quietdeck/<sha>.status says "done 0" when both are
+# /opt/code/quietdeck/deck-<sha>.log and bins-<sha>.log; /opt/code/quietdeck/<sha>.status says "done 0" when all three are
 # pushed (anything else is a failure). Homeserver deploys the tags.
 #
 #   scripts/build-images [<commit>]     defaults to HEAD; the commit must be pushed
@@ -28,11 +30,16 @@ docker push \$R/deck:$SHA >> /opt/code/quietdeck/deck-$SHA.log 2>&1 &&
 docker run --rm -e QUIETDECK_COMMIT=$SHA -e QUIETDECK_BUILT_AT=\$BUILT -v /opt/code/quietdeck/src:/src -v quietdeck-cargo-registry:/usr/local/cargo/registry -w /src rust:1.99.1-bookworm sh -c \"cargo build --release --locked -j 4 -p quietdeck-node -p quietdeck-cli && rm -rf /src/dist && mkdir -p /src/dist && cp target/release/quietdeck-node target/release/quietdeck /src/dist/\" > /opt/code/quietdeck/bins-$SHA.log 2>&1 &&
 cd dist && printf 'FROM scratch\nCOPY quietdeck-node quietdeck /\n' > Dockerfile.node-bin &&
 DOCKER_BUILDKIT=1 docker build --platform linux/amd64 -f Dockerfile.node-bin -t \$R/node-bin:$SHA . >> /opt/code/quietdeck/bins-$SHA.log 2>&1 &&
-docker push \$R/node-bin:$SHA >> /opt/code/quietdeck/bins-$SHA.log 2>&1
+docker push \$R/node-bin:$SHA >> /opt/code/quietdeck/bins-$SHA.log 2>&1 &&
+cd /opt/code/quietdeck/src &&
+docker run --rm -e QUIETDECK_COMMIT=$SHA -e QUIETDECK_BUILT_AT=\$BUILT -v /opt/code/quietdeck/src:/src -v quietdeck-cargo-registry:/usr/local/cargo/registry -w /src rust:1.99.1-bookworm sh -c \"apt-get update -qq && apt-get install -y -qq gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake > /dev/null && rustup target add aarch64-unknown-linux-gnu && CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++ AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar cargo build --release --locked -j 4 --target aarch64-unknown-linux-gnu -p quietdeck-node -p quietdeck-cli && rm -rf /src/dist-arm64 && mkdir -p /src/dist-arm64 && cp target/aarch64-unknown-linux-gnu/release/quietdeck-node target/aarch64-unknown-linux-gnu/release/quietdeck /src/dist-arm64/\" >> /opt/code/quietdeck/bins-$SHA.log 2>&1 &&
+cd dist-arm64 && printf 'FROM scratch\nCOPY quietdeck-node quietdeck /\n' > Dockerfile.node-bin &&
+DOCKER_BUILDKIT=1 docker build --platform linux/arm64 -f Dockerfile.node-bin -t \$R/node-bin:$SHA-arm64 . >> /opt/code/quietdeck/bins-$SHA.log 2>&1 &&
+docker push \$R/node-bin:$SHA-arm64 >> /opt/code/quietdeck/bins-$SHA.log 2>&1
 echo done \$? > /opt/code/quietdeck/$SHA.status" < /dev/null > /dev/null 2>&1 &
 EOF
 sleep 5
-echo "Building $sha on $host: /opt/code/quietdeck/$sha.status says done 0 when the deck and node-bin images are pushed."
+echo "Building $sha on $host: /opt/code/quietdeck/$sha.status says done 0 when the deck and both node-bin images are pushed."
 [ -n "$wait" ] || exit 0
 for _ in $(seq 1 90); do
   status=$(ssh "$host" "cat /opt/code/quietdeck/$sha.status 2>/dev/null" 2>/dev/null | grep -v setlocale || true)
