@@ -25,6 +25,7 @@ pub mod relay;
 pub mod reports;
 pub mod rules;
 pub mod runner;
+pub mod solo;
 pub mod state;
 pub mod store;
 pub mod web;
@@ -51,8 +52,19 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
 
     // Health answers 503 until the database is open and migrated.
     let ready = Arc::new(AtomicBool::new(false));
+    // Solo: loopback only, checked before anything binds. No webhook receiver, since nothing outside can reach it.
+    let local_only = match env.local_only {
+        true => {
+            let port = solo::loopback_port(&env.listen)?;
+            Some(Arc::new(solo::LocalOnly::new(port, env.data.data_dir.join("solo"))?))
+        }
+        false => None,
+    };
     let app_listener = tokio::net::TcpListener::bind(&env.listen).await?;
-    let hooks_listener = tokio::net::TcpListener::bind(&env.hooks_listen).await?;
+    let hooks_listener = match local_only {
+        Some(_) => None,
+        None => Some(tokio::net::TcpListener::bind(&env.hooks_listen).await?),
+    };
 
     let db = db::open(&env.data.db_path()).await?;
     ensure_owner(&db).await?;
@@ -78,7 +90,9 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
     let state = AppState {
         db,
         config: Arc::new(config),
-        dev_trust_local: env.dev_trust_local,
+        // Solo's gate admits only the person's own browser (a session from a login link) and token holders, so the
+        // app behind it treats a browser as the signed-in owner, as a development deck does.
+        dev_trust_local: env.dev_trust_local || local_only.is_some(),
         signing_key: Arc::new(signing_key),
         hub: Arc::default(),
         public_url: env.public_url.clone(),
@@ -124,18 +138,28 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
             }
         }
     };
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/healthz", get(health))
         .merge(api::router())
         .merge(passkeys::router())
-        .nest_service("/mcp", mcp::service(state.clone()))
-        .fallback(web::serve)
-        .with_state(state.clone())
-        .layer(TraceLayer::new_for_http());
-    let hooks = hooks::router(state.clone());
+        .nest_service("/mcp", mcp::service(state.clone()));
+    if local_only.is_some() {
+        app = app.merge(solo::router());
+    }
+    let mut app = app.fallback(web::serve).with_state(state.clone());
+    if let Some(lo) = local_only {
+        app = app.layer(axum::middleware::from_fn_with_state(lo, solo::guard));
+    }
+    let app = app.layer(TraceLayer::new_for_http());
 
-    tracing::info!(listen = %env.listen, hooks = %env.hooks_listen, "deck serving");
     let app_server = axum::serve(app_listener, app).with_graceful_shutdown(state::until_stopping(stop_rx.clone()));
+    let Some(hooks_listener) = hooks_listener else {
+        tracing::info!(listen = %env.listen, "solo deck serving, on this machine only");
+        app_server.await?;
+        return Ok(());
+    };
+    let hooks = hooks::router(state.clone());
+    tracing::info!(listen = %env.listen, hooks = %env.hooks_listen, "deck serving");
     let hooks_server =
         axum::serve(hooks_listener, hooks).with_graceful_shutdown(state::until_stopping(stop_rx.clone()));
     tokio::try_join!(async { app_server.await }, async { hooks_server.await })?;

@@ -38,6 +38,11 @@ pub struct Env {
     /// that's reachable from anywhere but your own machine.
     #[arg(long, env = "QUIETDECK_DEV_TRUST_LOCAL", action = clap::ArgAction::SetTrue, value_parser = clap::builder::BoolishValueParser::new())]
     pub dev_trust_local: bool,
+    /// Quietdeck solo: the deck on the person's own machine, with no passkeys. It must listen on loopback, every
+    /// request goes through the solo gate (Host, Origin, and a session from a one-time login link), and there's no
+    /// webhook receiver. See `solo.rs`.
+    #[arg(long, env = "QUIETDECK_LOCAL_ONLY", action = clap::ArgAction::SetTrue, value_parser = clap::builder::BoolishValueParser::new())]
+    pub local_only: bool,
 }
 
 #[derive(Debug, Clone, clap::Args)]
