@@ -37,8 +37,9 @@ let goneTimer: number | undefined;
  * Hiding the tab or leaving the page says so: hiding at once, leaving after a moment in case the page comes straight
  * back.
  */
-export function usePresence() {
+export function usePresence(on = true) {
   useEffect(() => {
+    if (!on) return;
     const device = deviceId();
     window.clearTimeout(goneTimer);
     const activity = () => {
@@ -67,5 +68,5 @@ export function usePresence() {
       window.removeEventListener("pagehide", gone);
       goneTimer = window.setTimeout(gone, 1000);
     };
-  }, []);
+  }, [on]);
 }

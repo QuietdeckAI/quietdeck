@@ -15,6 +15,10 @@ import type { Card } from "@/types/Card";
 import type { CardDecision } from "@/types/CardDecision";
 import type { Inbox } from "@/types/Inbox";
 import type { Report } from "@/types/Report";
+import type { Document } from "@/types/Document";
+import { type TopTab, topTabs, useDocuments } from "@/lib/documents";
+import { setParam, useSearch } from "@/lib/route";
+import { cn } from "@/lib/utils";
 
 // The Inbox is the triage agent's report and nothing else. The cards under it have their own screen (Threads).
 
@@ -110,10 +114,13 @@ function StillWater({ moon }: { moon?: boolean }) {
 
 /** The Inbox's empty state: "No report yet." over a moon before the first report, "All done." over a setting sun
  * after a round is cleared. */
-function NoReport({ cleared }: { cleared?: boolean }) {
+function NoReport({ cleared, doc }: { cleared?: boolean; doc?: Document }) {
+  const work = doc?.kind === "work";
   return (
     <div className="text-center">
-      <p className="font-display text-2xl text-neutral">{cleared ? "All done." : "No report yet."}</p>
+      <p className="font-display text-2xl text-neutral">
+        {cleared ? "All done." : work ? `Nothing from ${doc?.writer_tab ?? "the agent"} yet.` : "No report yet."}
+      </p>
       <div className="mt-8">
         <StillWater moon={!cleared} />
       </div>
@@ -121,21 +128,62 @@ function NoReport({ cleared }: { cleared?: boolean }) {
   );
 }
 
-export function InboxScreen() {
+/**
+ * A top-level tab's documents as sub-tabs, when it has more than one ("DocSpring", "Personal" under Work). The
+ * chosen one is `?doc=` in the address.
+ */
+function DocTabs({ tab, doc }: { tab: TopTab; doc: Document }) {
+  if (tab.docs.length < 2) return null;
+  return (
+    <nav aria-label={`${tab.name} documents`} className="mx-auto flex w-full max-w-3xl gap-1 overflow-x-auto px-4 pt-4">
+      {tab.docs.map((d) => (
+        <button
+          key={d.id}
+          type="button"
+          aria-current={d.id === doc.id ? "page" : undefined}
+          onClick={() => setParam("doc", d.id === tab.docs[0].id ? undefined : d.slug)}
+          className={cn(
+            "rounded-full border px-3 py-1 text-sm whitespace-nowrap",
+            d.id === doc.id ? "border-accent/50 bg-accent/10 text-ink" : "border-rule text-neutral hover:text-ink",
+          )}
+        >
+          {d.name}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+/** The Inbox, or another top-level tab's document (Work): the same page, with that document's report. */
+export function InboxScreen({ tab: given }: { tab?: TopTab } = {}) {
   const account = useAccount();
+  const docs = useDocuments().data;
+  const search = useSearch();
+  const tab = given ?? (docs ? topTabs(docs).find((t) => t.path === "/") : undefined);
+  const doc = tab?.docs.find((d) => d.slug === search.get("doc")) ?? tab?.docs[0];
+  // The Inbox document keeps the address it always had; another names itself.
+  const slug = doc && Number(doc.id) !== 1 ? doc.slug : undefined;
   const inbox = useQuery({
-    queryKey: ["inbox", account ?? null],
-    queryFn: () => api<Inbox>(`/api/inbox${query({ account })}`),
+    queryKey: ["inbox", account ?? null, slug ?? null],
+    queryFn: () => api<Inbox>(`/api/inbox${query({ account, doc: slug })}`),
+    // Another tab waits for the document list, so it never shows the Inbox's report for a moment.
+    enabled: given === undefined || doc !== undefined,
   });
   const [changes, setChanges] = useState<Record<string, string>>({});
   const report = inbox.data?.report ?? null;
 
   if (inbox.data && report) {
-    return <ReportScreen inbox={inbox.data} report={report} changes={changes} setChanges={setChanges} />;
+    return (
+      <>
+        {tab && doc && <DocTabs tab={tab} doc={doc} />}
+        <ReportScreen key={slug ?? "inbox"} inbox={inbox.data} report={report} changes={changes} setChanges={setChanges} doc={doc} />
+      </>
+    );
   }
   return (
     // Fills the screen below the header, so the empty state sits in the middle of the screen.
     <main className="mx-auto flex max-w-3xl flex-1 flex-col px-4 pt-6 pb-4">
+      {tab && doc && <DocTabs tab={tab} doc={doc} />}
       <SoloHealthStack />
       {inbox.isError && (
         <p role="alert" className="mt-8 text-danger">
@@ -145,9 +193,9 @@ export function InboxScreen() {
       {inbox.data && (
         <>
           <div className="flex flex-1 items-center justify-center">
-            <NoReport />
+            <NoReport doc={doc} />
           </div>
-          {inbox.data.timeline.length > 0 && <Automatic inbox={inbox.data} />}
+          {!slug && inbox.data.timeline.length > 0 && <Automatic inbox={inbox.data} />}
         </>
       )}
     </main>
@@ -159,13 +207,17 @@ function ReportScreen({
   report,
   changes,
   setChanges,
+  doc,
 }: {
   inbox: Inbox;
   report: Report;
   changes: Record<string, string>;
   setChanges: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  doc?: Document;
 }) {
-  usePresence();
+  const work = doc?.kind === "work";
+  // Reading the Inbox holds new mail back; reading Work doesn't.
+  usePresence(!work);
   const byId = cardsById(inbox);
   // From the click until the approved actions have run: the report shows it's being dealt with.
   const [sending, setSending] = useState(false);
@@ -240,9 +292,11 @@ function ReportScreen({
   // (whatever text the agent left).
   // Or the agent said so (`quietdeck report done`), whatever text it left.
   const notes = triageNotes(report.markdown);
+  // Work is an ongoing document: it never rolls up.
   const allDone =
-    report.finished ||
-    (named.every(finished) && unansweredAsks(report).length === 0 && report.cards_not_in_report.length === 0);
+    !work &&
+    (report.finished ||
+    (named.every(finished) && unansweredAsks(report).length === 0 && report.cards_not_in_report.length === 0));
   // "rolling" slides and fades the parts away; "gone" then removes them, so the space closes. A report that's already
   // done when the page opens (or when a new one arrives done) shows "All done." at once, without the roll.
   const [rolled, setRolled] = useState<"no" | "rolling" | "gone">(() => (allDone ? "gone" : "no"));
@@ -359,6 +413,7 @@ function ReportScreen({
             undoBatch={undoBatch}
             changed={changed}
             finished={new Set(inbox.finished_cards.map(Number))}
+            doc={doc}
           />
         </div>
         {rolled === "gone" && (
@@ -369,12 +424,13 @@ function ReportScreen({
                 <TriageNotes markdown={notes} />
               </div>
             )}
-            <NoReport cleared />
+            <NoReport cleared doc={doc} />
           </div>
         )}
-        {inbox.timeline.length > 0 && <Automatic inbox={inbox} />}
+        {!work && inbox.timeline.length > 0 && <Automatic inbox={inbox} />}
       </main>
       <ReportChatBox
+        doc={doc && Number(doc.id) !== 1 ? doc.slug : undefined}
         by={report.posted_by}
         running={inbox.running}
         corner={<UpdatedAt at={report.updated_at} stacked />}

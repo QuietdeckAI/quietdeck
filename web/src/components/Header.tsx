@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useMailBadges } from "@/screens/Mail";
 import type { MailBadges } from "@/types/MailBadges";
 import { navigate, usePath } from "@/lib/route";
+import { topTabs, useDocuments } from "@/lib/documents";
 
 const LINKS = [
   {
@@ -54,6 +55,18 @@ const underline = "underline decoration-accent decoration-2 underline-offset-[6p
 export function Header() {
   const path = usePath();
   const badges = useMailBadges().data;
+  const docs = useDocuments().data;
+  // The documents' own top-level tabs (Work...) go right after the Inbox; the Inbox's tab stays the first link. A
+  // renamed Inbox tab keeps its name there.
+  const tabs = docs ? topTabs(docs) : [];
+  const inboxTab = tabs.find((t) => t.path === "/");
+  const links = [
+    { ...LINKS[0], label: inboxTab?.name ?? LINKS[0].label },
+    ...tabs
+      .filter((t) => t.path !== "/")
+      .map((t) => ({ to: t.path, label: t.name, match: (p: string) => p === t.path || p.startsWith(`${t.path}/`) })),
+    ...LINKS.slice(1),
+  ];
   const qc = useQueryClient();
   const clearBadge = (k: "sent") =>
     qc.setQueryData<MailBadges>(["mail-badges"], (b) => (b ? { ...b, [k]: 0 } : b));
@@ -75,7 +88,7 @@ export function Header() {
           className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           aria-label="Screens"
         >
-          {LINKS.map((l) => {
+          {links.map((l) => {
             const count = l.to === "/" ? badges?.inbox : l.to === "/drafts" ? badges?.drafts : l.to === "/sent" ? badges?.sent : 0;
             return (
               <Link

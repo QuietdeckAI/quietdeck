@@ -23,11 +23,17 @@ import type { PasskeyInfo } from "@/types/PasskeyInfo";
 import type { PushConfig } from "@/types/PushConfig";
 import type { PushDevice } from "@/types/PushDevice";
 import type { Settings } from "@/types/Settings";
+import type { Document } from "@/types/Document";
+import type { DocumentKind } from "@/types/DocumentKind";
+import { useDocuments, useSessionMarks } from "@/lib/documents";
+import { useMarkSession } from "@/components/SessionMenu";
 
 export function SettingsScreen() {
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-12 px-4 py-8">
       <DeckSettings />
+      <Documents />
+      <IgnoredSessions />
       <Notifications />
       <Passkeys />
       <Nodes />
@@ -451,6 +457,203 @@ function Webhooks() {
           </li>
         ))}
       </ul>
+    </Section>
+  );
+}
+
+/**
+ * The documents agents write, each under a top-level tab: the Inbox's, and any others (Work). Names and tabs are free
+ * text; a tab with more than one document shows each as a sub-tab.
+ */
+function Documents() {
+  const qc = useQueryClient();
+  const docs = useDocuments();
+  const [adding, setAdding] = useState(false);
+  const done = () => qc.invalidateQueries({ queryKey: ["documents"] });
+  const remove = useMutation({
+    mutationFn: (id: number) => api(`/api/documents/${id}/remove`, { method: "POST" }),
+    onSuccess: done,
+  });
+  if (!docs.data) return null;
+  return (
+    <Section title="Documents">
+      <p className="mb-3 text-sm text-neutral">
+        Each document is a page an agent keeps up to date, under a tab of its own. The Inbox is your mail; a Work
+        document is what your agents are doing and what waits for you, written by an overseer agent.
+      </p>
+      <ul className="flex flex-col divide-y divide-rule rounded-lg border border-rule bg-paper-2">
+        {docs.data.map((d) => (
+          <DocumentRow key={d.id} doc={d} onRemove={Number(d.id) === 1 ? undefined : () => remove.mutate(Number(d.id))} />
+        ))}
+      </ul>
+      {adding ? (
+        <AddDocument onDone={() => setAdding(false)} />
+      ) : (
+        <Button size="sm" variant="secondary" className="mt-3" onClick={() => setAdding(true)}>
+          Add a document
+        </Button>
+      )}
+    </Section>
+  );
+}
+
+function writerOf(d: Document): string {
+  return d.writer_tab && d.writer_node ? `${d.writer_tab}@${d.writer_node}` : "";
+}
+
+function parseWriter(text: string): { writer_node: string; writer_tab: string } | null {
+  const t = text.trim();
+  const at = t.lastIndexOf("@");
+  if (at <= 0 || at === t.length - 1) return null;
+  return { writer_tab: t.slice(0, at), writer_node: t.slice(at + 1) };
+}
+
+function DocumentRow({ doc, onRemove }: { doc: Document; onRemove?: () => void }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(doc.name);
+  const [tab, setTab] = useState(doc.tab);
+  const [writer, setWriter] = useState(writerOf(doc));
+  const save = useMutation({
+    mutationFn: () => {
+      const w = parseWriter(writer);
+      return api(`/api/documents/${doc.id}`, {
+        method: "PATCH",
+        body: { name, tab, ...(w ?? {}), ...(writer.trim() === "" ? { clear_writer: true } : {}) },
+      });
+    },
+    onSuccess: () => {
+      setEditing(false);
+      void qc.invalidateQueries({ queryKey: ["documents"] });
+    },
+  });
+  if (editing)
+    return (
+      <li className="flex flex-col gap-2 p-4">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Input value={name} onChange={(e) => setName(e.target.value)} aria-label="Name" placeholder="Name" />
+          <Input value={tab} onChange={(e) => setTab(e.target.value)} aria-label="Tab" placeholder="Tab" />
+          <Input value={writer} onChange={(e) => setWriter(e.target.value)} aria-label="Written by" placeholder="tab@machine" />
+        </div>
+        {save.error && <p className="text-sm text-danger">{save.error.message}</p>}
+        <div className="flex gap-2">
+          <Button size="sm" loading={save.isPending} disabled={!name.trim() || !tab.trim() || (writer.trim() !== "" && !parseWriter(writer))} onClick={() => save.mutate()}>
+            Save
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
+        </div>
+      </li>
+    );
+  return (
+    <li className="flex flex-wrap items-center gap-3 p-4">
+      <div className="min-w-0 flex-1">
+        <p className="truncate">
+          {doc.name} <span className="text-neutral">under {doc.tab}</span>
+        </p>
+        <p className="text-sm text-neutral">
+          {doc.kind === "work" ? "Work" : "Inbox"} · {writerOf(doc) ? `written by ${writerOf(doc)}` : "any agent writes it"}
+        </p>
+      </div>
+      <Button size="sm" variant="secondary" aria-label={`Edit ${doc.name}`} onClick={() => setEditing(true)}>
+        <Pencil aria-hidden /> Edit
+      </Button>
+      {onRemove && (
+        <Button size="sm" variant="danger" onClick={onRemove}>
+          Remove
+        </Button>
+      )}
+    </li>
+  );
+}
+
+function AddDocument({ onDone }: { onDone: () => void }) {
+  const qc = useQueryClient();
+  const [name, setName] = useState("Work");
+  const [tab, setTab] = useState("Work");
+  const [writer, setWriter] = useState("overseer@");
+  const [kind, setKind] = useState<DocumentKind>("work");
+  const add = useMutation({
+    mutationFn: () => {
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "doc";
+      return api("/api/documents", { method: "POST", body: { slug, name, tab, kind, ...(parseWriter(writer) ?? {}) } });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["documents"] });
+      onDone();
+    },
+  });
+  return (
+    <div className="mt-3 flex flex-col gap-2 rounded-lg border border-rule p-4">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Input value={name} onChange={(e) => setName(e.target.value)} aria-label="Name" placeholder="Name" />
+        <Input value={tab} onChange={(e) => setTab(e.target.value)} aria-label="Tab" placeholder="Tab" />
+        <Input value={writer} onChange={(e) => setWriter(e.target.value)} aria-label="Written by" placeholder="tab@machine" />
+      </div>
+      <label className="flex items-center gap-2 text-sm text-muted">
+        Kind
+        <select value={kind} onChange={(e) => setKind(e.target.value as DocumentKind)} className={cn(fieldClass, "h-9 w-auto")}>
+          <option value="work">Work (about sessions)</option>
+          <option value="inbox">Inbox (about mail)</option>
+        </select>
+      </label>
+      {add.error && <p className="text-sm text-danger">{add.error.message}</p>}
+      <div className="flex gap-2">
+        <Button size="sm" loading={add.isPending} disabled={!name.trim() || !tab.trim() || !parseWriter(writer)} onClick={() => add.mutate()}>
+          Add
+        </Button>
+        <Button size="sm" variant="secondary" onClick={onDone}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Sessions the overseer leaves out of Work unless one is blocked on a prompt (a session menu's "Ignore"). */
+function IgnoredSessions() {
+  const marks = useSessionMarks().data ?? [];
+  const docs = useDocuments().data ?? [];
+  const { set, remove } = useMarkSession();
+  const [text, setText] = useState("");
+  if (!docs.some((d) => d.kind === "work")) return null;
+  const ignored = marks.filter((m) => m.mark === "ignored");
+  const parsed = parseWriter(text);
+  return (
+    <Section title="Ignored sessions">
+      <p className="mb-3 text-sm text-neutral">
+        The overseer leaves these out of Work, unless one is blocked on a prompt.
+      </p>
+      {ignored.length > 0 && (
+        <ul className="mb-3 flex flex-col divide-y divide-rule rounded-lg border border-rule bg-paper-2">
+          {ignored.map((m) => (
+            <li key={`${m.tab}@${m.node}`} className="flex items-center gap-3 px-4 py-2.5">
+              <span className="min-w-0 flex-1 truncate font-mono text-sm">
+                {m.tab}@{m.node}
+              </span>
+              <Button size="sm" variant="secondary" onClick={() => remove.mutate({ node: m.node, tab: m.tab, mark: "ignored" })}>
+                Stop ignoring
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex gap-2">
+        <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="tab@machine" aria-label="Session to ignore" />
+        <Button
+          size="sm"
+          className="h-10"
+          disabled={!parsed}
+          onClick={() => {
+            if (!parsed) return;
+            set.mutate({ node: parsed.writer_node, tab: parsed.writer_tab, mark: "ignored" });
+            setText("");
+          }}
+        >
+          Ignore
+        </Button>
+      </div>
     </Section>
   );
 }

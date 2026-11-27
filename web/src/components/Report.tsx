@@ -4,6 +4,10 @@ import { Check, CircleHelp, Loader2, MessageSquare, Square, Undo2 } from "lucide
 import { Children, createContext, Fragment, isValidElement, type ReactNode, use, useEffect, useRef, useState } from "react";
 import { useInfo } from "@/components/AccountTabs";
 import { EmailMenu } from "@/components/EmailMenu";
+import { SessionMenu, useMarkSession } from "@/components/SessionMenu";
+import { useSessionMarks } from "@/lib/documents";
+import type { Document } from "@/types/Document";
+import type { SessionMark } from "@/types/SessionMark";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api";
@@ -214,6 +218,8 @@ type Ctx = {
   undoBatch?: (batch: string) => Promise<void>;
   /** Defaults whose cards the person changed (a change sent or typed): those wait for the agent, not an approval. */
   changed?: Set<string>;
+  /** The document it's on, when not the Inbox: Work entries have session menus and an FYI part. */
+  doc?: Document;
 };
 
 type Caret = { key: string; start: number; end: number };
@@ -568,7 +574,17 @@ function ApprovedMark({ cards }: { cards: string | undefined }) {
   );
 }
 
-function Default({ id, cards, children }: { id?: string; cards?: string; children?: ReactNode }) {
+function Default({
+  id,
+  cards,
+  session,
+  children,
+}: {
+  id?: string;
+  cards?: string;
+  session?: string;
+  children?: ReactNode;
+}) {
   const { report, cards: byId, drafts, setDraft, kept, approveOne, undoBatch, changed } = useReport();
   const key = defaultKey(id, cards);
   const open = kept.open.has(key);
@@ -643,7 +659,7 @@ function Default({ id, cards, children }: { id?: string; cards?: string; childre
         <ApprovedMark cards={cards} />
         <span className="min-w-0 flex-1 py-0.5 text-ink">{children}</span>
         {chatButton}
-        <EmailMenu about={about} cards={namedCards(cards, byId)} />
+        {session ? <SessionMenu session={session} about={about} /> : <EmailMenu about={about} cards={namedCards(cards, byId)} />}
         {approveOne && (
           <ApproveOne
             about={about}
@@ -786,17 +802,29 @@ function Ask({
   options,
   other,
   cards,
+  session,
   children,
 }: {
   id?: string;
   options?: string;
   other?: unknown;
   cards?: string;
+  session?: string;
   children?: ReactNode;
 }) {
   const choices = (options ?? "").split("|").map((o) => o.trim()).filter(Boolean);
-  if (choices.length === 0) return <QuestionPanel id={id}>{children}</QuestionPanel>;
-  return <ChoiceAsk id={id} choices={choices} other={other} cards={cards}>{children}</ChoiceAsk>;
+  if (choices.length === 0) return <QuestionPanel id={id} session={session}>{children}</QuestionPanel>;
+  const ask = <ChoiceAsk id={id} choices={choices} other={other} cards={cards}>{children}</ChoiceAsk>;
+  if (!session) return ask;
+  // On Work, a choice about a session (a Done for something only he can do) sits in a panel with the session's menu.
+  return (
+    <span className="report-default relative rounded-md border border-rule bg-paper-2 py-1 pr-1 pl-3">
+      <span className="flex items-start gap-1">
+        <span className="min-w-0 flex-1 py-0.5 [&_.report-ask]:block">{ask}</span>
+        <SessionMenu session={session} about={text(children).trim()} />
+      </span>
+    </span>
+  );
 }
 
 /** An `<Ask>` with options: a button per option, Other, and the agent's replies to his answer under it. */
@@ -939,7 +967,7 @@ export function unansweredAsks(report: Report): string[] {
  * thread of its own, always open, where he answers in words and the agent replies. No approve check: Approve All
  * passes it by, and the agent takes it out or rewrites it once it's settled.
  */
-function QuestionPanel({ id, children }: { id?: string; children?: ReactNode }) {
+function QuestionPanel({ id, session, children }: { id?: string; session?: string; children?: ReactNode }) {
   const { report, kept } = useReport();
   const about = text(children).trim();
   const key = id ?? about;
@@ -980,6 +1008,7 @@ function QuestionPanel({ id, children }: { id?: string; children?: ReactNode }) 
         <CircleHelp aria-hidden className="mt-[3px] size-4 shrink-0 text-accent" />
         <span className="min-w-0 flex-1 text-ink">{children}</span>
         {lastMine && <span className="mt-0.5 shrink-0 text-xs text-neutral">Answered</span>}
+        {session && <span className="-my-1"><SessionMenu session={session} about={about} /></span>}
       </span>
       <ThreadMessages thread={thread} ownKey={key} ownLabel={about} pending={sending} />
       {lastMine && !sending && newest?.kind !== "reply" && <ChatStatus answer={lastMine} />}
@@ -1027,6 +1056,37 @@ function sessionNamed(name: string, sessions: SessionRow[], cards: Map<number, C
 }
 
 /**
+ * Under a Work document's FYI list: one panel, as the Inbox's archive part has, whose check clears the list. Approve
+ * All clears it too. The deck puts it there (fyiPanel); the agent doesn't write it.
+ */
+function FyiClear() {
+  const { doc } = useReport();
+  const qc = useQueryClient();
+  const clear = useMutation({
+    mutationFn: () => api(`/api/report/fyi/clear?doc=${encodeURIComponent(doc?.slug ?? "")}`, { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inbox"] }),
+    onError: (e) => notify(`Couldn't clear the list: ${e.message}`, { error: true, ms: 30_000 }),
+  });
+  return (
+    <span className="report-default report-fyi relative rounded-md border border-rule bg-paper-2 py-1 pr-1 pl-3">
+      <span className="-my-0.5 flex items-center gap-0.5">
+        <span className="min-w-0 flex-1 py-0.5 text-ink">Archive all</span>
+        <button
+          type="button"
+          onClick={() => clear.mutate()}
+          disabled={clear.isPending}
+          aria-label="Archive all: clear the FYI list"
+          title="Clear the FYI list"
+          className={smallButton + " w-7 px-0"}
+        >
+          {clear.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Check aria-hidden />}
+        </button>
+      </span>
+    </span>
+  );
+}
+
+/**
  * Inline code that names a running session's tab (`dep updates`) links to that session, so the text can say "forward
  * to `dep updates`" and the look shows it's a session. It opens in a new tab, keeping the report where it was. Any
  * other code stays code.
@@ -1054,12 +1114,12 @@ function Link(props: React.ComponentProps<"a">) {
 
 const OPTIONS = {
   forceBlock: true,
-  overrides: { Default, Ask, a: Link, code: Code },
+  overrides: { Default, Ask, FyiClear, a: Link, code: Code },
 };
 
 const SNAPSHOT_OPTIONS = {
   forceBlock: true,
-  overrides: { Default: SnapshotDefault, Ask: SnapshotAsk, a: Link, code: Code },
+  overrides: { Default: SnapshotDefault, Ask: SnapshotAsk, FyiClear: () => null, a: Link, code: Code },
 };
 
 /** An agent's reply in a thread: inline Markdown, with no headings or blocks of the report's size. */
@@ -1092,7 +1152,109 @@ export function withoutEmptyTop(markdown: string): string {
 }
 
 export function onlyReportTags(markdown: string): string {
-  return markdown.replace(/<(?!\/?(?:Default|Ask)\b)/g, "&lt;");
+  return markdown.replace(/<(?!\/?(?:Default|Ask|FyiClear)\b)/g, "&lt;");
+}
+
+/** A Work document's FYI part ends with the deck's Archive all panel, while it has items. */
+export function withFyiPanel(markdown: string): string {
+  const lines = markdown.split("\n");
+  const start = lines.findIndex((l) => /^#{1,2}\s+FYI\b/i.test(l.trim()));
+  if (start < 0) return markdown;
+  const level = (lines[start].trim().match(/^#+/)?.[0] ?? "#").length;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    const t = lines[i].trim();
+    const h = t.match(/^(#+)\s/);
+    if ((h && h[1].length <= level) || /^-{3,}$/.test(t)) {
+      end = i;
+      break;
+    }
+  }
+  const items = lines.slice(start + 1, end).some((l) => /^(?:[-*]|\d{1,3}\.)\s/.test(l));
+  if (!items) return markdown;
+  return [...lines.slice(0, end), "", "<FyiClear></FyiClear>", "", ...lines.slice(end)].join("\n");
+}
+
+/**
+ * Splits out the entries about parked sessions: each top-level list item (with its indented lines) whose panel names
+ * a parked session (`session="tab@node"`). The rest stays in place.
+ */
+export function splitParked(markdown: string, parked: Set<string>): { main: string; parked: Map<string, string[]> } {
+  const out = new Map<string, string[]>();
+  if (parked.size === 0) return { main: markdown, parked: out };
+  const lines = markdown.split("\n");
+  const kept: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^(?:[-*]|\d{1,3}\.)\s/.test(line)) {
+      // The item and its continuation: indented lines, and blank lines followed by more indented ones.
+      let j = i + 1;
+      while (j < lines.length && (/^\s+\S/.test(lines[j]) || (lines[j].trim() === "" && /^\s+\S/.test(lines[j + 1] ?? "")))) j++;
+      const item = lines.slice(i, j).join("\n");
+      const who = [...item.matchAll(/\bsession="([^"]+)"/g)].map((m) => m[1]).find((a) => parked.has(a));
+      if (who) {
+        out.set(who, [...(out.get(who) ?? []), item.replace(/^\d{1,3}\.\s/, "- ")]);
+        i = j;
+        continue;
+      }
+      kept.push(...lines.slice(i, j));
+      i = j;
+      continue;
+    }
+    kept.push(line);
+    i++;
+  }
+  return { main: kept.join("\n"), parked: out };
+}
+
+const parkedDay = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric" });
+
+/** The collapsed Parked part at the bottom of a Work document: each parked session, its entries, and Unpark. */
+function ParkedPart({ marks, entries }: { marks: SessionMark[]; entries: Map<string, string[]> }) {
+  const [open, setOpen] = useState(false);
+  const { remove } = useMarkSession();
+  if (marks.length === 0) return null;
+  return (
+    <section className="mt-10 border-t border-rule pt-4" aria-label="Parked">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="font-display text-xl text-muted hover:text-ink"
+      >
+        Parked <span className="text-base text-neutral tabular-nums">({marks.length})</span>
+      </button>
+      {open && (
+        <ul className="mt-3 flex flex-col gap-3">
+          {marks.map((m) => {
+            const address = `${m.tab}@${m.node}`;
+            return (
+              <li key={address} className="rounded-md border border-rule bg-paper-2 px-3 py-2">
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-mono text-sm text-ink">{address}</p>
+                    <p className="text-xs text-neutral">
+                      {m.until ? `Snoozed until ${parkedDay.format(new Date(m.until))}` : "Parked"}
+                      {m.note ? ` · ${m.note}` : ""}
+                    </p>
+                  </div>
+                  <Button size="sm" variant="secondary" className="h-7" onClick={() => remove.mutate({ node: m.node, tab: m.tab, mark: "parked" })}>
+                    Unpark
+                  </Button>
+                </div>
+                {(entries.get(address) ?? []).length > 0 && (
+                  <div className="md report mt-2 text-sm opacity-80">
+                    <Render options={SNAPSHOT_OPTIONS}>{onlyReportTags((entries.get(address) ?? []).join("\n"))}</Render>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 /**
@@ -1131,6 +1293,7 @@ export function ReportBody({
   undoBatch,
   changed,
   finished,
+  doc,
 }: {
   report: Report;
   cards: Map<number, Card>;
@@ -1143,19 +1306,26 @@ export function ReportBody({
   undoBatch?: (batch: string) => Promise<void>;
   changed?: Set<string>;
   finished?: Set<number>;
+  doc?: Document;
 }) {
   const running = useRunningSessions();
   const kept = useKeptFields();
+  const work = doc?.kind === "work";
+  const marks = useSessionMarks().data ?? [];
+  const parkedMarks = work ? marks.filter((m) => m.mark === "parked") : [];
+  const { main, parked } = splitParked(report.markdown, new Set(parkedMarks.map((m) => `${m.tab}@${m.node}`)));
+  const markdown = work ? withFyiPanel(main) : report.markdown;
   return (
     <ReportCtx
-      value={{ report, cards, sessions: running.data ?? [], drafts, setDraft, kept, approved, approveOne, undoBatch, changed, finished }}
+      value={{ report, cards, sessions: running.data ?? [], drafts, setDraft, kept, approved, approveOne, undoBatch, changed, finished, doc }}
     >
       <Render
         className={cn("md report", (rolled === "rolling" || rolled === "gone") && "rolled", rolled === "gone" && "gone")}
         options={OPTIONS}
       >
-        {onlyReportTags(withoutEmptyTop(report.markdown))}
+        {onlyReportTags(withoutEmptyTop(markdown))}
       </Render>
+      {work && <ParkedPart marks={parkedMarks} entries={parked} />}
     </ReportCtx>
   );
 }
@@ -1179,11 +1349,14 @@ export function ReportSnapshotBody({ report, cards }: { report: Report; cards: M
 /** The chat box under the report: plain words straight to the agent that writes it. Nothing is kept. Approve All
  * sits at its right end (children), the agent's status at its left, and one Stop for the agent and the run. */
 export function ReportChatBox({
+  doc,
   by,
   running,
   children,
   corner,
 }: {
+  /** Another document's slug: its chat goes to its own agent. */
+  doc?: string;
   by: SessionRef;
   running: boolean;
   children?: ReactNode;
@@ -1212,7 +1385,8 @@ export function ReportChatBox({
   // the error.
   const sendingNote = useRef<number | null>(null);
   const send = useMutation({
-    mutationFn: (t: string) => api<Delivered>("/api/report/chat", { method: "POST", body: { text: t } }),
+    mutationFn: (t: string) =>
+      api<Delivered>(`/api/report/chat${doc ? `?doc=${encodeURIComponent(doc)}` : ""}`, { method: "POST", body: { text: t } }),
     // Delivered: the "Sending" toast just goes (no "Sent" toast).
     onSuccess: () => {
       if (sendingNote.current !== null) dismissNote(sendingNote.current);

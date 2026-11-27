@@ -18,6 +18,7 @@ import { SettingsScreen } from "@/screens/Settings";
 import { SignInScreen } from "@/screens/SignIn";
 import { SnapshotScreen } from "@/screens/Snapshot";
 import type { AuthState } from "@/types/AuthState";
+import { tabAt, useDocuments } from "@/lib/documents";
 
 export function App() {
   const qc = useQueryClient();
@@ -63,6 +64,9 @@ export function App() {
 
 function Screen() {
   const path = usePath();
+  const docs = useDocuments().data;
+  const tab = tabAt(docs, path);
+  if (tab) return <InboxScreen key={tab.path} tab={tab} />;
   // `/cards` was the screen's old address.
   if (path.startsWith("/threads") || path.startsWith("/cards")) return <ThreadsScreen />;
   if (path.startsWith("/history/inbox/")) {
