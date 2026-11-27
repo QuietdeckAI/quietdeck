@@ -158,10 +158,16 @@ impl AgentInbox for HeadlessAgent {
             body,
         };
         let text = crate::deliver::envelope(&d.from_name(), &d.render());
-        self.tx.try_send(text).map_err(|e| match e {
+        let sent = self.tx.try_send(text).map_err(|e| match e {
             mpsc::error::TrySendError::Full(_) => format!("{} is {QUEUE} messages behind", self.tab),
             mpsc::error::TrySendError::Closed(_) => format!("{}'s turn loop has stopped", self.tab),
-        })
+        });
+        // A message the agent never gets is a problem the health check reports, like a failed turn.
+        if let Err(e) = &sent {
+            self.turns.lock().expect("agent turns").failed =
+                Some((jiff::Timestamp::now(), format!("a message couldn't reach it: {e}")));
+        }
+        sent
     }
 
     fn turns(&self) -> Option<AgentTurns> {

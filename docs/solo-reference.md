@@ -41,9 +41,10 @@ actions: [archive, mark_read, label, draft]   # optional: what may run once you 
 
 - **`accounts`**: the key is the account's ID on its cards (letters, digits, `-` and `_`); `label` is what the Inbox
   calls it (default: the ID with a capital letter).
-- **`actions`**: what the runner carries out once you approve it. An approved action that isn't listed goes back to
-  the agent instead of running. `[draft]` is a safe way to try solo: nothing in your mailbox changes except new
-  drafts.
+- **`actions`**: what the runner carries out once you approve it. The agent can't propose anything else: a card with
+  another action is refused when it's posted, and the agent posts it with no actions instead, saying what you can do
+  in Gmail (approving it just closes it). `[draft]` is a safe way to try solo: nothing in your mailbox changes except
+  new drafts.
 - **`agent.headless.restricted`**: off by default, so the agent runs as your own Claude Code with full access
   (permissions skipped, your settings and MCP servers). On, it may run only `allowed_tools`, with no MCP servers. See
   [Quietdeck solo and your security](solo-security.md).

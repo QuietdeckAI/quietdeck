@@ -2087,6 +2087,16 @@
             },
             "type": "array"
           },
+          "actions": {
+            "description": "Quietdeck solo: the actions its runner carries out once the person approves them. A card proposing another is\nrefused when posted. Absent on other decks.",
+            "items": {
+              "$ref": "#/components/schemas/ActionType"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "boards": {
             "items": {
               "type": "string"
@@ -2147,6 +2157,11 @@
           {
             "const": "orchestrator",
             "description": "Sent through the orchestrator (herdr: `herdr agent prompt`).",
+            "type": "string"
+          },
+          {
+            "const": "headless",
+            "description": "Handed to the runner's headless agent (Quietdeck solo), which reads it in the turn it starts or its next one.",
             "type": "string"
           }
         ]

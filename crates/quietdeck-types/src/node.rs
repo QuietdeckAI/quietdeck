@@ -360,6 +360,8 @@ pub enum Delivered {
     /// Sent through the orchestrator (herdr: `herdr agent prompt`).
     #[serde(alias = "herdr")]
     Orchestrator,
+    /// Handed to the runner's headless agent (Quietdeck solo), which reads it in the turn it starts or its next one.
+    Headless,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

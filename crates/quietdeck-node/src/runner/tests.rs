@@ -788,6 +788,40 @@ async fn the_wakeup_names_each_email_and_marks_the_snippet_as_a_hint() {
     assert!(text.contains("Snippet (Gmail's preview of the first lines, not the email): Are you free on"), "{text}");
 }
 
+/// A headless agent (solo) has no session to deliver to: the deck's messages for it (report answers, chat,
+/// hand-offs) go through the runner, as mail does, and the node lists it so the deck can address it.
+#[tokio::test]
+async fn the_decks_messages_reach_a_headless_agent_through_the_runner() {
+    let (url, _) = executor(Arc::new(|_: &str, _: &Value| Ok(json!({})))).await;
+    let dir = tempfile::tempdir().unwrap();
+    let agent = Arc::new(FakeAgent::default());
+    let mut cfg = config(&url, "");
+    let tools = ConfiguredTools::new(Some((cfg.executor.clone().unwrap(), "t".into())));
+    // In a tab: the orchestrator delivers, so the runner stays out of it.
+    let tab_runner = Runner::new(
+        cfg.clone(),
+        Arc::new(FakeDeck::default()),
+        Arc::new(tools),
+        agent.clone(),
+        dir.path().to_path_buf(),
+    );
+    assert!(tab_runner.headless_session().is_none());
+    assert!(tab_runner.tell_headless_agent("email triage", DeliveryKind::Deck, "hi".into()).await.is_none());
+
+    cfg.agent.headless = Some(yaml_serde::from_str("{}").unwrap());
+    let tools = ConfiguredTools::new(Some((cfg.executor.clone().unwrap(), "t".into())));
+    let runner =
+        Runner::new(cfg, Arc::new(FakeDeck::default()), Arc::new(tools), agent.clone(), dir.path().to_path_buf());
+    let s = runner.headless_session().unwrap();
+    assert_eq!(s.tab.as_deref(), Some("email triage"));
+    assert!(s.running, "the deck sees it online");
+    assert!(runner.tell_headless_agent("someone else", DeliveryKind::Deck, "x".into()).await.is_none());
+    let told =
+        runner.tell_headless_agent("email triage", DeliveryKind::Deck, "The person answered: archive it.".into()).await;
+    assert_eq!(told, Some(Ok(())));
+    assert_eq!(agent.told.lock().unwrap().last().unwrap().1, "The person answered: archive it.");
+}
+
 /// More new mail than one wake-up carries: the rest waits, text and all, and comes in the next one.
 #[tokio::test]
 async fn mail_that_doesnt_fit_in_one_wakeup_comes_in_the_next() {

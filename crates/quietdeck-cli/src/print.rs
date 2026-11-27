@@ -57,12 +57,21 @@ pub fn info(i: &DeckInfo) -> String {
         Caller::Owner { device } => format!("the owner, on {device}"),
     };
     let accounts: Vec<&str> = i.accounts.iter().map(|a| a.id.as_str()).collect();
-    format!(
+    let mut s = format!(
         "You are {who}.\nDeck {}; accounts: {}; boards: {}.",
         i.version,
         if accounts.is_empty() { "(any)".to_string() } else { accounts.join(", ") },
         if i.boards.is_empty() { "(none)".to_string() } else { i.boards.join(", ") }
-    )
+    );
+    if let Some(actions) = &i.actions {
+        let list: Vec<&str> = actions.iter().map(|a| a.as_str()).collect();
+        s.push_str(&format!(
+            "\nActions this deck carries out once approved: {}. Propose only these; for anything else, post the card \
+             with no actions and say what to do in Gmail.",
+            if list.is_empty() { "none".to_string() } else { list.join(", ") }
+        ));
+    }
+    s
 }
 
 pub fn card_line(c: &Card) -> String {

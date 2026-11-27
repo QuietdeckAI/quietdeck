@@ -33,6 +33,7 @@ pub async fn info(state: &AppState, caller: Caller) -> AppResult<DeckInfo> {
         boards: state.config.boards.clone(),
         settings: crate::api::load_settings(&state.db).await?,
         solo: state.solo,
+        actions: crate::runner::solo_actions(state).await?,
     })
 }
 
@@ -52,6 +53,7 @@ pub async fn add_card(state: &AppState, me: &SessionRef, input: CardInput) -> Ap
             return Err(AppError::BadRequest(format!("an action names unknown account {acct:?}")));
         }
     }
+    crate::runner::check_solo_actions(state, &input.actions).await?;
     crate::runner::check_send_as(state, me, &input.actions).await?;
     // An automatic card goes through `rules match`. Allowed, it's released at once; denied, it waits for the person
     // like any card.

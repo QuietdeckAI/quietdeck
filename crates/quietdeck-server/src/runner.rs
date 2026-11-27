@@ -67,6 +67,42 @@ pub async fn round_status(state: &AppState, me: &SessionRef) -> AppResult<RoundS
 /// A draft or reply posted on a card names a `from` address. With a runner on the posting machine, it must be one
 /// the account can send as, from the send-as list of the runner that works for the poster. Without one (or with it offline), the skill checks
 /// through its own access, and the runner checks again before it sends anything.
+/// Quietdeck solo: the actions its runner carries out (solo.yaml's `actions`). None on any other deck, or before the
+/// runner has connected.
+pub async fn solo_actions(state: &AppState) -> AppResult<Option<Vec<quietdeck_types::ActionType>>> {
+    if !state.solo {
+        return Ok(None);
+    }
+    Ok(nodes::any_runner_info(&state.db).await?.map(|r| r.eligible))
+}
+
+/// On a solo deck the runner is the only thing that can carry an action out, so a card proposing one it's set not to
+/// (an archive under `actions: [draft]`) would only fail once approved. It's refused when posted instead, saying what
+/// to do: post the card with no actions, and tell the person to do it in Gmail. Other decks hand such actions to the
+/// agent, as before.
+pub async fn check_solo_actions(state: &AppState, actions: &[Action]) -> AppResult<()> {
+    let Some(allowed) = solo_actions(state).await? else { return Ok(()) };
+    for a in actions {
+        let t = a.action_type();
+        if !allowed.contains(&t) {
+            let list = allowed.iter().map(|x| x.as_str()).collect::<Vec<_>>().join(", ");
+            let doing = match t.as_str() {
+                "archive" => "archive it",
+                "mark_read" => "mark it read",
+                "label" => "label it",
+                "draft" => "reply",
+                _ => "do it",
+            };
+            return Err(AppError::BadRequest(format!(
+                "{} is off on this deck (actions: {list}): post the card with no actions, and say in its summary to \
+                 {doing} in Gmail yourself",
+                t.as_str()
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub async fn check_send_as(state: &AppState, me: &SessionRef, actions: &[Action]) -> AppResult<()> {
     let composes = actions.iter().filter_map(|a| match a {
         Action::Draft(c) | Action::Reply(c) => Some(c),
@@ -232,6 +268,52 @@ mod tests {
             .unwrap();
         decisions::release_due(&state.db).await.unwrap();
         card.id
+    }
+
+    /// On a drafts-only solo deck, an archive card is refused when posted with a hint, and the same card with no
+    /// actions is taken and closes once approved, so nothing approved fails.
+    #[tokio::test]
+    async fn a_solo_deck_refuses_actions_its_runner_wont_carry_out_and_says_what_to_do() {
+        let mut state = AppState::for_tests().await;
+        state.solo = true;
+        sqlx::query("INSERT INTO nodes (name, token_hash, created_at) VALUES ('solo', 'h', 0)")
+            .execute(&state.db)
+            .await
+            .unwrap();
+        let info = RunnerInfo { eligible: vec![ActionType::Draft], agent_tab: "email triage".into(), accounts: vec![] };
+        nodes::hello(&state.db, "solo", "test", Some(&info)).await.unwrap();
+        let me = SessionRef { node: "solo".into(), tab: "email triage".into(), session_id: None };
+        let with_archive: CardInput = serde_json::from_value(json!({"account": "personal", "thread_key": "t1",
+            "subject": "Receipt", "summary": "Receipt", "section": "archive_list", "reason": "r",
+            "actions": [{"type": "archive", "account": "personal", "thread_id": "t1"}]}))
+        .unwrap();
+        let e = crate::ops::add_card(&state, &me, with_archive).await.unwrap_err().to_string();
+        assert!(e.contains("archive is off on this deck (actions: draft): post the card with no actions"), "{e}");
+        assert!(e.contains("archive it in Gmail yourself"), "{e}");
+        assert_eq!(solo_actions(&state).await.unwrap(), Some(vec![ActionType::Draft]));
+
+        let without: CardInput = serde_json::from_value(json!({"account": "personal", "thread_key": "t1",
+            "subject": "Receipt", "summary": "Receipt: archive it in Gmail yourself", "section": "archive_list",
+            "reason": "r", "actions": []}))
+        .unwrap();
+        let card = crate::ops::add_card(&state, &me, without).await.unwrap().card;
+        let d = CardDecision {
+            card_id: card.id,
+            version: card.version,
+            kind: quietdeck_types::card::DecisionKind::Approve,
+            fields: None,
+            text: None,
+        };
+        decisions::approve_all(&state.db, &ApproveAll { cards: vec![d], timeline: vec![], single: None }, 0)
+            .await
+            .unwrap();
+        decisions::release_due(&state.db).await.unwrap();
+        let after = crate::store::cards::get(&state.db, card.id).await.unwrap().unwrap();
+        assert_ne!(after.state, CardState::Open, "it closes once approved");
+
+        // Other decks hand such actions to the agent, as before.
+        state.solo = false;
+        assert_eq!(solo_actions(&state).await.unwrap(), None);
     }
 
     fn ok<T: serde::de::DeserializeOwned>(r: Reply) -> T {

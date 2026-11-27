@@ -3,4 +3,4 @@
 /**
  * Answers for deliveries and searches.
  */
-export type Delivered = "socket" | "orchestrator";
+export type Delivered = "socket" | "orchestrator" | "headless";
