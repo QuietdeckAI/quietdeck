@@ -222,11 +222,33 @@ pub async fn answer_prompt(state: &AppState, req: quietdeck_types::directory::Pr
         prompt: req.prompt.clone(),
         answers: req.answers.clone(),
     };
-    ask(state, &row.node, request, CLOSE_TIMEOUT).await?;
+    // Answering a prompt can approve what the session asked to do, so Fleetlayer's access policy may let only the
+    // runner answer (plugin:runner@<its node>): the runner that works for a Work document's writer answers, through
+    // its own plugin, by the session's ID. Without one, the session's own node does.
+    let answerer = answering_runner(state).await?.unwrap_or_else(|| row.node.clone());
+    ask(state, &answerer, request, CLOSE_TIMEOUT).await?;
     // The prompt's gone from the session: off the Work tab at once, before the node says so.
     crate::store::sessions::set_prompt(&state.db, &row.node, &row.info.session_id, None).await?;
     state.changed(Changed::Sessions);
     Ok(())
+}
+
+/// The connected runner node that works for a Work document's writer, if any.
+async fn answering_runner(state: &AppState) -> AppResult<Option<String>> {
+    let writers: Vec<(String, String)> = sqlx::query_as(
+        "SELECT writer_node, writer_tab FROM documents WHERE kind = 'work' AND removed_at IS NULL \
+         AND writer_node IS NOT NULL AND writer_tab IS NOT NULL ORDER BY position, id",
+    )
+    .fetch_all(&state.db)
+    .await?;
+    for (node, tab) in writers {
+        if let Some((runner, _)) = crate::store::nodes::runner_for_agent(&state.db, &node, &tab).await?
+            && state.hub.is_connected(&runner).await
+        {
+            return Ok(Some(runner));
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]

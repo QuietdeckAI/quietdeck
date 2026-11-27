@@ -1,7 +1,9 @@
 //! Blocked prompts: while a session on this machine is blocked (the orchestrator says so), the node asks Fleetlayer,
 //! through Quietdeck's plugin, for the prompt it's waiting on (Claude Code's question form, a permission prompt, a plan
 //! to approve) and tells the deck, which shows it on the Work tab as a form. When the session moves on, the deck is told
-//! the prompt is gone. Answers come back as [`quietdeck_types::node::DeckRequest::AnswerPrompt`] (link.rs).
+//! the prompt is gone. Answers go out as [`quietdeck_types::node::DeckRequest::AnswerPrompt`] (link.rs), to the runner
+//! that works for the Work document's writer where there is one, since Fleetlayer's policy may let only the runner
+//! answer.
 //!
 //! Only where Fleetlayer runs Quietdeck's plugin (with the `sessions.query` grant) and the deck takes prompts.
 

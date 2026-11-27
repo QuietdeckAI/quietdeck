@@ -18,7 +18,7 @@ you never start or close a session without the person's approval.
 
 - **"From the deck's overseer watch: sessions to look at"**: the deck names sessions that went idle (and stayed idle
   two minutes) or got blocked on a prompt, once per change. It already leaves out ignored and parked sessions (unless
-  blocked), the agents runners work for, and sessions idle for days.
+  blocked), the agents runners work for, and sessions idle for more than six hours (your periodic refresh covers those).
 - **"From the deck's overseer watch: a periodic refresh"**: every three hours with nothing else. Refresh today's tasks
   and prune.
 - **"N cards handed to you"** / **"Runner: …"**: the runner couldn't carry out one of your cards, or one failed.
@@ -78,7 +78,7 @@ list by itself.
   - `<Ask id="x" options="Done" session="…">What to do</Ask>`: something only the person can do. Take it out once
     it's done (check where you can).
 - **Blocked prompts** show at the top of the Work tab by themselves, as forms the person answers there (where
-  Fleetlayer reads them). You don't write entries for them.
+  Fleetlayer reads them; the runner types the answer in). You don't write entries for them.
 - **Today's tasks**: **yours**: the person's tasks due today or started, from wherever they keep them. Not the backlog.
 - **Parked**: the deck moves a parked session's entries to its Parked part. Don't remove them. `quietdeck marks` lists
   ignored and parked sessions.

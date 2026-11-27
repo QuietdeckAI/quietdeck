@@ -1,7 +1,8 @@
 //! The overseer watch: the deck wakes the agent that writes a Work document when one of the person's sessions needs a
 //! look. A session that went idle (and stayed idle two minutes) or is blocked on a prompt is named once per change, a
-//! few at a time in one message, and a session is named at most once every five minutes. Sessions idle for three days
-//! stop counting. Left out: the overseer itself, the writers of other documents, the agents runners work for (the
+//! few at a time in one message, and a session is named at most once every five minutes. A session that went idle more
+//! than six hours ago (or got blocked more than three days ago) stops counting, so a new watch doesn't wake its agent
+//! for everything that was already there. Left out: the overseer itself, the writers of other documents, the agents runners work for (the
 //! triage agent), ignored sessions and parked ones, except when blocked on a prompt. Every three hours without
 //! another wake-up it asks for a refresh (tasks due today, stale entries).
 //!
@@ -24,7 +25,9 @@ const TICK: Duration = Duration::from_secs(30);
 const SETTLE_MS: i64 = 2 * 60 * 1000;
 /// At most once per session in this window.
 const PER_SESSION_MS: i64 = 5 * 60 * 1000;
-/// Idle longer than this: no longer a change worth a look.
+/// Idle longer than this: no longer a change worth a look (the overseer's own rounds cover what was already there).
+const STALE_IDLE_MS: i64 = 6 * 3600 * 1000;
+/// Blocked longer than this: left alone too, though the Work tab still shows its prompt.
 const STALE_MS: i64 = 3 * 24 * 3600 * 1000;
 const REFRESH_MS: i64 = 3 * 3600 * 1000;
 const MAX_NAMED: usize = 8;
@@ -129,8 +132,8 @@ pub async fn changes_for(state: &AppState, node: &str, tab: &str, now: i64) -> a
     let rows: Vec<(String, String, String, String, i64)> = sqlx::query_as(
         "SELECT s.node, s.session_id, s.tab, s.status, s.status_changed_at FROM sessions s \
          WHERE s.running = 1 AND s.tab IS NOT NULL AND s.closed_at IS NULL \
-           AND ((s.status IN ('idle', 'done') AND s.status_changed_at <= ?1 - ?2) OR s.status = 'blocked') \
-           AND s.status_changed_at > ?1 - ?3 \
+           AND ((s.status IN ('idle', 'done') AND s.status_changed_at <= ?1 - ?2 AND s.status_changed_at > ?1 - ?7) \
+                OR (s.status = 'blocked' AND s.status_changed_at > ?1 - ?3)) \
            AND NOT (s.node = ?4 AND s.tab = ?5) \
            AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.removed_at IS NULL AND d.writer_node = s.node \
                            AND d.writer_tab = s.tab) \
@@ -146,6 +149,7 @@ pub async fn changes_for(state: &AppState, node: &str, tab: &str, now: i64) -> a
     .bind(node)
     .bind(tab)
     .bind(PER_SESSION_MS)
+    .bind(STALE_IDLE_MS)
     .fetch_all(&state.db)
     .await?;
     // The agents runners work for (the triage agent) aren't the overseer's to watch.
@@ -287,7 +291,7 @@ mod tests {
         session(&state, "s1", "search", "idle", now - 5 * 60_000).await;
         session(&state, "s2", "billing", "idle", now - 30_000).await; // not settled yet
         session(&state, "s3", "onboarding", "blocked", now - 10_000).await;
-        session(&state, "s4", "old", "idle", now - 4 * 24 * 3_600_000).await; // idle for days
+        session(&state, "s4", "old", "idle", now - 7 * 3_600_000).await; // idle for hours
         session(&state, "s5", "overseer", "idle", now - 5 * 60_000).await; // itself
         session(&state, "s6", "sso", "idle", now - 5 * 60_000).await; // parked
         session(&state, "s7", "talira worker", "blocked", now - 5 * 60_000).await; // ignored, but blocked

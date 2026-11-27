@@ -280,6 +280,8 @@ async fn answer(node: &Node, request: DeckRequest) -> Reply {
         DeckRequest::AnswerPrompt { session_id, prompt, answers } => {
             let params = serde_json::json!({"to": session_id, "prompt": prompt, "answers": answers,
                 "why": "the person answered it on the deck's Work tab"});
+            // Sent by the session's own node, or by the runner for another node's session (Fleetlayer's policy may let
+            // only the runner answer): `to` is the Claude session ID, which Fleetlayer finds on any node.
             match crate::fleetlayer::call(crate::fleetlayer::SESSION_ANSWER, params).await {
                 None => Reply::Err {
                     error: "Fleetlayer doesn't run Quietdeck's plugin on this machine, so it can't answer prompts"
