@@ -1,0 +1,37 @@
+# quietdeck.ai: build the site from docs/ and site/ and check its links, on pull requests and pushes to main.
+# Separate from CI on purpose: a docs problem never blocks main's checks or a deploy of the deck.
+# No deploy step yet: the site goes to Cloudflare Workers (site/wrangler.jsonc) once the domain and its token are set up.
+name: Site
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "site/**", ".github/workflows/site.yml"]
+  pull_request:
+    paths: ["docs/**", "site/**", ".github/workflows/site.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm run check

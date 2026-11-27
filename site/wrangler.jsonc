@@ -1,7 +1,8 @@
-// fleetlayer.ai: the built site served as static assets by Cloudflare Workers. Deployed by .github/workflows/site.yml.
+// quietdeck.ai: the built site served as static assets by Cloudflare Workers. Not deployed yet: no deploy job until
+// the domain and the Cloudflare token are set up.
 {
   "$schema": "https://unpkg.com/wrangler@4.168.0/config-schema.json",
-  "name": "fleetlayer-site",
+  "name": "quietdeck-site",
   "compatibility_date": "2026-11-01",
   "workers_dev": true,
   "assets": {

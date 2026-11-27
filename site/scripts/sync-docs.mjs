@@ -7,6 +7,7 @@
 //   public/llms-full.txt         every page in one file
 //
 // Run before `astro dev` and `astro build` (package.json does it). Generated files are gitignored.
+// Adapted from Fleetlayer's site (Apache 2.0, see NOTICE): `unpublished` takes folders, and the index names the site.
 
 import { readFile, writeFile, mkdir, rm, readdir } from "node:fs/promises";
 import { dirname, join, relative, resolve, posix } from "node:path";
@@ -89,7 +90,8 @@ async function main() {
   const known = new Set(files.map(slugOf));
   for (const p of PAGES) if (!known.has(p.file)) throw new Error(`site.config.mjs lists docs/${p.file}.md, which doesn't exist`);
 
-  const unlisted = [...known].filter((s) => !published.has(s) && !SITE.unpublished.includes(s));
+  const unpublished = (s) => SITE.unpublished.some((u) => (u.endsWith("/") ? s.startsWith(u) : s === u));
+  const unlisted = [...known].filter((s) => !published.has(s) && !unpublished(s));
   if (unlisted.length) {
     console.warn(`sync-docs: not on the site yet (add to site.config.mjs pages or unpublished): ${unlisted.join(", ")}`);
   }
@@ -144,7 +146,7 @@ async function main() {
     "",
     `Every page is also served as Markdown: add \`.md\` to its address. All of them in one file: ${SITE.url}/llms-full.txt. Source: ${REPO}.`,
     "",
-    `- [Fleetlayer, in one page](${SITE.url}/index.md): what it is, who it's for and how to start`,
+    `- [${SITE.title}, in one page](${SITE.url}/index.md): what it is, who it's for and how to start`,
     ...groups.flatMap((g) => [
       "",
       `## ${g.name}`,

@@ -1,29 +1,30 @@
 // What the site publishes from docs/, in sidebar order. A doc not listed here (or in `unpublished`) gets a warning
 // at build time, so a new doc isn't forgotten.
-export const repo = "https://github.com/fleetlayer/fleetlayer";
+// Adapted from Fleetlayer's site (Apache 2.0): see NOTICE.
+export const repo = "https://github.com/QuietdeckAI/quietdeck";
 
 export const site = {
-  url: "https://fleetlayer.ai",
-  title: "Fleetlayer",
+  url: "https://quietdeck.ai",
+  title: "Quietdeck",
   summary:
-    "Fleetlayer connects the AI agent sessions you already run, on every machine you use, into one fleet you control: one view of every session, messages between them, webhooks routed to the agent that owns the work, shared Claude accounts, and access rules. Open source (Apache 2.0), self-hosted, no vendor lock-in.",
-  // Working files that stay in the repo only.
-  unpublished: ["guides-to-write", "problems"],
+    "Quietdeck is an inbox for you and your AI agents: an agent triages your email into one short report, drafts replies and proposes what to archive, and nothing happens until you approve it. Start with Quietdeck solo on your own computer, with your Gmail and Claude Code. Source-available (Fair Source, FSL-1.1-ALv2), self-hosted.",
+  // Working files that stay in the repo only. An entry ending in "/" leaves out a whole folder.
+  unpublished: ["guides-to-write", "drafts/"],
 };
 
 // file: path under docs/ without .md. group: the sidebar group. label: a shorter sidebar name (the page keeps its
 // own title). description: overrides the first sentence of the page.
 export const pages = [
-  { file: "getting-started", group: "Start here" },
-  { file: "guides/laptop", group: "Guides", label: "Start on your laptop" },
-  { file: "guides/untrusted-input", group: "Guides", label: "An agent that reads strangers' text" },
-  { file: "guides/backups", group: "Guides", label: "Backups" },
-  { file: "plugins/summaries", group: "Plugins", label: "Summaries" },
-  { file: "plugins/pages", group: "Plugins", label: "Pages" },
-  { file: "plugins/apps", group: "Plugins", label: "Apps" },
-  { file: "plugins/claude-auth-manager", group: "Plugins", label: "Claude accounts" },
-  { file: "access-control", group: "Reference", label: "Access control" },
-  { file: "protocol", group: "Reference", label: "Plugin protocol" },
-  { file: "link", group: "Reference", label: "Node link" },
-  { file: "sso", group: "Advanced", label: "Sign-in and SSO" },
+  { file: "solo", group: "Start here", label: "Quietdeck solo" },
+  { file: "solo-security", group: "Start here", label: "How solo keeps mail safe" },
+  { file: "solo-reference", group: "Start here", label: "solo.yaml and commands" },
+  { file: "getting-started", group: "A deck for many machines", label: "Getting started" },
+  { file: "secrets-management", group: "A deck for many machines", label: "Secrets for agents" },
+  { file: "agent-instructions", group: "A deck for many machines", label: "Instructions for agents" },
+  { file: "executor", group: "A deck for many machines", label: "Executor and the runner" },
+  { file: "leases", group: "Reference", label: "Leases" },
+  { file: "orchestrators", group: "Reference", label: "Orchestrators" },
+  { file: "claude-code-messaging", group: "Reference", label: "Claude Code messaging" },
+  { file: "summaries-interface", group: "Advanced", label: "Summaries interface" },
+  { file: "usage-interface", group: "Advanced", label: "Usage interface" },
 ];

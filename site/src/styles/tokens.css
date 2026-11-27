@@ -1,37 +1,38 @@
-/* Hallmark · genre: modern-minimal · macrostructure: Map / Diagram · theme: Cobalt · enrichment: none (typography + an
- * HTML system map) · nav: N1b · footer: Ft2
+/* Quietdeck's site, adapted from Fleetlayer's (Apache 2.0, see NOTICE): the same layout, Quietdeck's own palette and
+ * type, taken from its web app: "still water at dusk, letters waiting". Calm blue accent (hue 240), Newsreader for
+ * headings, Geist for text and code.
  * Design tokens shared by the homepage and the docs. Every colour and font on the site comes from here. */
 
-@import "@fontsource-variable/space-grotesk";
-@import "@fontsource-variable/inter";
-@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/newsreader";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 :root {
-  --font-display: "Space Grotesk Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-display: "Newsreader Variable", ui-serif, Georgia, serif;
+  --font-body: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* Light: cool engineered paper, cool charcoal ink, one cobalt signal. */
-  --color-paper: oklch(98.5% 0.004 250);
-  --color-paper-2: oklch(96.2% 0.006 252);
-  --color-ink: oklch(24% 0.02 258);
-  --color-ink-2: oklch(34% 0.018 257);
-  --color-muted: oklch(50% 0.016 257);
-  --color-rule: oklch(90% 0.008 255);
-  --color-rule-2: oklch(84% 0.01 255);
-  --color-accent: oklch(55% 0.2 256);
-  --color-accent-strong: oklch(48% 0.2 258);
-  --color-accent-ink: oklch(98.5% 0.004 250);
-  --color-accent-wash: oklch(94% 0.03 256);
+  /* Light: pale paper with a blue cast, deep ink, one calm blue. */
+  --color-paper: oklch(98.5% 0.004 238);
+  --color-paper-2: oklch(96.2% 0.006 240);
+  --color-ink: oklch(24% 0.02 246);
+  --color-ink-2: oklch(34% 0.018 245);
+  --color-muted: oklch(50% 0.016 245);
+  --color-rule: oklch(90% 0.008 243);
+  --color-rule-2: oklch(84% 0.01 243);
+  --color-accent: oklch(55% 0.11 244);
+  --color-accent-strong: oklch(48% 0.11 246);
+  --color-accent-ink: oklch(98.5% 0.004 238);
+  --color-accent-wash: oklch(94% 0.03 244);
   --color-ok: oklch(55% 0.13 150);
 
   /* The one dark band, and code. */
-  --color-graphite: oklch(21% 0.016 260);
-  --color-graphite-2: oklch(26% 0.018 260);
-  --color-graphite-rule: oklch(34% 0.02 260);
-  --color-on-graphite: oklch(93% 0.008 255);
-  --color-on-graphite-muted: oklch(70% 0.014 257);
-  --color-accent-on-graphite: oklch(74% 0.14 256);
+  --color-graphite: oklch(21% 0.016 248);
+  --color-graphite-2: oklch(26% 0.018 248);
+  --color-graphite-rule: oklch(34% 0.02 248);
+  --color-on-graphite: oklch(93% 0.008 243);
+  --color-on-graphite-muted: oklch(70% 0.014 245);
+  --color-accent-on-graphite: oklch(74% 0.085 244);
   --color-ok-on-graphite: oklch(78% 0.13 150);
 
   --space-2xs: 0.25rem;
@@ -69,38 +70,38 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --color-paper: oklch(17.5% 0.012 260);
-    --color-paper-2: oklch(21% 0.014 260);
-    --color-ink: oklch(95% 0.006 255);
-    --color-ink-2: oklch(85% 0.01 256);
-    --color-muted: oklch(68% 0.014 257);
-    --color-rule: oklch(29% 0.016 260);
-    --color-rule-2: oklch(36% 0.018 260);
-    --color-accent: oklch(72% 0.15 256);
-    --color-accent-strong: oklch(80% 0.12 256);
-    --color-accent-ink: oklch(17.5% 0.012 260);
-    --color-accent-wash: oklch(27% 0.05 258);
+    --color-paper: oklch(17.5% 0.012 248);
+    --color-paper-2: oklch(21% 0.014 248);
+    --color-ink: oklch(95% 0.006 243);
+    --color-ink-2: oklch(85% 0.01 244);
+    --color-muted: oklch(68% 0.014 245);
+    --color-rule: oklch(29% 0.016 248);
+    --color-rule-2: oklch(36% 0.018 248);
+    --color-accent: oklch(72% 0.09 244);
+    --color-accent-strong: oklch(80% 0.09 244);
+    --color-accent-ink: oklch(17.5% 0.012 248);
+    --color-accent-wash: oklch(27% 0.05 246);
     --color-ok: oklch(76% 0.13 150);
-    --color-graphite: oklch(13.5% 0.012 260);
-    --color-graphite-2: oklch(19% 0.014 260);
-    --color-graphite-rule: oklch(30% 0.018 260);
+    --color-graphite: oklch(13.5% 0.012 248);
+    --color-graphite-2: oklch(19% 0.014 248);
+    --color-graphite-rule: oklch(30% 0.018 248);
   }
 }
 
 :root[data-theme="dark"] {
-  --color-paper: oklch(17.5% 0.012 260);
-  --color-paper-2: oklch(21% 0.014 260);
-  --color-ink: oklch(95% 0.006 255);
-  --color-ink-2: oklch(85% 0.01 256);
-  --color-muted: oklch(68% 0.014 257);
-  --color-rule: oklch(29% 0.016 260);
-  --color-rule-2: oklch(36% 0.018 260);
-  --color-accent: oklch(72% 0.15 256);
-  --color-accent-strong: oklch(80% 0.12 256);
-  --color-accent-ink: oklch(17.5% 0.012 260);
-  --color-accent-wash: oklch(27% 0.05 258);
+  --color-paper: oklch(17.5% 0.012 248);
+  --color-paper-2: oklch(21% 0.014 248);
+  --color-ink: oklch(95% 0.006 243);
+  --color-ink-2: oklch(85% 0.01 244);
+  --color-muted: oklch(68% 0.014 245);
+  --color-rule: oklch(29% 0.016 248);
+  --color-rule-2: oklch(36% 0.018 248);
+  --color-accent: oklch(72% 0.09 244);
+  --color-accent-strong: oklch(80% 0.09 244);
+  --color-accent-ink: oklch(17.5% 0.012 248);
+  --color-accent-wash: oklch(27% 0.05 246);
   --color-ok: oklch(76% 0.13 150);
-  --color-graphite: oklch(13.5% 0.012 260);
-  --color-graphite-2: oklch(19% 0.014 260);
-  --color-graphite-rule: oklch(30% 0.018 260);
+  --color-graphite: oklch(13.5% 0.012 248);
+  --color-graphite-2: oklch(19% 0.014 248);
+  --color-graphite-rule: oklch(30% 0.018 248);
 }

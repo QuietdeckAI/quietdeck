@@ -1,5 +1,5 @@
 // Fails the build when a page links to something the site doesn't have: every internal href and src in the built
-// HTML, and every https://fleetlayer.ai/... link in the Markdown copies and llms.txt files.
+// HTML, and every link to the site itself in the Markdown copies and llms.txt files.
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
