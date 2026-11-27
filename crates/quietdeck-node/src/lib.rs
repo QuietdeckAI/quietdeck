@@ -9,6 +9,7 @@ pub mod link;
 pub mod local;
 pub mod matrix;
 pub mod orchestrator;
+pub mod prompts;
 pub mod runner;
 pub mod service;
 pub mod summaries;
@@ -207,6 +208,7 @@ pub async fn run(config: NodeConfig, opts: RunOptions) -> anyhow::Result<()> {
 
     if opts.watch_orchestrator {
         tokio::spawn(watch::run(node.clone(), signal_tx));
+        tokio::spawn(prompts::run(node.clone()));
     } else {
         drop(signal_tx);
     }

@@ -36,7 +36,7 @@ use crate::{api, passkeys};
 
 /// `info.version`: the minor version goes up with each additive change, the patch version with fixes to the
 /// description alone. A breaking change is a new `/api/v2`, never a new major version of v1.
-pub const API_VERSION: &str = "1.2.0";
+pub const API_VERSION: &str = "1.3.0";
 
 /// The versioned prefix the spec describes.
 pub const V1: &str = "/api/v1";
@@ -245,6 +245,7 @@ pub const OPERATIONS: &[Doc] = &[
     op("post", "/sessions/resume", "resume_session", "sessions", "Resume a session"),
     op("post", "/sessions/close", "close_session", "sessions", "Close a session"),
     op("post", "/sessions/interrupt", "interrupt_session", "sessions", "Interrupt a session"),
+    op("post", "/sessions/answer", "answer_prompt", "sessions", "Answer a session's blocked prompt (its own menu), through Fleetlayer"),
     op("get", "/who-has", "who_has", "sessions", "Which session has a thread, account or topic"),
     op("post", "/msg", "msg_send", "messages", "Send a message to a session by address"),
     op("get", "/messages", "messages_read", "messages", "Read messages after the caller's last read, or after a message ID"),

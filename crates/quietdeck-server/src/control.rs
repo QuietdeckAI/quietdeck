@@ -213,6 +213,22 @@ pub async fn close(state: &AppState, caller: &Caller, target: SessionTarget) -> 
     Ok(())
 }
 
+/// The person's answer to a session's blocked prompt: to the session's node, which hands it to Fleetlayer.
+pub async fn answer_prompt(state: &AppState, req: quietdeck_types::directory::PromptAnswerSend) -> AppResult<()> {
+    garde::Validate::validate(&req).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let row = &running_one(state, &SessionTarget { session: req.session.clone() }).await?;
+    let request = DeckRequest::AnswerPrompt {
+        session_id: row.info.session_id.clone(),
+        prompt: req.prompt.clone(),
+        answers: req.answers.clone(),
+    };
+    ask(state, &row.node, request, CLOSE_TIMEOUT).await?;
+    // The prompt's gone from the session: off the Work tab at once, before the node says so.
+    crate::store::sessions::set_prompt(&state.db, &row.node, &row.info.session_id, None).await?;
+    state.changed(Changed::Sessions);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

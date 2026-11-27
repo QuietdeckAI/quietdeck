@@ -1412,6 +1412,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sessions/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Answer a session's blocked prompt (its own menu), through Fleetlayer */
+        post: operations["answer_prompt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sessions/catchup": {
         parameters: {
             query?: never;
@@ -1913,6 +1930,44 @@ export interface components {
             /** @description No passkey is registered yet: the first one needs a setup code from the deck's container. */
             setup_needed: boolean;
             signed_in: boolean;
+        };
+        /**
+         * @description A blocked prompt: one of the harness's own menus (Claude Code's question form, a permission prompt, a plan to
+         *     approve) waiting in a session, as Fleetlayer reads it (`meta.prompt`). The Work tab shows it as a form; the answer
+         *     goes back through Fleetlayer.
+         */
+        BlockedPrompt: {
+            /**
+             * @description When it appeared, as Fleetlayer gives it.
+             * @default null
+             */
+            at?: string | null;
+            /** @description Fleetlayer's ID for this prompt: stable while it shows, new for every prompt. An answer names it. */
+            id: string;
+            /** @description `question`, `permission` or `plan`. */
+            kind: string;
+            /**
+             * @description A permission or plan prompt's choices.
+             * @default []
+             */
+            options?: components["schemas"]["PromptOption"][];
+            /**
+             * @description A plan prompt's plan.
+             * @default null
+             */
+            plan?: string | null;
+            /**
+             * @description A question form's questions, in order.
+             * @default []
+             */
+            questions?: components["schemas"]["PromptQuestion"][];
+            /**
+             * @description A permission prompt's tool, by name, and a short form of its input.
+             * @default null
+             */
+            tool?: string | null;
+            /** @default null */
+            tool_input?: string | null;
         };
         /** @description Who the deck thinks is calling. */
         Caller: {
@@ -2894,6 +2949,48 @@ export interface components {
             dirs: string[];
             name: string;
         };
+        /** @description One question's answer: an option, several (a multiple-choice question), or free text. */
+        PromptAnswer: {
+            /** Format: uint32 */
+            pick: number;
+        } | {
+            picks: number[];
+        } | {
+            text: string;
+        };
+        /** @description The person's answer to a blocked prompt, from the Work tab. */
+        PromptAnswerSend: {
+            /** @description One per question, in order; one for a permission or plan prompt. */
+            answers: components["schemas"]["PromptAnswer"][];
+            /** @description The prompt's ID, so an answer to a prompt that's gone is refused rather than typed into the next one. */
+            prompt: string;
+            /** @description The session: `<session ID>@<node>`, as the deck names it. */
+            session: string;
+        };
+        PromptOption: {
+            /** @default null */
+            description?: string | null;
+            label: string;
+            /**
+             * Format: uint32
+             * @description What to answer to pick it.
+             */
+            n: number;
+        };
+        PromptQuestion: {
+            /** @default null */
+            header?: string | null;
+            /** @default false */
+            multiSelect?: boolean;
+            /** @default [] */
+            options?: components["schemas"]["PromptOption"][];
+            /**
+             * @description It takes a free-text answer too.
+             * @default false
+             */
+            other?: boolean;
+            question: string;
+        };
         /** @description Web push on this deck: the VAPID public key a browser subscribes with, or none when push is off. */
         PushConfig: {
             public_key?: string | null;
@@ -3421,6 +3518,11 @@ export interface components {
             page?: string | null;
             paragraph?: string | null;
             project?: string | null;
+            /**
+             * @description The harness's own menu it's waiting on (blocked), when its node reads one through Fleetlayer.
+             * @default null
+             */
+            prompt?: components["schemas"]["BlockedPrompt"] | null;
             pushed_at: string;
             /** @description The command that resumes it, to copy until herdr's create-and-resume is there. */
             resume_command?: string | null;
@@ -6773,6 +6875,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionRow"][];
+                };
+            };
+            /** @description An error, with its message. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    answer_prompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The person's answer to a blocked prompt, from the Work tab. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromptAnswerSend"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description An error, with its message. */

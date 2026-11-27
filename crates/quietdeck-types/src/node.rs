@@ -25,6 +25,10 @@ pub const PROTOCOL_VERSION: u32 = 1;
 /// a deck that lists it, so either side can be upgraded first.
 pub const FEATURE_RUNNER_HEALTH: &str = "runner_health";
 
+/// In [`DeckFrame::Welcome`]'s `features`: the deck takes [`NodeFrame::Prompt`] (a blocked session's prompt) and sends
+/// [`DeckRequest::AnswerPrompt`].
+pub const FEATURE_PROMPTS: &str = "prompts";
+
 /// How the runner and its agent are doing, for Quietdeck solo's health check and the Inbox's warning.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -94,6 +98,12 @@ pub enum NodeFrame {
     /// The runner's health, after each mail check, only to a deck whose welcome lists [`FEATURE_RUNNER_HEALTH`].
     RunnerHealth {
         health: RunnerHealth,
+    },
+    /// A session's blocked prompt, as Fleetlayer reads it, or None once it's gone. Only to a deck whose welcome lists
+    /// [`FEATURE_PROMPTS`].
+    Prompt {
+        session_id: String,
+        prompt: Option<crate::directory::BlockedPrompt>,
     },
 }
 
@@ -283,6 +293,13 @@ pub enum DeckRequest {
     /// Close a running session's tab.
     CloseSession {
         session_id: String,
+    },
+    /// The person's answer to a session's blocked prompt, through Fleetlayer. Answers `()`, or an error saying the
+    /// prompt has gone.
+    AnswerPrompt {
+        session_id: String,
+        prompt: String,
+        answers: Vec<crate::directory::PromptAnswer>,
     },
     /// Interrupt a running session, as Esc does in Claude Code: it stops what it's doing and waits for input.
     InterruptSession {

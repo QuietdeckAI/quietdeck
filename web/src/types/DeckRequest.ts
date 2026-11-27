@@ -3,6 +3,7 @@ import type { ChannelCount } from "./ChannelCount";
 import type { Delivery } from "./Delivery";
 import type { Lease } from "./Lease";
 import type { LeaseStep } from "./LeaseStep";
+import type { PromptAnswer } from "./PromptAnswer";
 import type { SessionResume } from "./SessionResume";
 import type { SessionStart } from "./SessionStart";
 import type { TranscriptQuery } from "./TranscriptQuery";
@@ -11,4 +12,4 @@ import type { UsageCommand } from "./UsageCommand";
 /**
  * What the deck asks a node.
  */
-export type DeckRequest = { "op": "deliver", delivery: Delivery, } | { "op": "search_transcripts", query: string, limit: number, } | { "op": "catchup", session_id: string, } | { "op": "transcript", session_id: string, query: TranscriptQuery, } | { "op": "usage", command: UsageCommand, } | { "op": "start_session", spec: SessionStart, } | { "op": "resume_session", spec: SessionResume, } | { "op": "close_session", session_id: string, } | { "op": "interrupt_session", session_id: string, } | { "op": "decisions_released" } | { "op": "lease_step", lease: Lease, step: LeaseStep, } | { "op": "messages_arrived", channels: Array<ChannelCount>, } | { "op": "presence", active: boolean, } | { "op": "release_held" } | { "op": "round_done" } | { "op": "round_status" } | { "op": "send_as", account: string, from: string, };
+export type DeckRequest = { "op": "deliver", delivery: Delivery, } | { "op": "search_transcripts", query: string, limit: number, } | { "op": "catchup", session_id: string, } | { "op": "transcript", session_id: string, query: TranscriptQuery, } | { "op": "usage", command: UsageCommand, } | { "op": "start_session", spec: SessionStart, } | { "op": "resume_session", spec: SessionResume, } | { "op": "close_session", session_id: string, } | { "op": "answer_prompt", session_id: string, prompt: string, answers: Array<PromptAnswer>, } | { "op": "interrupt_session", session_id: string, } | { "op": "decisions_released" } | { "op": "lease_step", lease: Lease, step: LeaseStep, } | { "op": "messages_arrived", channels: Array<ChannelCount>, } | { "op": "presence", active: boolean, } | { "op": "release_held" } | { "op": "round_done" } | { "op": "round_status" } | { "op": "send_as", account: string, from: string, };

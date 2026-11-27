@@ -277,6 +277,21 @@ async fn answer(node: &Node, request: DeckRequest) -> Reply {
             Ok(()) => Reply::ok(&serde_json::json!({})),
             Err(error) => Reply::Err { error },
         },
+        DeckRequest::AnswerPrompt { session_id, prompt, answers } => {
+            let params = serde_json::json!({"to": session_id, "prompt": prompt, "answers": answers,
+                "why": "the person answered it on the deck's Work tab"});
+            match crate::fleetlayer::call(crate::fleetlayer::SESSION_ANSWER, params).await {
+                None => Reply::Err {
+                    error: "Fleetlayer doesn't run Quietdeck's plugin on this machine, so it can't answer prompts"
+                        .into(),
+                },
+                Some(Ok(_)) => Reply::ok(&()),
+                Some(Err(e)) if e.code == Some(crate::fleetlayer::code::PROMPT_GONE) => {
+                    Reply::Err { error: "that prompt isn't showing any more: it was answered or went away".into() }
+                }
+                Some(Err(e)) => Reply::Err { error: e.message },
+            }
+        }
         DeckRequest::InterruptSession { session_id } => match crate::control::interrupt(node, &session_id).await {
             Ok(()) => Reply::ok(&serde_json::json!({})),
             Err(error) => Reply::Err { error },

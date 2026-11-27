@@ -1021,6 +1021,71 @@
         ],
         "type": "object"
       },
+      "BlockedPrompt": {
+        "description": "A blocked prompt: one of the harness's own menus (Claude Code's question form, a permission prompt, a plan to\napprove) waiting in a session, as Fleetlayer reads it (`meta.prompt`). The Work tab shows it as a form; the answer\ngoes back through Fleetlayer.",
+        "properties": {
+          "at": {
+            "default": null,
+            "description": "When it appeared, as Fleetlayer gives it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "Fleetlayer's ID for this prompt: stable while it shows, new for every prompt. An answer names it.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "`question`, `permission` or `plan`.",
+            "type": "string"
+          },
+          "options": {
+            "default": [],
+            "description": "A permission or plan prompt's choices.",
+            "items": {
+              "$ref": "#/components/schemas/PromptOption"
+            },
+            "type": "array"
+          },
+          "plan": {
+            "default": null,
+            "description": "A plan prompt's plan.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "questions": {
+            "default": [],
+            "description": "A question form's questions, in order.",
+            "items": {
+              "$ref": "#/components/schemas/PromptQuestion"
+            },
+            "type": "array"
+          },
+          "tool": {
+            "default": null,
+            "description": "A permission prompt's tool, by name, and a short form of its input.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tool_input": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "type": "object"
+      },
       "Caller": {
         "description": "Who the deck thinks is calling.",
         "oneOf": [
@@ -3768,6 +3833,142 @@
         ],
         "type": "object"
       },
+      "PromptAnswer": {
+        "anyOf": [
+          {
+            "properties": {
+              "pick": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "pick"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "picks": {
+                "items": {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "picks"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "One question's answer: an option, several (a multiple-choice question), or free text."
+      },
+      "PromptAnswerSend": {
+        "description": "The person's answer to a blocked prompt, from the Work tab.",
+        "properties": {
+          "answers": {
+            "description": "One per question, in order; one for a permission or plan prompt.",
+            "items": {
+              "$ref": "#/components/schemas/PromptAnswer"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "type": "array"
+          },
+          "prompt": {
+            "description": "The prompt's ID, so an answer to a prompt that's gone is refused rather than typed into the next one.",
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "session": {
+            "description": "The session: `<session ID>@<node>`, as the deck names it.",
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "prompt",
+          "answers"
+        ],
+        "type": "object"
+      },
+      "PromptOption": {
+        "properties": {
+          "description": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "n": {
+            "description": "What to answer to pick it.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "n",
+          "label"
+        ],
+        "type": "object"
+      },
+      "PromptQuestion": {
+        "properties": {
+          "header": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "multiSelect": {
+            "default": false,
+            "type": "boolean"
+          },
+          "options": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PromptOption"
+            },
+            "type": "array"
+          },
+          "other": {
+            "default": false,
+            "description": "It takes a free-text answer too.",
+            "type": "boolean"
+          },
+          "question": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
       "PushConfig": {
         "description": "Web push on this deck: the VAPID public key a browser subscribes with, or none when push is off.",
         "properties": {
@@ -5256,6 +5457,18 @@
               "null"
             ]
           },
+          "prompt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockedPrompt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The harness's own menu it's waiting on (blocked), when its node reads one through Fleetlayer."
+          },
           "pushed_at": {
             "type": "string"
           },
@@ -6268,7 +6481,7 @@
     },
     "summary": "Quietdeck's core: cards, decisions, actions, rules, leases, sessions and the timeline.",
     "title": "Quietdeck API",
-    "version": "1.2.0"
+    "version": "1.3.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -10815,6 +11028,51 @@
           }
         ],
         "summary": "Sessions on every node",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/answer": {
+      "post": {
+        "operationId": "answer_prompt",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptAnswerSend"
+              }
+            }
+          },
+          "description": "The person's answer to a blocked prompt, from the Work tab.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "An error, with its message."
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          }
+        ],
+        "summary": "Answer a session's blocked prompt (its own menu), through Fleetlayer",
         "tags": [
           "sessions"
         ]

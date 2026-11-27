@@ -33,10 +33,12 @@ struct Row {
     ended: Option<String>,
     open_url: Option<String>,
     opens_in: Option<String>,
+    prompt: Option<String>,
 }
 
 const COLUMNS: &str = "node, session_id, agent, workspace, tab, address, cwd, project, status, status_changed_at, \
-    resume_command, running, sentence, paragraph, page, last_activity, pushed_at, closed_at, ended, open_url, opens_in";
+    resume_command, running, sentence, paragraph, page, last_activity, pushed_at, closed_at, ended, open_url, opens_in, \
+    prompt";
 
 impl Row {
     fn into_row(self, node_online: bool, links: Vec<SessionLink>) -> anyhow::Result<SessionRow> {
@@ -70,6 +72,12 @@ impl Row {
             links,
             closed_at: ts_opt(self.closed_at),
             ended: self.ended.as_deref().map(from_json).transpose()?,
+            // Only while it's still blocked: a prompt the node didn't clear before the session moved on is stale.
+            prompt: self
+                .prompt
+                .as_deref()
+                .filter(|_| self.running != 0 && self.status == "blocked")
+                .and_then(|p| from_json(p).ok()),
         })
     }
 }
@@ -686,6 +694,22 @@ pub async fn tab_of(db: &Db, node: &str, session_id: &str) -> anyhow::Result<Opt
         .fetch_optional(db)
         .await?;
     Ok(row.and_then(|r| r.0))
+}
+
+/// A session's blocked prompt, from its node, or None once it's gone.
+pub async fn set_prompt(
+    db: &Db,
+    node: &str,
+    session_id: &str,
+    prompt: Option<&quietdeck_types::directory::BlockedPrompt>,
+) -> anyhow::Result<bool> {
+    let r = sqlx::query("UPDATE sessions SET prompt = ? WHERE node = ? AND session_id = ?")
+        .bind(prompt.map(json))
+        .bind(node)
+        .bind(session_id)
+        .execute(db)
+        .await?;
+    Ok(r.rows_affected() > 0)
 }
 
 #[cfg(test)]

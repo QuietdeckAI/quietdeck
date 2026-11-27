@@ -48,7 +48,7 @@ export function ReportMeta({ report }: { report: Report }) {
  * Triage now.
  */
 /** While open cards are missing from the report: a toast that stays until the agent adds them, with Threads. */
-function MissingToast({ count }: { count: number }) {
+function MissingToast({ count, work }: { count: number; work: boolean }) {
   return (
     <div
       role="status"
@@ -56,7 +56,13 @@ function MissingToast({ count }: { count: number }) {
     >
       <div className="flex items-center gap-3">
         <p className="min-w-0 flex-1 text-ink">
-          {count === 1 ? "1 thread isn't in the report yet" : `${count} threads aren't in the report yet`}
+          {work
+            ? count === 1
+              ? "1 proposal isn't on the page yet"
+              : `${count} proposals aren't on the page yet`
+            : count === 1
+              ? "1 thread isn't in the report yet"
+              : `${count} threads aren't in the report yet`}
         </p>
         <Button size="sm" variant="secondary" className="shrink-0" asChild>
           <Link to="/threads">Threads</Link>
@@ -127,7 +133,7 @@ function pointAt(cards: number[]) {
  * one scrolls to the default it's about. Changes from before the page opened aren't toasted.
  */
 // The toasts sit 16px below the 57px header, the same as their 16px right margin (right-4): top-[73px].
-export function ReportToasts({ report, presence }: { report: Report; presence: Presence }) {
+export function ReportToasts({ report, presence, work = false }: { report: Report; presence: Presence; work?: boolean }) {
   const seen = useRef<Set<number> | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   useEffect(() => {
@@ -166,7 +172,7 @@ export function ReportToasts({ report, presence }: { report: Report; presence: P
         <div className="pointer-events-none fixed top-[73px] right-4 z-30 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2">
           {failing && <SoloHealthToast problems={solo} />}
           {held && <HeldToast presence={presence} />}
-          {missing > 0 && <MissingToast count={missing} />}
+          {missing > 0 && <MissingToast count={missing} work={work} />}
         </div>
       )}
       {(toasts.length > 0 || notes.length > 0) && (

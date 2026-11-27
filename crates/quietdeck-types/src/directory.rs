@@ -64,6 +64,9 @@ pub struct SessionRow {
     #[schemars(with = "Option<String>")]
     pub closed_at: Option<Timestamp>,
     pub ended: Option<SessionEnd>,
+    /// The harness's own menu it's waiting on (blocked), when its node reads one through Fleetlayer.
+    #[serde(default)]
+    pub prompt: Option<BlockedPrompt>,
 }
 
 /// How a session ended, from herdr's close events.
@@ -318,4 +321,137 @@ pub struct SessionDetail {
     pub continues: Option<crate::handoff::MoveLink>,
     /// The session that continues this one, when it was moved.
     pub moved_to: Option<crate::handoff::MoveLink>,
+}
+
+/// A blocked prompt: one of the harness's own menus (Claude Code's question form, a permission prompt, a plan to
+/// approve) waiting in a session, as Fleetlayer reads it (`meta.prompt`). The Work tab shows it as a form; the answer
+/// goes back through Fleetlayer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct BlockedPrompt {
+    /// Fleetlayer's ID for this prompt: stable while it shows, new for every prompt. An answer names it.
+    pub id: String,
+    /// `question`, `permission` or `plan`.
+    pub kind: String,
+    /// When it appeared, as Fleetlayer gives it.
+    #[serde(default)]
+    pub at: Option<String>,
+    /// A question form's questions, in order.
+    #[serde(default)]
+    pub questions: Vec<PromptQuestion>,
+    /// A permission or plan prompt's choices.
+    #[serde(default)]
+    pub options: Vec<PromptOption>,
+    /// A permission prompt's tool, by name, and a short form of its input.
+    #[serde(default)]
+    pub tool: Option<String>,
+    #[serde(default)]
+    pub tool_input: Option<String>,
+    /// A plan prompt's plan.
+    #[serde(default)]
+    pub plan: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct PromptQuestion {
+    #[serde(default)]
+    pub header: Option<String>,
+    pub question: String,
+    #[serde(default, rename = "multiSelect", alias = "multi_select")]
+    pub multi_select: bool,
+    #[serde(default)]
+    pub options: Vec<PromptOption>,
+    /// It takes a free-text answer too.
+    #[serde(default)]
+    pub other: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[ts(export)]
+pub struct PromptOption {
+    /// What to answer to pick it.
+    pub n: u32,
+    pub label: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+/// One question's answer: an option, several (a multiple-choice question), or free text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema)]
+#[serde(untagged)]
+#[ts(export)]
+pub enum PromptAnswer {
+    Pick { pick: u32 },
+    Picks { picks: Vec<u32> },
+    Text { text: String },
+}
+
+/// The person's answer to a blocked prompt, from the Work tab.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, garde::Validate)]
+#[ts(export)]
+pub struct PromptAnswerSend {
+    /// The session: `<session ID>@<node>`, as the deck names it.
+    #[garde(length(min = 1, max = 300))]
+    pub session: String,
+    /// The prompt's ID, so an answer to a prompt that's gone is refused rather than typed into the next one.
+    #[garde(length(min = 1, max = 300))]
+    pub prompt: String,
+    /// One per question, in order; one for a permission or plan prompt.
+    #[garde(length(min = 1, max = 20))]
+    pub answers: Vec<PromptAnswer>,
+}
+
+impl BlockedPrompt {
+    /// Fleetlayer's `meta.prompt`, read leniently: a field it doesn't have is left empty, and a prompt without an ID
+    /// or a kind isn't one.
+    pub fn from_meta(v: &serde_json::Value) -> Option<BlockedPrompt> {
+        let id = v.get("id")?.as_str()?.to_string();
+        let kind = v.get("kind")?.as_str()?.to_string();
+        let tool = v.get("tool");
+        Some(BlockedPrompt {
+            id,
+            kind,
+            at: v.get("at").and_then(|a| a.as_str().map(str::to_string).or_else(|| Some(a.to_string()))),
+            questions: v.get("questions").and_then(|q| serde_json::from_value(q.clone()).ok()).unwrap_or_default(),
+            options: v.get("options").and_then(|o| serde_json::from_value(o.clone()).ok()).unwrap_or_default(),
+            tool: tool.and_then(|t| t.get("name")).and_then(|n| n.as_str()).map(str::to_string),
+            tool_input: tool.and_then(|t| t.get("input")).map(|i| {
+                let s = i.as_str().map(str::to_string).unwrap_or_else(|| i.to_string());
+                if s.chars().count() > 600 { format!("{}…", s.chars().take(599).collect::<String>()) } else { s }
+            }),
+            plan: v.get("plan").and_then(|p| p.as_str()).map(str::to_string),
+        })
+    }
+}
+
+#[cfg(test)]
+mod prompt_tests {
+    use super::*;
+
+    #[test]
+    fn fleetlayers_prompt_reads_and_answers_serialise_as_it_takes_them() {
+        let meta = serde_json::json!({"id": "toolu_1", "kind": "question", "at": "2026-11-28T00:10:00Z", "source": "hook",
+            "questions": [{"header": "Provider", "question": "Which push provider?", "multiSelect": false,
+                "options": [{"n": 1, "label": "APNs + FCM", "description": "the platforms' own"}, {"n": 2, "label": "OneSignal"}],
+                "other": true}]});
+        let p = BlockedPrompt::from_meta(&meta).unwrap();
+        assert_eq!(p.questions[0].options[1].label, "OneSignal");
+        assert!(p.questions[0].other && !p.questions[0].multi_select);
+        let perm = serde_json::json!({"id": "p2", "kind": "permission", "tool": {"name": "Bash", "input": {"command": "rm -rf build"}},
+            "options": [{"n": 1, "label": "Yes"}, {"n": 2, "label": "No"}]});
+        let p = BlockedPrompt::from_meta(&perm).unwrap();
+        assert_eq!((p.tool.as_deref(), p.options.len()), (Some("Bash"), 2));
+        assert!(p.tool_input.unwrap().contains("rm -rf build"));
+        assert!(BlockedPrompt::from_meta(&serde_json::json!({"kind": "plan"})).is_none());
+        let answers = vec![
+            PromptAnswer::Pick { pick: 2 },
+            PromptAnswer::Picks { picks: vec![1, 3] },
+            PromptAnswer::Text { text: "x".into() },
+        ];
+        assert_eq!(
+            serde_json::to_value(&answers).unwrap(),
+            serde_json::json!([{"pick": 2}, {"picks": [1, 3]}, {"text": "x"}])
+        );
+    }
 }

@@ -6,6 +6,7 @@ import { notify } from "@/lib/notes";
 import { changedKeys, ReportBody, ReportChatBox, reportDefaults, TriageNotes, triageNotes, unansweredAsks } from "@/components/Report";
 import { ReportMeta, ReportToasts, UpdatedAt } from "@/components/ReportMeta";
 import { SoloHealthStack } from "@/components/SoloHealth";
+import { BlockedPrompts } from "@/components/BlockedPrompts";
 import { TimelineRow } from "@/components/TimelineRow";
 import { api, query } from "@/lib/api";
 import { usePresence } from "@/lib/presence";
@@ -185,6 +186,7 @@ export function InboxScreen({ tab: given }: { tab?: TopTab } = {}) {
     <main className="mx-auto flex max-w-3xl flex-1 flex-col px-4 pt-6 pb-4">
       {tab && doc && <DocTabs tab={tab} doc={doc} />}
       <SoloHealthStack />
+      {doc?.kind === "work" && <BlockedPrompts />}
       {inbox.isError && (
         <p role="alert" className="mt-8 text-danger">
           {inbox.error.message}
@@ -398,6 +400,11 @@ function ReportScreen({
           scroll to the page. */}
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-clip px-4 pt-6 pb-4">
         <ReportMeta report={report} />
+        {work && (
+          <div className="mt-4">
+            <BlockedPrompts />
+          </div>
+        )}
         <div
           className={`report-busy-wrap mt-4${busy || holdingDark ? " busy" : ""}${working ? " running" : ""}`}
           aria-busy={busy || holdingDark}
@@ -444,7 +451,7 @@ function ReportScreen({
           inline
         />
       </ReportChatBox>
-      <ReportToasts report={report} presence={inbox.presence} />
+      <ReportToasts report={report} presence={inbox.presence} work={work} />
     </div>
   );
 }

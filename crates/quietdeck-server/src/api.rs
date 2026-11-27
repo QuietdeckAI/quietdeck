@@ -49,6 +49,7 @@ pub fn router() -> ApiRouter<AppState> {
         .api_route("/sessions/resume", post(resume_session))
         .api_route("/sessions/close", post(close_session))
         .api_route("/sessions/interrupt", post(interrupt_session))
+        .api_route("/sessions/answer", post(answer_prompt))
         .api_route("/handoffs", post(handoff_add))
         .api_route("/handoffs/{id}", get(handoff_show))
         .api_route("/handoffs/{id}/claim", post(handoff_claim))
@@ -838,6 +839,16 @@ async fn close_session(
     // The owner closes any session; a session closes itself, or one that has moved (control::close checks).
     let caller = person_or_session(caller)?;
     control::close(&state, &caller, target).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+/// The owner's answer to a session's blocked prompt (the Work tab's form), typed in through Fleetlayer.
+async fn answer_prompt(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Json(req): Json<quietdeck_types::directory::PromptAnswerSend>,
+) -> AppResult<Json<serde_json::Value>> {
+    control::answer_prompt(&state, req).await?;
     Ok(Json(serde_json::json!({})))
 }
 

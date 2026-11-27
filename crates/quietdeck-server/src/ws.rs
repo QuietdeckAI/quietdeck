@@ -72,7 +72,10 @@ async fn run(state: AppState, node: String, socket: WebSocket) {
         &mut sink,
         &DeckFrame::Welcome {
             node: node.clone(),
-            features: vec![quietdeck_types::node::FEATURE_RUNNER_HEALTH.to_string()],
+            features: vec![
+                quietdeck_types::node::FEATURE_RUNNER_HEALTH.to_string(),
+                quietdeck_types::node::FEATURE_PROMPTS.to_string(),
+            ],
         },
     )
     .await
@@ -178,6 +181,11 @@ async fn handle(state: &AppState, node: &str, reg: &crate::hub::Registration, fr
                 .expect("runner health")
                 .insert(node.to_string(), (health, jiff::Timestamp::now()));
             Ok(())
+        }
+        NodeFrame::Prompt { session_id, prompt } => {
+            let r = sessions::set_prompt(&state.db, node, &session_id, prompt.as_ref()).await.map(|_| ());
+            state.changed(quietdeck_types::api::Changed::Sessions);
+            r
         }
         NodeFrame::Sessions { sessions } => {
             let r = sessions::replace_snapshot(&state.db, &state.config, node, &sessions).await;

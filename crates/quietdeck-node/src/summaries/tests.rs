@@ -198,8 +198,17 @@ fn append(h: &Home, sid: &str, records: &[Value]) -> PathBuf {
 
 fn config(h: &Home) -> Config {
     let mut c = Config::new(&h.home, &h.state, "Sam");
-    c.tz = auckland();
+    c.tz = noon_now();
     c
+}
+
+/// A fixed zone where it's about noon now, so activity from minutes ago is always today's, whenever the tests run (in
+/// Auckland they failed in the half hour after midnight, when "30 minutes ago" was yesterday).
+fn noon_now() -> jiff::tz::TimeZone {
+    let utc = Timestamp::now().to_zoned_datetime(jiff::tz::TimeZone::UTC);
+    let minutes = i32::from(utc.hour()) * 60 + i32::from(utc.minute());
+    let offset = (12 * 60 - minutes) * 60;
+    jiff::tz::TimeZone::fixed(jiff::tz::Offset::from_seconds(offset).unwrap())
 }
 
 fn account() -> Account {

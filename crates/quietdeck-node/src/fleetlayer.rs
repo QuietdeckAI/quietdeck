@@ -33,12 +33,18 @@ const NODE_ANSWERS_WITHIN: Duration = Duration::from_secs(14);
 const CALLER_WAITS: Duration = Duration::from_secs(15);
 
 const MESSAGE_SEND: &str = "_fleetlayer.dev/message/send";
+/// The other Fleetlayer methods the node may call through the plugin (its grants decide what Fleetlayer lets it do).
+pub const SESSIONS_QUERY: &str = "_fleetlayer.dev/sessions/query";
+pub const SESSION_ANSWER: &str = "_fleetlayer.dev/session/answer";
+const CALLS: &[&str] = &[SESSIONS_QUERY, SESSION_ANSWER];
 /// Fleetlayer's error codes (its `rpc::code`).
 pub mod code {
     pub const NOT_HERE: i64 = -32010;
     pub const REFUSED: i64 = -32011;
     pub const BUSY: i64 = -32012;
     pub const NO_SUCH: i64 = -32014;
+    /// An answer to a prompt that isn't showing any more.
+    pub const PROMPT_GONE: i64 = -32015;
 }
 
 /// Fleetlayer's node's own local socket: `$FLEETLAYER_SOCKET`, else its default (under `$XDG_RUNTIME_DIR`, else
@@ -95,10 +101,20 @@ impl Outgoing {
     }
 }
 
+/// A call to Fleetlayer through the plugin: one of [`CALLS`], with its params.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct BridgeCall {
+    rpc: String,
+    #[serde(default)]
+    params: Value,
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct BridgeAnswer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     via: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    result: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -153,6 +169,37 @@ pub async fn send_via(socket: &Path, msg: &Outgoing) -> Option<Result<Delivered,
         (Some("harness_channel"), None) => Ok(Delivered::Socket),
         (Some(_), None) => Ok(Delivered::Orchestrator),
         (None, None) => Err(SendError { code: None, message: "Fleetlayer's answer said neither how nor why".into() }),
+    })
+}
+
+/// Call one of Fleetlayer's methods ([`SESSIONS_QUERY`], [`SESSION_ANSWER`]) through the plugin. None when Fleetlayer
+/// doesn't run Quietdeck's plugin here.
+pub async fn call(method: &str, params: Value) -> Option<Result<Value, SendError>> {
+    call_via(&bridge_socket(), method, params).await
+}
+
+pub async fn call_via(socket: &Path, method: &str, params: Value) -> Option<Result<Value, SendError>> {
+    let stream = UnixStream::connect(socket).await.ok()?;
+    let ask = async {
+        let (r, mut w) = stream.into_split();
+        let line = serde_json::to_string(&BridgeCall { rpc: method.to_string(), params }).map_err(|e| e.to_string())?;
+        w.write_all(format!("{line}\n").as_bytes()).await.map_err(|e| e.to_string())?;
+        let answer = BufReader::new(r)
+            .lines()
+            .next_line()
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Quietdeck's Fleetlayer plugin hung up".to_string())?;
+        serde_json::from_str::<BridgeAnswer>(&answer).map_err(|e| e.to_string())
+    };
+    Some(match tokio::time::timeout(CALLER_WAITS, ask).await {
+        Err(_) => Err(SendError {
+            code: None,
+            message: format!("Fleetlayer didn't answer within {} seconds", CALLER_WAITS.as_secs()),
+        }),
+        Ok(Err(e)) => Err(SendError { code: None, message: e }),
+        Ok(Ok(BridgeAnswer { error: Some(message), code, .. })) => Err(SendError { code, message }),
+        Ok(Ok(a)) => Ok(a.result.unwrap_or(Value::Null)),
     })
 }
 
@@ -288,15 +335,70 @@ fn listen(
             tokio::spawn(async move {
                 let (r, mut w) = stream.into_split();
                 let Ok(Some(line)) = BufReader::new(r).lines().next_line().await else { return };
-                let answer = match serde_json::from_str::<Outgoing>(&line) {
-                    Err(e) => BridgeAnswer { error: Some(format!("not a send: {e}")), ..Default::default() },
-                    Ok(s) => relay(&node, s, &tx, &pending, &ids).await,
+                let answer = match serde_json::from_str::<BridgeCall>(&line) {
+                    Ok(c) => rpc(&node, c, &tx, &pending, &ids).await,
+                    Err(_) => match serde_json::from_str::<Outgoing>(&line) {
+                        Err(e) => BridgeAnswer { error: Some(format!("not a send: {e}")), ..Default::default() },
+                        Ok(s) => relay(&node, s, &tx, &pending, &ids).await,
+                    },
                 };
                 let line = serde_json::to_string(&answer).unwrap_or_default();
                 let _ = w.write_all(format!("{line}\n").as_bytes()).await;
             });
         }
     }))
+}
+
+/// One of [`CALLS`], for this node: a sessions query names this node when it names none.
+async fn rpc(node: &str, c: BridgeCall, tx: &mpsc::Sender<String>, pending: &Pending, ids: &AtomicU64) -> BridgeAnswer {
+    if !CALLS.contains(&c.rpc.as_str()) {
+        return BridgeAnswer {
+            error: Some(format!("{} isn't something the node may call", c.rpc)),
+            ..Default::default()
+        };
+    }
+    let mut params = if c.params.is_object() { c.params } else { json!({}) };
+    if c.rpc == SESSIONS_QUERY && params.get("node").is_none() && !node.is_empty() {
+        params["node"] = json!(node);
+    }
+    let id = ids.fetch_add(1, Ordering::Relaxed);
+    let (done, wait) = oneshot::channel();
+    pending.lock().await.insert(id, done);
+    let req = json!({"jsonrpc": "2.0", "id": id, "method": c.rpc, "params": params});
+    if tx.send(req.to_string()).await.is_err() {
+        pending.lock().await.remove(&id);
+        return BridgeAnswer { error: Some("the Fleetlayer node has gone".into()), ..Default::default() };
+    }
+    match tokio::time::timeout(NODE_ANSWERS_WITHIN, wait).await {
+        Ok(Ok(Ok(v))) => BridgeAnswer { result: Some(v), ..Default::default() },
+        Ok(Ok(Err((code, message)))) => BridgeAnswer { error: Some(message), code: Some(code), ..Default::default() },
+        Ok(Err(_)) => BridgeAnswer { error: Some("the Fleetlayer node has gone".into()), ..Default::default() },
+        Err(_) => {
+            pending.lock().await.remove(&id);
+            BridgeAnswer {
+                error: Some(format!(
+                    "the Fleetlayer node didn't answer within {} seconds",
+                    NODE_ANSWERS_WITHIN.as_secs()
+                )),
+                ..Default::default()
+            }
+        }
+    }
+}
+
+/// The prompts of this node's sessions, by session ID, from a sessions query's answer. Read leniently: a list of
+/// sessions, bare or under `sessions`, each with its ID (`sessionId`, `session_id` or `id`) and `meta.prompt`.
+pub fn prompts_of(answer: &Value) -> HashMap<String, quietdeck_types::directory::BlockedPrompt> {
+    let list = answer.get("sessions").unwrap_or(answer);
+    let mut out = HashMap::new();
+    for s in list.as_array().into_iter().flatten() {
+        let id = ["sessionId", "session_id", "id"].iter().find_map(|k| s.get(*k).and_then(Value::as_str));
+        let prompt = s.pointer("/meta/prompt").and_then(quietdeck_types::directory::BlockedPrompt::from_meta);
+        if let (Some(id), Some(p)) = (id, prompt) {
+            out.insert(id.to_string(), p);
+        }
+    }
+    out
 }
 
 async fn relay(node: &str, s: Outgoing, tx: &mpsc::Sender<String>, pending: &Pending, ids: &AtomicU64) -> BridgeAnswer {
@@ -414,6 +516,46 @@ mod tests {
         let ok = json!({"jsonrpc": "2.0", "id": req["id"], "result": {"via": "harness_channel"}});
         nw.write_all(format!("{ok}\n").as_bytes()).await.unwrap();
         assert_eq!(sent.await.unwrap(), Some(Ok(Delivered::Socket)));
+    }
+
+    #[tokio::test]
+    async fn calls_go_through_the_plugin_and_a_sessions_query_names_this_node() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("fleetlayer-plugin.sock");
+        let (mut nw, mut nr) = plugin(socket.clone()).await;
+        let asked = tokio::spawn({
+            let socket = socket.clone();
+            async move { call_via(&socket, SESSIONS_QUERY, json!({})).await }
+        });
+        let req = line(&mut nr).await;
+        assert_eq!(
+            (req["method"].as_str(), req["params"]["node"].as_str()),
+            (Some(SESSIONS_QUERY), Some("agents-triage"))
+        );
+        let sessions = json!({"jsonrpc": "2.0", "id": req["id"], "result": {"sessions": [
+            {"sessionId": "s1", "tab": "mobile", "meta": {"status": "blocked", "prompt": {"id": "toolu_9", "kind": "question",
+                "questions": [{"question": "Which?", "multiSelect": false, "options": [{"n": 1, "label": "A"}]}]}}},
+            {"sessionId": "s2", "tab": "search", "meta": {"status": "idle"}}]}});
+        nw.write_all(format!("{sessions}\n").as_bytes()).await.unwrap();
+        let prompts = prompts_of(&asked.await.unwrap().unwrap().unwrap());
+        assert_eq!(prompts.keys().collect::<Vec<_>>(), vec!["s1"]);
+        assert_eq!(prompts["s1"].questions[0].question, "Which?");
+        // A prompt that's gone comes back with Fleetlayer's code; a method the node may not call never leaves.
+        let answered = tokio::spawn({
+            let socket = socket.clone();
+            async move {
+                call_via(&socket, SESSION_ANSWER, json!({"to": "s1", "prompt": "toolu_9", "answers": [{"pick": 1}]}))
+                    .await
+            }
+        });
+        let req = line(&mut nr).await;
+        assert_eq!(req["params"]["answers"][0]["pick"], 1);
+        let gone = json!({"jsonrpc": "2.0", "id": req["id"], "error": {"code": -32015, "message": "that prompt isn't showing any more"}});
+        nw.write_all(format!("{gone}\n").as_bytes()).await.unwrap();
+        let err = answered.await.unwrap().unwrap().unwrap_err();
+        assert_eq!(err.code, Some(code::PROMPT_GONE));
+        let refused = call_via(&socket, "_fleetlayer.dev/session/start", json!({})).await.unwrap().unwrap_err();
+        assert!(refused.message.contains("isn't something the node may call"), "{refused}");
     }
 
     #[tokio::test]
