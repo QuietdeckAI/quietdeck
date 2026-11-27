@@ -245,3 +245,19 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   (`json_errors` in `crates/quietdeck-server/src/openapi.rs`). Both found by building a small third-party frontend
   on the client (`examples/inbox`), which is the test worth repeating for any published API. Now: those files and
   `~/Notes/Agents/quietdeck api/example-frontend-findings.md` (27 November, the quietdeck api tab).
+- **Tests that read "now" in a real time zone fail around midnight.** Two summaries tests put activity "30 minutes
+  ago" through the engine with the zone set to Pacific/Auckland, and expected today's hour; from 00:00 to 00:30 NZ
+  time that activity was yesterday's, so the tests (and main's CI, whose deploy job then skipped) failed every night.
+  Fixed by running them in a fixed zone where it's always about noon (`noon_now()` in
+  `crates/quietdeck-node/src/summaries/tests.rs`, ccfd523, 28 November, the quietdeck work tab). Anyone writing a
+  time test: freeze the clock or pick the zone from the current time; never a real zone with a small offset from now.
+- **`gh run list --branch main` lists the Site workflow too.** A watcher that takes the newest run can end up watching
+  the site build instead of CI and report success while CI is still running. Filter by `workflowName == "CI"`
+  (28 November, the quietdeck work tab). Now: this entry.
+- **Documents, Work and the overseer.** How the Work tab is set up: a `work` document written by an overseer agent
+  (`quietdeck-server documents-add --slug work --name Work --tab Work --kind work --writer overseer@<node>` in the deck's
+  container, or Settings > Documents), the runner's `agent.tabs` listing the overseer, `session` in its eligible list,
+  Quietdeck's Fleetlayer plugin with `sessions.watch` and `session.answer` on each node whose prompts should show, and
+  the deck's `/healthz/overseer` in the uptime checker. Now: the overseer skill (`~/.claude/skills/overseer/SKILL.md`),
+  `crates/quietdeck-server/src/overseer.rs`, `crates/quietdeck-types/src/document.rs` (28 November, the quietdeck work
+  tab). The quietdeck docs tab is writing docs/work.md and docs/guides/overseer.md.
