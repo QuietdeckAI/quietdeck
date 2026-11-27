@@ -3,7 +3,7 @@
 Clear your inbox in one pass. Your agents do the work.
 
 An AI agent reads every email and writes you one page: what needs a decision at the top, everything that can just be
-archived at the bottom. You change what you'd do differently and press Approve All. Work goes to the Claude Code
+archived at the bottom. You change what you'd do differently and press Approve All. Work goes to the AI
 session that should handle it, and nothing happens to your mail until you approve it. Source-available (Fair Source,
 FSL-1.1-ALv2: each release becomes Apache 2.0 after two years), early, built in public:
 https://github.com/QuietdeckAI/quietdeck

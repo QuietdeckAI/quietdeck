@@ -1,14 +1,16 @@
-# Run Quietdeck alongside Fleetlayer
+# Run Quietdeck on Fleetlayer
 
-Quietdeck works on its own. Its nodes deliver messages to agent sessions themselves, write their own session
-summaries, and need nothing else. [Fleetlayer](https://fleetlayer.ai/) is a separate product for running agents
-across machines: a node on each machine, plugins, and access rules that decide which agent may message which.
+Quietdeck is designed to run on [Fleetlayer](https://fleetlayer.ai/), and works without it. Fleetlayer runs agents
+across machines: a node on each machine, plugins, and access rules that decide which agent may message which. On top
+of it, Quietdeck's messages go through those access rules, the deck reads Fleetlayer's session summaries, and a
+triage agent on its own Unix user can be woken by a runner that keeps the mail credential in your own user.
 
-This guide is for people who already run Fleetlayer and want the two to share the work. There are three places they
-meet, and each is optional:
+Without Fleetlayer, Quietdeck's nodes deliver messages to agent sessions themselves and write their own session
+summaries, so solo on a laptop, or a deck on a server, needs nothing else. This guide covers the three places the two
+meet. You can set them up one at a time:
 
-- Quietdeck's messages can go out through Fleetlayer, so Fleetlayer's access rules apply to them.
-- The deck can read the session summaries Fleetlayer's summaries plugin writes.
+- Quietdeck's messages go out through Fleetlayer, so Fleetlayer's access rules apply to them.
+- The deck reads the session summaries Fleetlayer's summaries plugin writes.
 - Quietdeck's summaries pick their Claude account from the socket Fleetlayer's Claude accounts plugin serves.
 
 The examples use two machines, `laptop` and `build-server`, and a triage agent in a tab named `email triage` on its

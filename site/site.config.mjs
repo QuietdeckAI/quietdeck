@@ -7,7 +7,7 @@ export const site = {
   url: "https://quietdeck.ai",
   title: "Quietdeck",
   summary:
-    "Quietdeck turns your inbox into one page you clear in a single pass: an AI agent sorts every email into decisions and things to archive, drafts replies, and proposes which Claude Code session should do the work. Nothing happens until you approve it. Start with Quietdeck solo on your own computer, with your Gmail and Claude Code. Source-available (Fair Source, FSL-1.1-ALv2), self-hosted.",
+    "Quietdeck turns your inbox into one page you clear in a single pass: an AI agent sorts every email into decisions and things to archive, drafts replies, and proposes which AI session should do the work. Nothing happens until you approve it. Start with Quietdeck solo on your own computer, with your Gmail and Claude Code. Source-available (Fair Source, FSL-1.1-ALv2), self-hosted.",
   // Working files that stay in the repo only. An entry ending in "/" leaves out a whole folder.
   unpublished: ["guides-to-write", "drafts/"],
 };
@@ -34,7 +34,7 @@ export const pages = [
   { file: "guides/matrix-source", group: "Guides", label: "Matrix messages" },
   { file: "guides/move-a-session", group: "Guides", label: "Move a session to another machine" },
   { file: "guides/propose-approve", group: "Guides", label: "Agents propose, you approve" },
-  { file: "guides/with-fleetlayer", group: "Guides", label: "Alongside Fleetlayer" },
+  { file: "guides/with-fleetlayer", group: "Guides", label: "On Fleetlayer" },
   { file: "configuration", group: "Reference", label: "Configuration" },
   { file: "leases", group: "Reference", label: "Leases" },
   { file: "orchestrators", group: "Reference", label: "Orchestrators" },
