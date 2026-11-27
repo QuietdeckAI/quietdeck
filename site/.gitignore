@@ -9,3 +9,5 @@ public/guides/
 public/llms.txt
 public/llms-full.txt
 public/install.sh
+.openapi.json
+public/api/

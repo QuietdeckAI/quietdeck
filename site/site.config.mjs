@@ -35,6 +35,7 @@ export const pages = [
   { file: "guides/move-a-session", group: "Guides", label: "Move a session to another machine" },
   { file: "guides/propose-approve", group: "Guides", label: "Agents propose, you approve" },
   { file: "guides/with-fleetlayer", group: "Guides", label: "On Fleetlayer" },
+  { file: "api", group: "Reference", label: "API" },
   { file: "configuration", group: "Reference", label: "Configuration" },
   { file: "leases", group: "Reference", label: "Leases" },
   { file: "orchestrators", group: "Reference", label: "Orchestrators" },

@@ -82,9 +82,32 @@ function rewriteLinks(body, file, toUrl) {
     .join("\n");
 }
 
+// Boolean schemas inside properties, items and the like, as {} (true) or { not: {} } (false).
+function withoutBooleanSchemas(node, key) {
+  if (Array.isArray(node)) return node.map((v) => withoutBooleanSchemas(v));
+  if (node && typeof node === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(node)) {
+      if (typeof v === "boolean" && key === "properties") out[k] = v ? {} : { not: {} };
+      else if (typeof v === "boolean" && ["items", "additionalProperties", "schema"].includes(k)) out[k] = v ? {} : { not: {} };
+      else out[k] = withoutBooleanSchemas(v, k);
+    }
+    return out;
+  }
+  return node;
+}
+
 async function main() {
   await rm(contentDir, { recursive: true, force: true });
   await mkdir(contentDir, { recursive: true });
+
+  // The API reference reads a copy of ../api/openapi.json in which boolean schemas (`true`, valid OpenAPI 3.1) become
+  // `{}`, which starlight-openapi can render. The copy is gitignored; astro.config.mjs points the plugin at it.
+  await writeFile(join(siteDir, ".openapi.json"), JSON.stringify(withoutBooleanSchemas(JSON.parse(await readFile(join(repoDir, "api/openapi.json"), "utf8"))), null, 1));
+
+  // The spec itself, as published, at /api/openapi.json.
+  await mkdir(join(publicDir, "api"), { recursive: true });
+  await copyFile(join(repoDir, "api/openapi.json"), join(publicDir, "api/openapi.json"));
 
   // The installer lives at the repo root (one source); the site serves a copy at /install.sh.
   await rm(join(publicDir, "install.sh"), { force: true });

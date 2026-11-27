@@ -3,10 +3,19 @@
 const PAGE_TITLE_ID = "_top"; // Starlight's id for the page title (not exported)
 
 const { entry, id } = Astro.locals.starlightRoute;
-const markdown = id ? `/${id.replace(/\/$/, "")}.md` : null;
+// The API reference's pages are generated from the OpenAPI spec and have no Markdown copy: they link the spec instead.
+const api = id?.startsWith("api/v1");
+const markdown = id && !api ? `/${id.replace(/\/$/, "")}.md` : null;
 ---
 
 <h1 id={PAGE_TITLE_ID}>{entry.data.title}</h1>
+{api && (
+  <p class="as-markdown">
+    <a href="/api/openapi.json">The OpenAPI spec (JSON)</a>
+    <span aria-hidden="true">·</span>
+    <a href="/api/">Licence, versions and sign-in</a>
+  </p>
+)}
 {markdown && (
   <p class="as-markdown">
     <a href={markdown}>View as Markdown</a>
