@@ -309,7 +309,7 @@ function PasskeyRow({ passkey, onlyOne, onChange }: { passkey: PasskeyInfo; only
             rename.mutate();
           }}
         >
-          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} autoFocus required />
+          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} autoFocus required aria-label="Passkey name" />
           <Button type="submit" size="md" loading={rename.isPending} aria-label="Save the name">
             <Check aria-hidden />
           </Button>

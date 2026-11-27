@@ -112,7 +112,7 @@ test("Settings lists the passkey, renames it and makes enrolment codes", async (
   ).toBeDisabled();
 
   await page.getByRole("button", { name: "Rename Test laptop" }).click();
-  await page.getByRole("textbox").fill("Work laptop");
+  await page.getByRole("textbox", { name: "Passkey name" }).fill("Work laptop");
   await page.getByRole("button", { name: "Save the name" }).click();
   await expect(page.getByText("Work laptop")).toBeVisible();
 
