@@ -1,6 +1,6 @@
 //! Starting, resuming and closing sessions from the deck (the registry's actions, flow 3.15). The request is the
-//! approval: the owner's click, or a command run by one of the owner's sessions. Each is logged in History. The
-//! target machine's node checks it and has herdr do it.
+//! approval: the owner's click, or a command run by one of the owner's sessions, except the triage agent's (it proposes
+//! with a card instead). Each is logged in History. The target machine's node checks it and has herdr do it.
 
 use std::time::Duration;
 
@@ -42,8 +42,24 @@ pub(crate) async fn ask(
     reply.into_result::<serde_json::Value>().map_err(AppError::Conflict)
 }
 
+/// A session a runner works for (the triage agent, which reads untrusted mail) only proposes sessions, with a
+/// `new_session` or `resume` card the person approves; the runner then starts it. Every other session, the owner and
+/// runners start them directly.
+async fn may_start_directly(state: &AppState, caller: &Caller) -> AppResult<()> {
+    let Caller::Session { session } = caller else { return Ok(()) };
+    if crate::store::nodes::runner_for_agent(&state.db, &session.node, &session.tab).await?.is_some() {
+        return Err(AppError::Forbidden(format!(
+            "{} reads untrusted mail, so it proposes sessions instead of starting them: post a card with a \
+             new_session or resume action, and the runner starts it once the person approves",
+            session.address()
+        )));
+    }
+    Ok(())
+}
+
 pub async fn start(state: &AppState, caller: &Caller, mut spec: SessionStart) -> AppResult<SessionStarted> {
     spec.validate().map_err(bad)?;
+    may_start_directly(state, caller).await?;
     // A start from a handoff continues the session that wrote it (the move-session skill).
     let handoff = match spec.handoff.take() {
         Some(id) => Some(crate::handoffs::unclaimed(&state.db, id).await?),
@@ -105,6 +121,7 @@ async fn ended_session(state: &AppState, address: &str) -> AppResult<SessionRow>
 
 pub async fn resume(state: &AppState, caller: &Caller, target: SessionTarget) -> AppResult<SessionStarted> {
     target.validate().map_err(bad)?;
+    may_start_directly(state, caller).await?;
     let row = ended_session(state, &target.session).await?;
     let cwd = row.info.cwd.clone().ok_or_else(|| {
         AppError::Conflict(format!("{} has no working directory on record, so it can't be resumed here", row.address()))
@@ -223,6 +240,29 @@ mod tests {
 
     fn owner() -> Caller {
         Caller::Owner { device: "laptop".into() }
+    }
+
+    #[tokio::test]
+    async fn the_triage_agent_proposes_sessions_instead_of_starting_them() {
+        let state = AppState::for_tests().await;
+        sqlx::query("INSERT INTO nodes (name, token_hash, created_at) VALUES ('box', 'h-box', 0)")
+            .execute(&state.db)
+            .await
+            .unwrap();
+        let info = quietdeck_types::node::RunnerInfo { eligible: vec![], agent_tab: "triage".into(), accounts: vec![] };
+        crate::store::nodes::hello(&state.db, "box", "test", Some(&info)).await.unwrap();
+        let triage =
+            Caller::Session { session: SessionRef { node: "box".into(), tab: "triage".into(), session_id: None } };
+        let spec: SessionStart =
+            serde_json::from_value(serde_json::json!({"on": "box", "tab": "x", "cwd": "/tmp", "agent": "claude"}))
+                .unwrap();
+        let e = start(&state, &triage, spec.clone()).await.unwrap_err();
+        assert!(matches!(e, AppError::Forbidden(ref m) if m.contains("new_session")), "{e:?}");
+        let e = resume(&state, &triage, SessionTarget { session: "old@box".into() }).await.unwrap_err();
+        assert!(matches!(e, AppError::Forbidden(_)), "{e:?}");
+        // Another session on the same machine isn't stopped by this check (it fails later: box isn't connected).
+        let other = Caller::Session { session: SessionRef { node: "box".into(), tab: "api".into(), session_id: None } };
+        assert!(!matches!(start(&state, &other, spec).await, Err(AppError::Forbidden(_))));
     }
 
     /// Answer the next request the node gets, and return it.
