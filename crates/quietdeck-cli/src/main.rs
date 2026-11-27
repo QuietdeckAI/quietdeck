@@ -154,7 +154,9 @@ enum Command {
     /// `<Default cards="c_1 c_2">forward both to ads, then archive</Default>` shows a default with Change this, and
     /// Approve All approves its cards unless the person changed it. `<Ask id="signin" options="Yes|No">Was this
     /// you?</Ask>` asks a question (add `other` for an Other box, and `cards="c_1"` when it's about cards: the answer
-    /// joins the thread of the default that names them); answers come to you as messages.
+    /// joins the thread of the default that names them); answers come to you as messages. With no `options`,
+    /// `<Ask id="budget">How much can I spend?</Ask>` is a question panel: he answers in words in its own thread,
+    /// you reply there (`report reply budget "…"`), and Approve All passes it by.
     Report {
         #[command(subcommand)]
         command: ReportCommand,

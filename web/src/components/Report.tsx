@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Markdown as Render } from "markdown-to-jsx/react";
-import { Check, Loader2, MessageSquare, Square, Undo2 } from "lucide-react";
+import { Check, CircleHelp, Loader2, MessageSquare, Square, Undo2 } from "lucide-react";
 import { Children, createContext, Fragment, isValidElement, type ReactNode, use, useEffect, useRef, useState } from "react";
 import { useInfo } from "@/components/AccountTabs";
 import { EmailMenu } from "@/components/EmailMenu";
@@ -349,7 +349,7 @@ function Bubble({ answer, pending }: { answer?: ReportAnswer; pending?: string }
           mine ? "rounded-br-sm bg-accent/15" : "rounded-bl-sm bg-paper-3 [&_code]:bg-paper",
         )}
       >
-        {answer?.kind === "choice" && <span className="block text-xs text-muted">{answer.about}</span>}
+        {answer?.kind === "choice" && answer.cards && <span className="block text-xs text-muted">{answer.about}</span>}
         {mine ? (pending ?? answer?.value) : <Render options={CHAT_OPTIONS}>{answer?.value ?? ""}</Render>}
       </span>
       <span className="mt-0.5 px-1 text-xs text-neutral">
@@ -752,7 +752,19 @@ function SnapshotDefault({ id, cards, children }: { id?: string; cards?: string;
 /** A question in a snapshot, with his answer. */
 function SnapshotAsk({ id, children }: { id?: string; children?: ReactNode }) {
   const { report } = useReport();
-  const answered = latest(report.answers, id ?? text(children).trim());
+  const key = id ?? text(children).trim();
+  const answered = latest(report.answers.filter((a) => a.kind === "choice"), key);
+  const thread = report.answers.filter((a) => a.control === key && (a.kind === "choice" || a.kind === "reply"));
+  if (thread.length > 1 || thread.some((a) => a.kind === "reply")) {
+    return (
+      <span className="report-default report-question rounded-md border border-rule bg-paper-2 py-1 pr-1 pl-3">
+        <span className="text-ink">{children}</span>
+        <span className="mt-1.5 mb-1 flex flex-col gap-2 pr-1">
+          <ThreadItems thread={thread} ownKey={key} ownLabel={key} />
+        </span>
+      </span>
+    );
+  }
   return (
     <span className="report-ask">
       <span>{children}</span>{" "}
@@ -782,11 +794,29 @@ function Ask({
   cards?: string;
   children?: ReactNode;
 }) {
+  const choices = (options ?? "").split("|").map((o) => o.trim()).filter(Boolean);
+  if (choices.length === 0) return <QuestionPanel id={id}>{children}</QuestionPanel>;
+  return <ChoiceAsk id={id} choices={choices} other={other} cards={cards}>{children}</ChoiceAsk>;
+}
+
+/** An `<Ask>` with options: a button per option, Other, and the agent's replies to his answer under it. */
+function ChoiceAsk({
+  id,
+  choices,
+  other,
+  cards,
+  children,
+}: {
+  id?: string;
+  choices: string[];
+  other?: unknown;
+  cards?: string;
+  children?: ReactNode;
+}) {
   const { report, kept } = useReport();
   const control = id ?? text(children).trim();
   const about = text(children).trim();
-  const choices = (options ?? "").split("|").map((o) => o.trim()).filter(Boolean);
-  const answered = latest(report.answers, control);
+  const answered = latest(report.answers.filter((a) => a.kind === "choice"), control);
   const keptKey = `ask:${control}`;
   const otherOpen = kept.open.has(keptKey);
   const setOtherOpen = (on: boolean) => kept.setOpen(keptKey, on);
@@ -817,6 +847,7 @@ function Ask({
     setSending(null);
   };
   const shown = sending ?? answered?.value;
+  const replies = report.answers.filter((a) => a.control === control && a.kind === "reply");
   const otherOn = other !== undefined && other !== false && other !== "false";
   return (
     <span className="report-ask relative">
@@ -881,6 +912,98 @@ function Ask({
           </Button>
         </span>
       )}
+      {replies.length > 0 && (
+        <span className="mt-1.5 flex flex-col gap-2">
+          {replies.map((a) => (
+            <Bubble key={a.id} answer={a} />
+          ))}
+        </span>
+      )}
+      {send.error && <span className="block text-sm text-danger">{send.error.message}</span>}
+    </span>
+  );
+}
+
+/** Whether an `<Ask>` still waits for him: it has no answer from him yet. */
+export function unansweredAsks(report: Report): string[] {
+  const out: string[] = [];
+  for (const m of report.markdown.matchAll(/<Ask\b([^>]*)>([\s\S]*?)<\/Ask>/g)) {
+    const key = /\bid="([^"]*)"/.exec(m[1] ?? "")?.[1] ?? (m[2] ?? "").trim();
+    if (!report.answers.some((a) => a.control === key && a.kind === "choice")) out.push(key);
+  }
+  return out;
+}
+
+/**
+ * `<Ask id="budget">How much can I spend on the venue?</Ask>` with no options: a question panel. The question with a
+ * thread of its own, always open, where he answers in words and the agent replies. No approve check: Approve All
+ * passes it by, and the agent takes it out or rewrites it once it's settled.
+ */
+function QuestionPanel({ id, children }: { id?: string; children?: ReactNode }) {
+  const { report, kept } = useReport();
+  const about = text(children).trim();
+  const key = id ?? about;
+  const keptKey = `ask:${key}`;
+  const draft = kept.notes[keptKey] ?? "";
+  const setDraft = (t: string) => kept.setNote(keptKey, t);
+  const caret = useKeptCaret(keptKey);
+  const send = useAnswer();
+  const undoWindow = useUndoWindow();
+  const [sending, setSending] = useState<string | null>(null);
+  const thread = report.answers.filter((a) => a.control === key && (a.kind === "choice" || a.kind === "reply"));
+  const lastMine = thread.filter((a) => a.kind !== "reply").at(-1);
+  const newest = thread.at(-1);
+  const tab = report.posted_by.tab;
+  const submit = () => {
+    const value = draft.trim();
+    if (!value) return;
+    setSending(value);
+    setDraft("");
+    undoWindow.start(() =>
+      send.mutate(
+        { report_id: report.id, report_version: report.version, control: key, kind: "choice", about, value },
+        { onSettled: () => setSending(null), onError: () => setDraft(value) },
+      ),
+    );
+  };
+  const undo = () => {
+    undoWindow.cancel();
+    if (sending !== null) {
+      setDraft(sending);
+      caret.focusAtEnd(sending.length);
+    }
+    setSending(null);
+  };
+  return (
+    <span className="report-default report-question relative rounded-md border border-accent/40 bg-paper-2 py-1.5 pr-1.5 pl-3">
+      <span className="flex items-start gap-2">
+        <CircleHelp aria-hidden className="mt-[3px] size-4 shrink-0 text-accent" />
+        <span className="min-w-0 flex-1 text-ink">{children}</span>
+        {lastMine && <span className="mt-0.5 shrink-0 text-xs text-neutral">Answered</span>}
+      </span>
+      <ThreadMessages thread={thread} ownKey={key} ownLabel={about} pending={sending} />
+      {lastMine && !sending && newest?.kind !== "reply" && <ChatStatus answer={lastMine} />}
+      <span className="mt-2 mb-0.5 flex flex-col gap-2 sm:flex-row sm:items-end">
+        <Textarea
+          rows={1}
+          {...caret.props}
+          value={draft}
+          maxLength={4000}
+          placeholder={thread.length > 0 ? `Reply to ${tab}` : "Your answer"}
+          aria-label={`Answer to: ${about}`}
+          disabled={undoWindow.pending}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={enterSends(() => draft.trim() && !undoWindow.pending && submit())}
+          className="bg-paper py-[9px] text-sm leading-5"
+        />
+        {undoWindow.pending ? (
+          <UndoButton onClick={undo} label={`Undo the answer to: ${about}`} />
+        ) : (
+          <Button size="sm" loading={send.isPending} disabled={!draft.trim()} onClick={submit} className="h-10 shrink-0">
+            Send
+          </Button>
+        )}
+      </span>
       {send.error && <span className="block text-sm text-danger">{send.error.message}</span>}
     </span>
   );

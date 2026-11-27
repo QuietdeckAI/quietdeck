@@ -6,6 +6,8 @@
 //! - `<Ask id="signin" options="Yes|No">Was this you?</Ask>` shows the question with a button per option, and with
 //!   `other` an Other box too. The answer goes straight to the agent. With `cards="c_1"` it's about those cards,
 //!   and the answer also shows in the thread of the default that names them.
+//! - `<Ask id="budget">How much can I spend on the venue?</Ask>`, with no `options`, is a question panel: the question
+//!   with its own chat thread, which he answers in words. It has no approve check, and Approve All passes it by.
 //!
 //! Everything else is Markdown; raw HTML shows as text.
 
@@ -291,7 +293,27 @@ pub fn card_ids(cards: &str) -> Vec<i64> {
         .collect()
 }
 
-/// One attribute's value from a tag's attribute text: `name="value"`.
+/// Each `<Ask>`'s key (its `id`, else its text) and whether it's a question panel (no `options`: answered in words, in
+/// a thread of its own).
+pub fn ask_keys(markdown: &str) -> Vec<(String, bool)> {
+    let mut out = vec![];
+    let mut rest = markdown;
+    while let Some(at) = rest.find("<Ask") {
+        rest = &rest[at + "<Ask".len()..];
+        if !rest.starts_with(|c: char| c.is_whitespace() || c == '>') {
+            continue;
+        }
+        let Some(end) = rest.find('>') else { break };
+        let attrs = &rest[..end];
+        let body = &rest[end + 1..];
+        let text = body.find("</Ask>").map(|c| body[..c].trim()).unwrap_or_default();
+        let key = attr(attrs, "id").map(str::to_string).unwrap_or_else(|| text.to_string());
+        out.push((key, attr(attrs, "options").is_none_or(|o| o.trim().is_empty())));
+        rest = &rest[end..];
+    }
+    out
+}
+
 /// A `<Default>` written flush left right after a numbered item (with or without a blank line between) belongs to
 /// that item: it's indented to the item's text, with no blank line, so the Inbox draws it inside the item. Written the
 /// other way it renders as a group's Default, flush left with a gap above (the triage agent did that on 27 Nov 2026,
@@ -336,6 +358,7 @@ fn numbered_item_width(line: &str) -> Option<usize> {
     rest.strip_prefix(". ").map(|_| digits + 2)
 }
 
+/// One attribute's value from a tag's attribute text: `name="value"`.
 fn attr<'a>(attrs: &'a str, name: &str) -> Option<&'a str> {
     let mut rest = attrs;
     while let Some(at) = rest.find(name) {
@@ -380,6 +403,16 @@ mod tests {
         let group = "1. **One:** text.\n   <Default cards=\"c_1\">Archive</Default>\n\n\
                      <Default id=\"keep\" cards=\"c_6 c_7\">Keep in inbox</Default>\n";
         assert_eq!(item_defaults_indented(group), group);
+    }
+
+    #[test]
+    fn asks_are_keyed_and_question_panels_have_no_options() {
+        let md = "<Ask id=\"me\" options=\"Yes|No\">Was this you?</Ask>\n<Ask id=\"budget\">How much?</Ask>\n\
+                  <Ask>What next?</Ask>\n<Asking>not a tag</Asking>";
+        assert_eq!(
+            ask_keys(md),
+            vec![("me".to_string(), false), ("budget".to_string(), true), ("What next?".to_string(), true)]
+        );
     }
 
     #[test]

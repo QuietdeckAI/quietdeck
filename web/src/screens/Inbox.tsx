@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAccount } from "@/components/AccountTabs";
 import { ApproveAllBar } from "@/components/ApproveAllBar";
 import { notify } from "@/lib/notes";
-import { changedKeys, ReportBody, ReportChatBox, reportDefaults, TriageNotes, triageNotes } from "@/components/Report";
+import { changedKeys, ReportBody, ReportChatBox, reportDefaults, TriageNotes, triageNotes, unansweredAsks } from "@/components/Report";
 import { ReportMeta, ReportToasts, UpdatedAt } from "@/components/ReportMeta";
 import { SoloHealthStack } from "@/components/SoloHealth";
 import { TimelineRow } from "@/components/TimelineRow";
@@ -242,7 +242,7 @@ function ReportScreen({
   const notes = triageNotes(report.markdown);
   const allDone =
     report.finished ||
-    (named.every(finished) && !/<Ask\b/.test(report.markdown) && report.cards_not_in_report.length === 0);
+    (named.every(finished) && unansweredAsks(report).length === 0 && report.cards_not_in_report.length === 0);
   // "rolling" slides and fades the parts away; "gone" then removes them, so the space closes. A report that's already
   // done when the page opens (or when a new one arrives done) shows "All done." at once, without the roll.
   const [rolled, setRolled] = useState<"no" | "rolling" | "gone">(() => (allDone ? "gone" : "no"));

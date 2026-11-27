@@ -366,12 +366,17 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
         .as_deref()
         .map(str::trim)
         .filter(|c| a.kind == AnswerKind::Choice && !quietdeck_types::report::card_ids(c).is_empty());
+    // A question panel (an `<Ask>` with no options) is answered in words, in a thread of its own.
+    let panel = a.kind == AnswerKind::Choice
+        && quietdeck_types::report::ask_keys(&r.markdown).iter().any(|(k, free)| *free && k == &a.control);
     // A default's messages are a thread: a later one continues the conversation.
     let (earlier,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM report_answers WHERE report_id = ? AND control = ? AND kind IN ('change', 'reply')",
+        "SELECT COUNT(*) FROM report_answers WHERE report_id = ? AND control = ? \
+         AND (kind IN ('change', 'reply') OR (? AND kind = 'choice'))",
     )
     .bind(r.id)
     .bind(&a.control)
+    .bind(panel)
     .fetch_one(&state.db)
     .await?;
     let id: (i64,) = sqlx::query_as(
@@ -390,6 +395,17 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
     .await?;
     let to = SessionRef { node: r.posted_node, tab: r.posted_tab, session_id: None };
     let body = match a.kind {
+        AnswerKind::Choice if panel => format!(
+            "On the report (version {}), his answer to the question \"{}\" [{}]: {value}\n\nIt's in the question's \
+             own thread{}. Act on it, update the report where it changes things (take the question out, or rewrite it, \
+             once it's settled), and answer him in that thread: `quietdeck report reply '{}' \"…\"` (what you did, or \
+             what you still need to know).",
+            a.report_version,
+            a.about.trim(),
+            a.control,
+            if earlier > 0 { ", continuing the conversation there (`quietdeck report show` lists it)" } else { "" },
+            a.control
+        ),
         AnswerKind::Choice => match cards {
             Some(cards) => format!(
                 "On the report (version {}), \"{}\" [{}]: {value}\n\nThe question is about {cards}, so the Inbox shows \
@@ -473,13 +489,16 @@ pub async fn reply(state: &AppState, req: ReportReply) -> AppResult<Report> {
     };
     let to = req.to.trim();
     let keys = quietdeck_types::report::default_keys(&r.markdown);
-    let control = if keys.iter().any(|(k, _)| k == to) || to.starts_with("cards:") {
+    let asks = quietdeck_types::report::ask_keys(&r.markdown);
+    let control = if keys.iter().any(|(k, _)| k == to) || asks.iter().any(|(k, _)| k == to) || to.starts_with("cards:")
+    {
         to.to_string()
     } else if !quietdeck_types::report::card_ids(to).is_empty() {
         format!("cards:{to}")
     } else {
         return Err(AppError::BadRequest(format!(
-            "no default {to:?} in the report: give the [key] from his message (cards:c_12, archive-all) or a card (c_12)"
+            "no default or question {to:?} in the report: give the [key] from his message (cards:c_12, archive-all, a \
+             question's id) or a card (c_12)"
         )));
     };
     let now = now_ms();
@@ -747,6 +766,49 @@ mod tests {
         let mut took = a.cards.clone();
         took.sort_unstable();
         assert_eq!(took, vec![ids[0], ids[1]], "the changed default's card isn't approved");
+    }
+
+    #[tokio::test]
+    async fn approve_all_passes_question_panels_by_and_the_agent_replies_in_their_thread() {
+        let state = AppState::for_tests().await;
+        let input: quietdeck_types::card::CardInput = serde_json::from_value(serde_json::json!({"account": "personal",
+            "thread_key": "t1", "subject": "s", "summary": "x", "section": "actions", "reason": "r",
+            "actions": [{"type": "archive", "account": "personal", "thread_id": "t1"}]}))
+        .unwrap();
+        let card = crate::store::cards::add(&state.db, &me(), &input, quietdeck_types::card::CardState::Open, None)
+            .await
+            .unwrap()
+            .card;
+        let md = format!(
+            "1. One\n   <Default cards=\"c_{id}\">Archive</Default>\n2. Venue\n   \
+             <Ask id=\"budget\">How much can I spend?</Ask>\n\n<Ask id=\"me\" options=\"Yes|No\">Was this you?</Ask>\n",
+            id = card.id
+        );
+        let r =
+            super::set(&state, &me(), ReportSet { markdown: md, base: None, new: true, change: None }).await.unwrap();
+        answer(
+            &state,
+            quietdeck_types::report::ReportAnswerAdd {
+                report_id: r.id,
+                report_version: r.version,
+                control: "budget".into(),
+                kind: AnswerKind::Choice,
+                about: "How much can I spend?".into(),
+                value: "Up to $2k".into(),
+                cards: None,
+            },
+        )
+        .await
+        .unwrap();
+        let r = reply(&state, ReportReply { to: "budget".into(), text: "Booked at $1.8k".into() }).await.unwrap();
+        let thread: Vec<_> = r.answers.iter().filter(|a| a.control == "budget").map(|a| a.kind).collect();
+        assert_eq!(thread, vec![AnswerKind::Choice, AnswerKind::Reply]);
+        let bad = reply(&state, ReportReply { to: "nope".into(), text: "x".into() }).await.unwrap_err();
+        assert!(bad.to_string().contains("question"), "{bad}");
+        let req =
+            quietdeck_types::decision::ApproveReport { report_id: r.id, report_version: r.version, timeline: vec![] };
+        let a = crate::ops::approve_report(&state, req).await.unwrap();
+        assert_eq!(a.cards, vec![card.id], "the default's card, and nothing for either question");
     }
 
     #[tokio::test]
