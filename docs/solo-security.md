@@ -12,6 +12,15 @@ replying to you in the Inbox, and reading what happened since its last round. Me
 sessions aren't allowed. Claude Code runs it with `--permission-mode dontAsk`, so anything else is refused rather than
 waiting for an answer nobody would give, and with none of your other MCP servers or tools.
 
+### Why the agent is Claude Code, not Codex
+
+Solo refuses Codex as the agent for now. Codex can run without approvals only inside its sandbox, and on macOS that
+sandbox blocks the socket the `quietdeck` command uses unless its network access is turned on. With the network on,
+the agent's shell can also reach the internet (tested 27 November 2026 with codex-cli 0.166.0: a `curl` from it got
+through), and Codex has no way to limit it to one command the way Claude Code's permission rules do. An email could
+then talk the agent into sending what it read to someone else's server. Solo will offer Codex once it can be limited
+to the `quietdeck` command, or its sandbox can allow the socket without the network.
+
 ## Mail arrives marked as untrusted
 
 Each email reaches the agent between `<email>` tags, after a line saying it's untrusted input and not to follow
