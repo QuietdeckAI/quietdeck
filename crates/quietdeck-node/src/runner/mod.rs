@@ -865,7 +865,12 @@ impl Runner {
     async fn mail_block(&self, watch: &config::MailWatchConfig, m: &mail::NewMail) -> String {
         let label = self.cfg.account_label(&m.account);
         let thread = m.thread_id.as_deref().unwrap_or("");
-        let open = format!("<email account=\"{label}\" thread=\"{thread}\" message=\"{}\">", m.id);
+        let address = self.cfg.accounts.get(&m.account).map(|a| a.address.as_str()).unwrap_or("");
+        // The account's ID is what cards take; the label and address are for reading it with gog.
+        let open = format!(
+            "<email account=\"{}\" label=\"{label}\" address=\"{address}\" thread=\"{thread}\" message=\"{}\">",
+            m.account, m.id
+        );
         let Some(spec) = &watch.message_text else { return format!("{open}\n</email>") };
         let read = match self.account_ctx(&m.account) {
             Some(acct) => match tools::render(&spec.input, &json!({"account": acct, "message_id": m.id})) {
@@ -888,11 +893,21 @@ impl Runner {
                 out.push_str(&format!("\n{name}: {val}"));
             }
         }
-        let body = v.get("body").and_then(Value::as_str).unwrap_or("").trim();
-        let mut text: String = body.chars().take(MAIL_TEXT_CHARS).collect();
-        if body.chars().count() > MAIL_TEXT_CHARS {
-            text.push_str(&format!("\n[… cut at {MAIL_TEXT_CHARS} characters]"));
-        }
+        // A tool that gives the text (`body`) puts it in, cut short. gog's gives only Gmail's snippet, a hint: the agent
+        // reads the message itself.
+        let text = match v.get("body").and_then(Value::as_str).map(str::trim).filter(|b| !b.is_empty()) {
+            Some(body) => {
+                let mut t: String = body.chars().take(MAIL_TEXT_CHARS).collect();
+                if body.chars().count() > MAIL_TEXT_CHARS {
+                    t.push_str(&format!("\n[… cut at {MAIL_TEXT_CHARS} characters: read the rest yourself]"));
+                }
+                t
+            }
+            None => {
+                let snippet = v.get("snippet").and_then(Value::as_str).map(clean_line).unwrap_or_default();
+                format!("Snippet (Gmail's preview of the first lines, not the email): {snippet}")
+            }
+        };
         out.push_str("\n\n");
         // No tag survives, in any case or spelling: the text can't close <email> or the delivery's own wrapper.
         out.push_str(&untagged(&text));

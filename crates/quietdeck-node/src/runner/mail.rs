@@ -196,7 +196,8 @@ impl MailState {
         }
         if !self.mail_text.is_empty() {
             text.push_str(&format!(
-                "\n\nThe new mail follows, one <email> each. {}\n\n{}",
+                "\n\nThe new mail follows, one <email> each: who it's from and what it's about. Read every thread \
+                 in full yourself before deciding anything about it. {}\n\n{}",
                 quietdeck_types::relay::UNTRUSTED_LINE,
                 self.mail_text.join("\n\n")
             ));
@@ -466,10 +467,16 @@ pub async fn check(cfg: &RunnerConfig, watch: &MailWatchConfig, tools: &dyn Tool
             }
         }
         if let Some(spec) = &watch.inbox {
-            for pair in inbox_left(watch, spec, tools, state, id, &acct).await {
-                if !left.contains(&pair) {
-                    left.push(pair);
+            match inbox_left(watch, spec, tools, state, id, &acct).await {
+                Ok(pairs) => {
+                    for pair in pairs {
+                        if !left.contains(&pair) {
+                            left.push(pair);
+                        }
+                    }
                 }
+                // Mail still arrives, but archives made in Gmail itself go unnoticed: status says so.
+                Err(e) => errors.push(format!("{}: listing the inbox: {e}", cfg.account_label(id))),
             }
         }
         found.extend(seen);
@@ -492,13 +499,13 @@ async fn inbox_left(
     state: &mut MailState,
     id: &str,
     acct: &Value,
-) -> Vec<(String, String)> {
+) -> Result<Vec<(String, String)>, String> {
     let every = super::config::parse_duration(&watch.inbox_every).unwrap_or(std::time::Duration::from_secs(300));
     let now = Timestamp::now();
     if let Some(last) = state.inbox.get(id)
         && now.duration_since(last.at).unsigned_abs() < every
     {
-        return vec![];
+        return Ok(vec![]);
     }
     let listed = match render(&spec.input, &json!({"account": acct})) {
         Ok(input) => tools.call(spec, input).await,
@@ -508,16 +515,16 @@ async fn inbox_left(
         Ok(v) => v,
         Err(e) => {
             tracing::warn!(account = %id, error = %e, "listing the inbox");
-            return vec![];
+            return Err(e);
         }
     };
     if v.get("nextPageToken").and_then(Value::as_str).is_some_and(|p| !p.is_empty()) {
         tracing::warn!(account = %id, "the inbox listing stopped part way: keeping the last one");
-        return vec![];
+        return Ok(vec![]);
     }
     let Some(list) = v.get("threads").and_then(Value::as_array) else {
         tracing::warn!(account = %id, "the inbox listing has no threads list: keeping the last one");
-        return vec![];
+        return Err("the inbox listing had no threads list".into());
     };
     let threads: BTreeSet<String> =
         list.iter().filter_map(|t| t.get("id").and_then(Value::as_str)).map(str::to_string).collect();
@@ -529,7 +536,7 @@ async fn inbox_left(
         tracing::info!(account = %id, left = left.len(), "threads left the inbox since the last listing");
     }
     state.inbox.insert(id.to_string(), InboxListing { at: now, threads });
-    left
+    Ok(left)
 }
 
 async fn profile(watch: &MailWatchConfig, tools: &dyn Tools, acct: &Value) -> Result<String, String> {

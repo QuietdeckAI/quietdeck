@@ -6,7 +6,7 @@ The settings file and commands of [Quietdeck solo](solo.md).
 
 | Command | What it does |
 |---|---|
-| `quietdeck-solo init` | Writes `solo.yaml` and the agent's instructions. `--account id=address` (repeatable; default: every account gog is signed in to), `--port`, `--model`, `--actions` (below), `--force` to replace existing files. |
+| `quietdeck-solo init` | Writes `solo.yaml` and the agent's instructions. `--account id=address` (repeatable; default: every account gog is signed in to), `--port`, `--model`, `--actions` and `--restricted` (below), `--force` to replace existing files. |
 | `quietdeck-solo install` | Runs solo as a service that starts at login (launchd on macOS, systemd `--user` on Linux), after checking the settings. `--no-start` writes the service file only. Run it again after changing settings, moving the program or changing PATH. |
 | `quietdeck-solo uninstall` | Stops the service and removes its file. Settings and data stay. |
 | `quietdeck-solo run` | Runs solo in the terminal: what the service runs. |
@@ -29,7 +29,9 @@ agent:
     model: sonnet                # optional: claude --model
     bin: claude                  # optional: where Claude Code is
     turn_timeout: 15m            # optional: the longest one round may take
-    allowed_tools:               # optional: what the agent may run (the default below)
+    cwd: ~/somewhere             # optional: where its rounds run (default: <data folder>/agent)
+    restricted: false            # optional: true limits it to the quietdeck command (security page)
+    allowed_tools:               # restricted mode only: what it may run (the default below)
       - Bash(quietdeck whoami:*)
       - Bash(quietdeck card:*)
       # … one rule per quietdeck subcommand
@@ -42,9 +44,12 @@ actions: [archive, mark_read, label, draft]   # optional: what may run once you 
 - **`actions`**: what the runner carries out once you approve it. An approved action that isn't listed goes back to
   the agent instead of running. `[draft]` is a safe way to try solo: nothing in your mailbox changes except new
   drafts.
-- **`agent.headless.allowed_tools`**: Claude Code permission rules. The default allows `quietdeck` with `whoami`,
-  `card`, `cards`, `report`, `round`, `chat`, `decisions`, `action`, `actions` and `history`. A bare `Bash` (anything
-  at all) is refused. Think before adding to it: the agent reads mail from strangers.
+- **`agent.headless.restricted`**: off by default, so the agent runs as your own Claude Code with full access
+  (permissions skipped, your settings and MCP servers). On, it may run only `allowed_tools`, with no MCP servers. See
+  [Quietdeck solo and your security](solo-security.md).
+- **`agent.headless.allowed_tools`** (restricted mode only): Claude Code permission rules. The default allows
+  `quietdeck` with `whoami`, `card`, `cards`, `report`, `round`, `chat`, `decisions`, `action`, `actions` and
+  `history`. A rule that allows any command, or any quietdeck subcommand, is refused.
 
 ## Files
 
@@ -55,7 +60,7 @@ actions: [archive, mark_read, label, draft]   # optional: what may run once you 
 | `~/.local/share/quietdeck/solo/` | The Inbox's database, solo's own node token and the browser sign-in sessions (mode 700). `QUIETDECK_SOLO_DATA` moves it. |
 | `~/.local/state/quietdeck/runner-mail.json` | Where the mail watch got to in each mailbox, so a restart carries on from there. |
 | `~/.local/state/quietdeck/headless-agent.json` | The agent's Claude Code conversation, resumed each round. |
-| `~/.local/share/quietdeck/agent/` | The folder the agent's rounds run in. |
+| `~/.local/share/quietdeck/solo/agent/` | The folder the agent's rounds run in (follows `QUIETDECK_SOLO_DATA`; `agent.headless.cwd` moves it). |
 | `~/Library/Logs/quietdeck-solo.log` (macOS) | The service's log. On Linux: `journalctl --user -u quietdeck-solo`. |
 
 ## How it checks mail

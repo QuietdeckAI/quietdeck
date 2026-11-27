@@ -39,7 +39,14 @@ pub struct HeadlessConfig {
     pub instructions_file: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
-    /// What the agent may run, as Claude Code permission rules. Default: the quietdeck CLI only.
+    /// Off (the default): the agent runs like your own Claude Code with permissions skipped: every tool, your
+    /// settings, MCP servers and CLAUDE.md, so it can read whole threads with gog and research with the rest of the
+    /// machine. It reads mail from strangers, so a prompt injection could act as you. On: it may run only
+    /// `allowed_tools`, with no MCP servers, refused without a prompt otherwise.
+    #[serde(default)]
+    pub restricted: bool,
+    /// In restricted mode, what the agent may run, as Claude Code permission rules. Default: the quietdeck
+    /// subcommands triage needs.
     #[serde(default = "default_allowed")]
     pub allowed_tools: Vec<String>,
     /// The longest one turn may take before it's stopped.
@@ -72,12 +79,17 @@ impl HeadlessConfig {
         // so an email could make it send what it read anywhere (tested 27 November 2026, codex-cli 0.166.0).
         let program = std::path::Path::new(&self.bin).file_name().and_then(|n| n.to_str()).unwrap_or("");
         if program.starts_with("codex") {
-            return Err(
-                "runner.agent.headless.bin: Codex can't be the triage agent yet: it reaches Quietdeck only with \
-                its sandbox's network open and can't be limited to the quietdeck command, so an email could make it \
-                send your mail anywhere (docs/solo-security.md). Use Claude Code"
-                    .into(),
-            );
+            return Err(if self.restricted {
+                "runner.agent.headless.bin: Codex can't be a restricted triage agent: it reaches Quietdeck only with \
+                its sandbox's network open and can't be limited to the quietdeck command (docs/solo-security.md). \
+                Use Claude Code"
+                    .into()
+            } else {
+                "runner.agent.headless.bin: Codex isn't supported as solo's agent yet. Use Claude Code".into()
+            });
+        }
+        if !self.restricted {
+            return Ok(());
         }
         if let Some(t) = self.allowed_tools.iter().find(|t| too_wide(t)) {
             return Err(format!(
@@ -281,6 +293,15 @@ impl Turns {
         let args = claude_args(&self.cfg, conversation);
         let bin = &self.cfg.bin;
         let mut cmd = tokio::process::Command::new(bin);
+        // A solo started from inside a Claude Code session or a herdr pane would hand its agent that session's
+        // identity (its session ID, messaging socket, pane): the agent is its own session.
+        for (k, _) in std::env::vars_os() {
+            if let Some(k) = k.to_str()
+                && (k.starts_with("CLAUDE_CODE_") || k == "CLAUDECODE" || k == "CLAUDE_PID" || k.starts_with("HERDR_"))
+            {
+                cmd.env_remove(k);
+            }
+        }
         cmd.args(&args)
             .current_dir(&cwd)
             .stdin(std::process::Stdio::piped())
@@ -316,16 +337,16 @@ impl Turns {
 
 /// `claude -p` with the prompt on stdin, limited to the allowed commands and no MCP servers.
 fn claude_args(cfg: &HeadlessConfig, conversation: Conversation<'_>) -> Vec<String> {
-    let mut a: Vec<String> = vec![
-        "-p".into(),
-        "--output-format=json".into(),
-        "--permission-mode=dontAsk".into(),
-        "--tools=Bash".into(),
-        "--strict-mcp-config".into(),
-    ];
-    // One `=` form each: --allowedTools takes a list, and a bare value after it would swallow what follows.
-    for t in &cfg.allowed_tools {
-        a.push(format!("--allowedTools={t}"));
+    let mut a: Vec<String> = vec!["-p".into(), "--output-format=json".into()];
+    if cfg.restricted {
+        a.extend(["--permission-mode=dontAsk".into(), "--tools=Bash".into(), "--strict-mcp-config".into()]);
+        // One `=` form each: --allowedTools takes a list, and a bare value after it would swallow what follows.
+        for t in &cfg.allowed_tools {
+            a.push(format!("--allowedTools={t}"));
+        }
+    } else {
+        // Like the person's own Claude Code, with nobody there to answer a permission prompt.
+        a.push("--permission-mode=bypassPermissions".into());
     }
     if let Some(m) = &cfg.model {
         a.push(format!("--model={m}"));
@@ -368,10 +389,11 @@ mod tests {
     #[test]
     fn rules_that_allow_every_command_are_refused() {
         for wide in ["Bash", "Bash(*)", "Bash(quietdeck:*)", "Bash(quietdeck *)", " Bash( quietdeck:* ) "] {
-            let c = HeadlessConfig { allowed_tools: vec![wide.trim().to_string()], ..cfg("claude") };
+            let c = HeadlessConfig { allowed_tools: vec![wide.trim().to_string()], restricted: true, ..cfg("claude") };
             assert!(c.check().is_err(), "{wide} should be refused");
         }
-        let ok = HeadlessConfig { allowed_tools: vec!["Bash(quietdeck card:*)".into()], ..cfg("claude") };
+        let ok =
+            HeadlessConfig { allowed_tools: vec!["Bash(quietdeck card:*)".into()], restricted: true, ..cfg("claude") };
         assert!(ok.check().is_ok());
         assert!(cfg("claude").check().is_ok(), "the default list passes");
     }
@@ -380,14 +402,31 @@ mod tests {
     fn codex_is_refused_as_the_triage_agent() {
         for bin in ["codex", "/opt/homebrew/bin/codex", "codex-cli"] {
             let e = cfg(bin).check().unwrap_err();
-            assert!(e.contains("Codex can't be the triage agent yet"), "{bin}: {e}");
+            assert!(e.contains("Codex isn't supported"), "{bin}: {e}");
+            let mut r = cfg(bin);
+            r.restricted = true;
+            assert!(r.check().unwrap_err().contains("can't be limited to the quietdeck command"));
         }
         cfg("/usr/local/bin/claude").check().unwrap();
     }
 
     #[test]
-    fn turns_are_limited_to_the_quietdeck_cli() {
+    fn by_default_the_agent_runs_like_the_persons_own_claude_code() {
         let a = claude_args(&cfg("claude"), Conversation::Resume("abc"));
+        assert!(a.contains(&"--permission-mode=bypassPermissions".to_string()), "{a:?}");
+        assert!(!a.iter().any(|x| x.starts_with("--tools") || x.starts_with("--allowedTools")), "every tool: {a:?}");
+        assert!(!a.contains(&"--strict-mcp-config".to_string()), "the person's own MCP servers");
+        assert_eq!(a.last().unwrap(), "--resume=abc");
+        let mut c = cfg("claude");
+        c.allowed_tools = vec!["Bash".into()];
+        c.check().unwrap();
+    }
+
+    #[test]
+    fn restricted_turns_are_limited_to_the_quietdeck_cli() {
+        let mut restricted = cfg("claude");
+        restricted.restricted = true;
+        let a = claude_args(&restricted, Conversation::Resume("abc"));
         assert!(a.contains(&"--permission-mode=dontAsk".to_string()));
         assert!(a.contains(&"--tools=Bash".to_string()));
         assert!(a.contains(&"--allowedTools=Bash(quietdeck card:*)".to_string()));
@@ -399,17 +438,17 @@ mod tests {
         );
         assert!(a.contains(&"--strict-mcp-config".to_string()), "none of the user's MCP servers");
         assert_eq!(a.last().unwrap(), "--resume=abc");
-        let n = claude_args(&cfg("claude"), Conversation::New("0f0e"));
+        let n = claude_args(&restricted, Conversation::New("0f0e"));
         assert_eq!(n.last().unwrap(), "--session-id=0f0e");
         assert!(!n.iter().any(|x| x.starts_with("--resume")));
         let id = new_session_id();
         assert_eq!(id.len(), 36);
         assert_eq!(&id[14..15], "4");
 
-        let mut c = cfg("claude");
+        let mut c = restricted.clone();
         c.allowed_tools = vec!["Bash".into()];
         assert!(c.check().unwrap_err().contains("run any command"));
-        cfg("claude").check().unwrap();
+        restricted.check().unwrap();
     }
 
     #[test]

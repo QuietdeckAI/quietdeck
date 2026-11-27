@@ -71,6 +71,8 @@ pub const OPS: [&str; 14] = [
 
 pub struct Gog {
     bin: String,
+    /// Whether this gog's `gmail search` takes `--ids-only` (newer than 0.46). Found out on the first listing.
+    ids_only: std::sync::atomic::AtomicBool,
 }
 
 struct Output {
@@ -81,7 +83,10 @@ struct Output {
 
 impl Gog {
     pub fn new(cfg: &GogConfig) -> Gog {
-        Gog { bin: crate::config::expand(&cfg.bin).to_string_lossy().into_owned() }
+        Gog {
+            bin: crate::config::expand(&cfg.bin).to_string_lossy().into_owned(),
+            ids_only: std::sync::atomic::AtomicBool::new(true),
+        }
     }
 
     /// Run one op. `input` is the op's filled-in template: always `account`, plus the op's own fields.
@@ -96,10 +101,10 @@ impl Gog {
                 Ok(unwrap_message(v))
             }
             "message_text" => {
+                // Who, what, and Gmail's snippet as a hint: the agent reads the message itself, in full, with gog.
                 let id = gmail_id(input, "id")?;
-                let args = ["gmail", "get", &id, "--format=full", "--sanitize-content"];
-                let v = self.json(&account, true, &args, None, None).await?;
-                Ok(normalize_message_text(&v))
+                let v = self.json(&account, true, &["gmail", "raw", &id, "--format=metadata"], None, None).await?;
+                Ok(normalize_message_text(&unwrap_message(v)))
             }
             "recent" => {
                 let args = ["gmail", "messages", "search", "--max=25", "--", "in:inbox"];
@@ -117,7 +122,23 @@ impl Gog {
                 Ok(normalize_drafts(&v))
             }
             "inbox" => {
-                let args = ["gmail", "search", "--ids-only", "--all", "--max=500", "--", "in:inbox"];
+                use std::sync::atomic::Ordering;
+                if self.ids_only.load(Ordering::Relaxed) {
+                    let args = ["gmail", "search", "--ids-only", "--all", "--max=500", "--", "in:inbox"];
+                    match self.json(&account, true, &args, None, Some(LIST_TIMEOUT)).await {
+                        Ok(v) => return Ok(normalize_inbox(&v)),
+                        Err(e) if e.contains("--ids-only") => {
+                            tracing::info!(
+                                "this gog has no `gmail search --ids-only` (0.46 or older): listing without it"
+                            );
+                            self.ids_only.store(false, Ordering::Relaxed);
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+                // Without --ids-only gog reads each thread too, so one page only: an inbox bigger than that lists as
+                // partial, and archives made in Gmail itself aren't noticed until gog is upgraded.
+                let args = ["gmail", "search", "--max=500", "--", "in:inbox"];
                 let v = self.json(&account, true, &args, None, Some(LIST_TIMEOUT)).await?;
                 Ok(normalize_inbox(&v))
             }
@@ -433,8 +454,8 @@ pub fn normalize_thread(v: &Value) -> Value {
     json!({"id": thread.get("id"), "messages": messages})
 }
 
-/// `gog gmail get --format full --sanitize-content` → `{from, to, cc, subject, date, body}`: the headers by name and
-/// the message's text with HTML and links taken out, which is what goes in front of the agent.
+/// A message's metadata (`gog gmail raw --format metadata`, Gmail's shape, or gog's own with a `headers` object) →
+/// `{from, to, cc, subject, date, snippet}`: what the wake-up names it by. The agent reads the message itself.
 pub fn normalize_message_text(v: &Value) -> Value {
     let header = |name: &str| -> Option<String> {
         if let Some(h) = v.get("headers").and_then(|h| h.get(name)).and_then(Value::as_str).filter(|s| !s.is_empty()) {
@@ -449,14 +470,13 @@ pub fn normalize_message_text(v: &Value) -> Value {
                 .flatten()
         })
     };
-    let body = ["body", "text", "content"]
-        .iter()
-        .find_map(|k| v.get(*k).and_then(Value::as_str).filter(|s| !s.trim().is_empty()))
-        .or_else(|| v.get("message").and_then(|m| m.get("snippet")).and_then(Value::as_str))
-        .or_else(|| v.get("snippet").and_then(Value::as_str))
+    let snippet = v
+        .get("snippet")
+        .or_else(|| v.get("message").and_then(|m| m.get("snippet")))
+        .and_then(Value::as_str)
         .unwrap_or_default();
     json!({"from": header("from"), "to": header("to"), "cc": header("cc"), "subject": header("subject"),
-        "date": header("date"), "body": body})
+        "date": header("date"), "snippet": snippet})
 }
 
 /// `gog gmail messages search in:inbox` → `{messages: [{id, threadId, labelIds}]}`, newest first.
@@ -617,18 +637,18 @@ mod tests {
     }
 
     #[test]
-    fn message_text_takes_gogs_headers_and_body_or_gmails_headers() {
+    fn message_text_is_who_what_and_the_snippet() {
         let gog = json!({"headers": {"from": "Bob <b@example.com>", "to": "me@example.com", "subject": "Hi",
-            "date": "Fri, 27 Nov 2026", "cc": ""}, "body": "Hello\nthere"});
+            "date": "Fri, 27 Nov 2026", "cc": ""}, "snippet": "Hello there"});
         let n = normalize_message_text(&gog);
         assert_eq!(n["from"], "Bob <b@example.com>");
         assert_eq!(n["cc"], Value::Null, "an empty header is no header");
-        assert_eq!(n["body"], "Hello\nthere");
-        let gmail = json!({"message": {"snippet": "Just the snippet", "payload": {"headers": [
-            {"name": "Subject", "value": "Re: Hi"}]}}});
-        let n = normalize_message_text(&gmail);
-        assert_eq!(n["subject"], "Re: Hi");
-        assert_eq!(n["body"], "Just the snippet", "the snippet when there's no text");
+        assert_eq!(n["snippet"], "Hello there");
+        // gog gmail raw --format metadata: Gmail's own shape (fixture 04).
+        let n = normalize_message_text(&unwrap_message(real_gog_fixture("raw_metadata")));
+        assert_eq!(n["subject"], "Re: Subject 4");
+        assert_eq!(n["snippet"], "Snippet 2");
+        assert!(n.get("body").is_none(), "no text: the agent reads the message itself");
         // gog's messages search (fixture 02's shape) gives labels, not labelIds.
         let r = normalize_recent(&json!({"messages": [{"id": "m1", "threadId": "t1", "labels": ["INBOX"]}]}));
         assert_eq!(r, json!({"messages": [{"id": "m1", "threadId": "t1", "labelIds": ["INBOX"]}]}));
@@ -640,6 +660,42 @@ mod tests {
         let m = json!({"id": "m1", "historyId": "9"});
         assert_eq!(unwrap_message(m.clone()), m);
         assert_eq!(history_id(&json!({"historyId": 12})), Some("12".into()));
+    }
+
+    fn real_gog_fixture(name: &str) -> Value {
+        let path = format!("{}/src/runner/fixtures/gog/{name}.json", env!("CARGO_MANIFEST_DIR"));
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn an_old_gog_without_ids_only_lists_the_inbox_without_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        let script = p.join("gog");
+        std::fs::write(
+            &script,
+            format!(
+                r#"#!/usr/bin/env bash
+printf '%s\n' "$*" >> {dir}/calls
+case " $* " in
+  *" --ids-only "*) echo "gog: error: unknown flag --ids-only" >&2; exit 2 ;;
+  *) echo '{{"threads":[{{"id":"t1","subject":"x"}},{{"id":"t2"}}],"nextPageToken":""}}' ;;
+esac
+"#,
+                dir = p.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let gog =
+            Gog { bin: script.to_string_lossy().into_owned(), ids_only: std::sync::atomic::AtomicBool::new(true) };
+        let a = json!({"account": "me@example.com"});
+        assert_eq!(gog.call("inbox", &a).await.unwrap(), json!({"threads": [{"id": "t1"}, {"id": "t2"}]}));
+        gog.call("inbox", &a).await.unwrap();
+        let calls = std::fs::read_to_string(p.join("calls")).unwrap();
+        assert_eq!(calls.matches("--ids-only").count(), 1, "tried once, then remembered: {calls}");
+        assert_eq!(calls.lines().count(), 3);
     }
 
     /// A stand-in gog: logs its arguments and stdin, and answers from `GOG_FAKE_DIR/<op>.json` with the exit code in
@@ -668,7 +724,7 @@ exit $(cat "$dir/$op.exit" 2>/dev/null || echo 0)
         .unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-        Gog { bin: script.to_string_lossy().into_owned() }
+        Gog { bin: script.to_string_lossy().into_owned(), ids_only: std::sync::atomic::AtomicBool::new(true) }
     }
 
     #[tokio::test]
@@ -840,7 +896,7 @@ exit $(cat "$dir/$op.exit" 2>/dev/null || echo 0)
 
     #[tokio::test]
     async fn a_missing_gog_says_so() {
-        let gog = Gog { bin: "/nonexistent/gog".into() };
+        let gog = Gog { bin: "/nonexistent/gog".into(), ids_only: std::sync::atomic::AtomicBool::new(true) };
         let e = gog.call("labels", &json!({"account": "me@example.com"})).await.unwrap_err();
         assert!(e.contains("isn't installed"), "{e}");
     }
