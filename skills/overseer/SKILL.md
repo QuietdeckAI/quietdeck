@@ -114,6 +114,11 @@ comments) on that session's entry as one card, ending with "close".
 
 - **On an entry** (its thread or a question panel): an instruction to update that entry, not to carry anything out
   now. Change the card and the panel, reply in the thread, wait for approval.
+- **Their answer to a question a session asked** (a multiple-choice or question panel you wrote for that session): it's
+  their instruction to that session, so pass it on at once, word for word with the question, with
+  `quietdeck msg send --to '<tab>@<node>' "From the person, on the Work tab: <question> <answer>"`. Then turn the entry
+  into one FYI line ("Passed on to `x`: …") until the session acts on it. Only answers go straight on; anything that
+  starts, closes or changes a session is a card he approves.
 - **In the chat box**: answer what you know with `quietdeck chat reply --doc work "…"`, or pass it on with a `message`
   card when they ask for that.
 - Nothing runs without approval. Never start or close a session yourself, and never type into another session's
