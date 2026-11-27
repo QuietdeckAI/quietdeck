@@ -48,6 +48,9 @@ app's own screens: the triage agent's report (its answers, chat, snapshots, and 
 whether the owner is reading the Inbox. A frontend of your own can ignore them and work with cards and decisions
 directly, for example `POST /api/v1/decisions/approve-all` with its own list of cards.
 
+A deck can do without the report altogether: with its `report` setting off (it's on by default), the report's routes
+answer 404, and the Inbox, History, Approve All and the runner work on cards alone.
+
 ## Errors
 
 An error answers `ApiError` (`{"error": "…"}`) with a 4xx or 5xx status:
