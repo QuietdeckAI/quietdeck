@@ -10,6 +10,7 @@ pub mod error;
 pub mod events;
 pub mod fleetlayer;
 pub mod handoffs;
+pub mod health;
 pub mod hooks;
 pub mod hub;
 pub mod leases;
@@ -152,6 +153,7 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
     };
     let mut app = Router::new()
         .route("/healthz", get(health))
+        .route("/healthz/runners", get(crate::health::runners))
         .merge(openapi::routes(state.clone()).0)
         .nest_service("/mcp", mcp::service(state.clone()));
     if local_only.is_some() {
