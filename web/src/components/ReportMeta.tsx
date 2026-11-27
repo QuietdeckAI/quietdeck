@@ -5,6 +5,7 @@ import { Link } from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { agoShort, stampWithZone } from "@/lib/format";
+import { SoloHealthToast, useSoloProblems } from "@/components/SoloHealth";
 import { dismissNote, useNotes } from "@/lib/notes";
 import { cn } from "@/lib/utils";
 import type { Presence } from "@/types/Presence";
@@ -154,12 +155,16 @@ export function ReportToasts({ report, presence }: { report: Report; presence: P
   const notes = useNotes();
   const held = presence.held_count > 0;
   const missing = report.cards_not_in_report.length;
+  // Quietdeck solo: the runner or its agent failing. Always empty on other decks.
+  const solo = useSoloProblems();
+  const failing = solo.length > 0;
   // How many toasts stay put in the top right; on a phone the change toasts go below them.
-  const sticky = (held ? 1 : 0) + (missing > 0 ? 1 : 0);
+  const sticky = (failing ? 1 : 0) + (held ? 1 : 0) + (missing > 0 ? 1 : 0);
   return (
     <>
-      {(held || missing > 0) && (
+      {(failing || held || missing > 0) && (
         <div className="pointer-events-none fixed top-[73px] right-4 z-30 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2">
+          {failing && <SoloHealthToast problems={solo} />}
           {held && <HeldToast presence={presence} />}
           {missing > 0 && <MissingToast count={missing} />}
         </div>
@@ -171,7 +176,13 @@ export function ReportToasts({ report, presence }: { report: Report; presence: P
             // Above the chat bar on a wide screen; under the header on a phone (below the waiting toast), where the bar is
             // taller.
             "pointer-events-none fixed right-4 z-30 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 " +
-            (sticky === 0 ? "top-[73px] " : sticky === 1 ? "top-[169px] " : "top-[265px] ") +
+            (sticky === 0
+              ? "top-[73px] "
+              : sticky === 1
+                ? "top-[169px] "
+                : sticky === 2
+                  ? "top-[265px] "
+                  : "top-[361px] ") +
             "sm:top-auto sm:bottom-24"
           }
         >

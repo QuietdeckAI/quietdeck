@@ -32,6 +32,7 @@ pub async fn info(state: &AppState, caller: Caller) -> AppResult<DeckInfo> {
         accounts: state.config.accounts.clone(),
         boards: state.config.boards.clone(),
         settings: crate::api::load_settings(&state.db).await?,
+        solo: state.solo,
     })
 }
 

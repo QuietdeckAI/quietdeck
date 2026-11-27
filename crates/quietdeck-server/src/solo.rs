@@ -269,26 +269,28 @@ pub fn assess(
     let mut problems = vec![];
     match report {
         None if age(started) > FIRST_REPORT_SECS => {
-            problems.push("the runner hasn't reported since the deck started".to_string())
+            problems.push("The runner hasn't reported since the deck started".to_string())
         }
         None => {}
         Some((h, at)) => {
             if age(*at) > MAIL_STALE_SECS {
-                problems.push(format!("the runner last reported {} minutes ago", age(*at) / 60));
+                problems.push(format!("The runner last reported {} minutes ago", age(*at) / 60));
             }
             match h.mail_ok_at {
                 Some(t) if age(t) > MAIL_STALE_SECS => {
-                    problems.push(format!("mail was last read {} minutes ago", age(t) / 60))
+                    problems.push(format!("Mail last read {} minutes ago", age(t) / 60))
                 }
-                None if h.mail_checked_at.is_some() => problems.push("mail hasn't been read yet".to_string()),
+                None if h.mail_checked_at.is_some() && h.mail_error.is_none() => {
+                    problems.push("Mail hasn't been read yet".to_string())
+                }
                 _ => {}
             }
             if let Some(e) = &h.mail_error {
-                problems.push(format!("the last mail check failed: {e}"));
+                problems.push(format!("Mail check failing: {e}"));
             }
             if let Some(failed) = h.agent_failed_at {
                 let why = h.agent_error.as_deref().unwrap_or("no reason given");
-                problems.push(format!("the agent's last turn failed {} minutes ago: {why}", age(failed) / 60));
+                problems.push(format!("Agent's last turn failed {} min ago: {why}", age(failed) / 60));
             }
         }
     }
@@ -474,11 +476,19 @@ mod tests {
         assert!(assess(Some(&(good.clone(), ago(20))), ago(3600), now).ok);
         let stale = RunnerHealth { mail_ok_at: Some(ago(1200)), mail_checked_at: Some(ago(20)), ..good.clone() };
         let h = assess(Some(&(stale, ago(20))), ago(3600), now);
-        assert_eq!(h.problems, vec!["mail was last read 20 minutes ago".to_string()]);
+        assert_eq!(h.problems, vec!["Mail last read 20 minutes ago".to_string()]);
         let failing =
             RunnerHealth { agent_failed_at: Some(ago(120)), agent_error: Some("claude exited".into()), ..good.clone() };
         let h = assess(Some(&(failing, ago(20))), ago(3600), now);
-        assert_eq!(h.problems, vec!["the agent's last turn failed 2 minutes ago: claude exited".to_string()]);
+        assert_eq!(h.problems, vec!["Agent's last turn failed 2 min ago: claude exited".to_string()]);
+        let broken = RunnerHealth {
+            mail_ok_at: None,
+            mail_checked_at: Some(ago(20)),
+            mail_error: Some("Personal: gog isn't installed".into()),
+            ..Default::default()
+        };
+        let h = assess(Some(&(broken, ago(20))), ago(3600), now);
+        assert_eq!(h.problems, vec!["Mail check failing: Personal: gog isn't installed".to_string()]);
         assert!(!assess(Some(&(good, ago(1800))), ago(3600), now).ok, "a runner that went quiet");
     }
 }

@@ -34,6 +34,8 @@ pub struct AppState {
     pub stopping: tokio::sync::watch::Receiver<bool>,
     /// Each node's last [`quietdeck_types::node::RunnerHealth`], and when it came. In memory only.
     pub runner_health: Arc<std::sync::Mutex<RunnerHealthByNode>>,
+    /// Quietdeck solo's deck (QUIETDECK_LOCAL_ONLY).
+    pub solo: bool,
 }
 
 pub type RunnerHealthByNode = std::collections::HashMap<String, (quietdeck_types::node::RunnerHealth, jiff::Timestamp)>;
@@ -71,6 +73,7 @@ impl AppState {
             fleetlayer: None,
             stopping: tokio::sync::watch::channel(false).1,
             runner_health: Arc::default(),
+            solo: false,
         }
     }
 }

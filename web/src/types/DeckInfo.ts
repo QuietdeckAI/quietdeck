@@ -18,4 +18,9 @@ built_at: string | null,
 /**
  * When this deck started: with rolling deploys, when the release went live (or the deck last restarted).
  */
-started_at: string, caller: Caller, accounts: Array<AccountLabel>, boards: Array<string>, settings: Settings, };
+started_at: string, caller: Caller, accounts: Array<AccountLabel>, boards: Array<string>, settings: Settings, 
+/**
+ * Quietdeck solo: the deck on the person's own machine. The Inbox then polls `/api/solo/health` and warns when
+ * the runner or its agent is failing.
+ */
+solo: boolean, };
