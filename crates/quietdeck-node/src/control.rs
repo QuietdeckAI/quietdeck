@@ -84,7 +84,7 @@ fn session_dir(cwd: String, tab: &str) -> Result<String, String> {
 /// Marks a folder trusted for Claude Code before a session starts there, so the person never meets its "trust this
 /// folder?" prompt: the deck's start is already their approval, and node.yaml's flags decide what the agent may do.
 /// Claude Code keeps trust per folder in `~/.claude.json` (`projects.<path>.hasTrustDialogAccepted`), and a trusted
-/// folder covers the folders inside it. Written atomically; a failure is logged, and the prompt then shows as before.
+/// folder's entry covers only that folder. Written atomically; a failure is logged, and the prompt then shows as before.
 fn trust_for_claude(dir: &str) {
     let path = crate::config::home().join(".claude.json");
     if let Err(e) = trust_in(&path, dir) {
@@ -106,14 +106,9 @@ fn trust_in(path: &std::path::Path, dir: &str) -> Result<(), String> {
         .or_insert_with(|| serde_json::json!({}))
         .as_object_mut()
         .ok_or("projects isn't an object")?;
-    // Already trusted, itself or through a folder it's inside.
-    let home = crate::config::home();
-    let trusted = std::path::Path::new(dir).ancestors().any(|a| {
-        a != home
-            && projects.get(&a.display().to_string()).and_then(|p| p.get("hasTrustDialogAccepted"))
-                == Some(&serde_json::Value::Bool(true))
-    });
-    if trusted {
+    // Only the folder's own entry counts: Claude Code 2.1 asks about a folder inside a trusted one (seen on a Mac whose
+    // `/` and `~/code` were both trusted, 27 Nov 2026).
+    if projects.get(dir).and_then(|p| p.get("hasTrustDialogAccepted")) == Some(&serde_json::Value::Bool(true)) {
         return Ok(());
     }
     projects
@@ -279,10 +274,14 @@ mod trust_tests {
             r#"{"numStartups": 3, "projects": {"/srv/code": {"hasTrustDialogAccepted": true, "x": 1}}}"#,
         )
         .unwrap();
-        // Inside a trusted folder: nothing to write.
+        // Inside a trusted folder: marked too, since Claude Code asks about it anyway.
         trust_in(&p, "/srv/code/app").unwrap();
         let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
-        assert!(v["projects"].get("/srv/code/app").is_none());
+        assert_eq!(v["projects"]["/srv/code/app"]["hasTrustDialogAccepted"], true);
+        // Already marked: the file is left as it is.
+        let before = std::fs::read_to_string(&p).unwrap();
+        trust_in(&p, "/srv/code").unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), before);
         // Elsewhere: marked, and the rest of the file kept.
         trust_in(&p, "/srv/other").unwrap();
         let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();

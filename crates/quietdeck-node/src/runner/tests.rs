@@ -149,6 +149,10 @@ struct FakeDeck {
     held: StdMutex<Vec<(Option<String>, u64)>>,
     /// Threads the runner said left the inbox; the deck "resolves" a card for each.
     left: StdMutex<Vec<quietdeck_types::mail::LeftThread>>,
+    /// When set, `start_session` succeeds; otherwise it fails.
+    starts: StdMutex<bool>,
+    /// How many relays answer "no session named" before one goes through.
+    relay_misses: StdMutex<u32>,
 }
 
 #[async_trait]
@@ -201,11 +205,27 @@ impl DeckApi for FakeDeck {
         Ok(receipts)
     }
     async fn relay(&self, to: String, _: DeliveryKind, body: String) -> Result<Delivered, String> {
+        {
+            let mut misses = self.relay_misses.lock().unwrap();
+            if *misses > 0 {
+                *misses -= 1;
+                return Err(format!("no session named '{to}'"));
+            }
+        }
         self.relayed.lock().unwrap().push((to, body));
         Ok(Delivered::Orchestrator)
     }
-    async fn start_session(&self, _: SessionStart) -> Result<SessionStarted, String> {
-        Err("not in this test".into())
+    async fn start_session(&self, spec: SessionStart) -> Result<SessionStarted, String> {
+        if !*self.starts.lock().unwrap() {
+            return Err(format!("{} needs you in herdr: the agent stopped at the folder trust prompt", spec.tab));
+        }
+        Ok(SessionStarted {
+            node: spec.on,
+            tab: spec.tab,
+            address: "w1:p9".into(),
+            session_id: None,
+            prompt_error: None,
+        })
     }
     async fn resume_session(&self, _: String, _: String, _: String, _: String) -> Result<SessionStarted, String> {
         Err("not in this test".into())
@@ -529,6 +549,38 @@ async fn forwards_go_through_the_relay() {
     assert_eq!(out.done, 1);
     assert_eq!(h.deck.relayed.lock().unwrap()[0].0, "api@laptop");
     assert!(h.paths().is_empty(), "a forward needs no Executor call");
+}
+
+fn start_then_forward() -> Value {
+    json!([
+        {"type": "new_session", "node": "laptop", "tab": "api", "cwd": "/srv/api", "prompt": "Take this on"},
+        {"type": "forward", "to": {"node": "laptop", "tab": "api", "session_id": null},
+            "text": "The email behind it", "source": {"account": "personal", "thread_id": "t1"}}
+    ])
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_forward_waits_for_the_session_its_card_just_started() {
+    let h = harness(vec![released(1, start_then_forward(), json!({}))], "eligible: [new_session, forward]\n").await;
+    *h.deck.starts.lock().unwrap() = true;
+    *h.deck.relay_misses.lock().unwrap() = 2;
+    let out = h.runner.process().await.unwrap();
+    assert_eq!(out.done, 2, "{:?}", h.deck.reports.lock().unwrap());
+    assert_eq!(h.deck.relayed.lock().unwrap()[0].0, "api@laptop");
+}
+
+#[tokio::test]
+async fn a_forward_to_a_session_that_didnt_start_says_so_and_isnt_tried() {
+    let h = harness(vec![released(1, start_then_forward(), json!({}))], "eligible: [new_session, forward]\n").await;
+    let out = h.runner.process().await.unwrap();
+    assert_eq!(out.failed, 2);
+    assert!(h.deck.relayed.lock().unwrap().is_empty());
+    let reports = h.deck.reports.lock().unwrap();
+    let error = match &reports[1].result {
+        ActionResult::Failed { error } => error.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert!(error.starts_with("not sent: the session in api didn't start (api needs you in herdr"), "{error}");
 }
 
 // --- The mail watch -------------------------------------------------------------------------------------------------

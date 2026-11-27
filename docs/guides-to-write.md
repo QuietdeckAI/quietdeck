@@ -20,10 +20,11 @@ Drafts other sessions wrote for these are in `docs/drafts/`.
   Cronitor alerts when one stops; the rest can be closed any time. Agents propose it on a card and the person
   approves. Now: build plan (Nathan, 25 November). Not built yet.
 - **No trust prompts for agent sessions.** Claude Code keeps folder trust in `~/.claude.json`
-  (`projects.<path>.hasTrustDialogAccepted`); a trusted folder covers the ones inside it, so trusting `~/code` and
-  `~/Notes` covers nearly everything. It never remembers the home folder, so sessions shouldn't start there: the node
-  marks a new session's folder trusted and moves a home-folder start to `~/Notes/Agents/<tab>`. Now:
-  `crates/quietdeck-node/src/control.rs` (25 November).
+  (`projects.<path>.hasTrustDialogAccepted`). Despite what we first thought, a trusted parent doesn't cover the folders
+  inside it: Claude Code 2.1.332 prompted in `~/code/obsidian-livesync` on a Mac whose `/` and `~/code` were both
+  trusted (27 November), so mark the exact folder every time. It never remembers the home folder, so sessions
+  shouldn't start there: the node marks a new session's own folder trusted and moves a home-folder start to
+  `~/Notes/Agents/<tab>`. Now: `crates/quietdeck-node/src/control.rs` (25 and 27 November).
 - **Every agent-facing command needs a timeout.** A CLI waiting on a socket or HTTP call with no limit hangs an
   agent's turn forever when the other end restarts mid-request (a node restart during `msg send`, 25 November): the
   agent can't recover by itself. Quietdeck's CLI: 10 seconds for the local node, 3 to connect and 30 in all for the

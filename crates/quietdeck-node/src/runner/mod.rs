@@ -207,6 +207,10 @@ fn thread_of(a: &Action) -> Option<(&str, &str)> {
     }
 }
 
+/// How long a forward waits for a session its card just started to reach the deck: up to 10 tries, 3 s apart.
+const FORWARD_WAIT_TRIES: u32 = 10;
+const FORWARD_WAIT_STEP: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// Action types the runner carries out through the deck and the orchestrator rather than a configured tool.
 fn built_in(t: ActionType) -> bool {
     matches!(t, ActionType::Forward | ActionType::Resume | ActionType::NewSession)
@@ -461,6 +465,41 @@ impl Runner {
 
     // --- Carrying out ---------------------------------------------------------------------------------------------
 
+    /// One action in its card's order. A forward to a tab that an earlier action of the card started or resumed
+    /// waits until the deck knows the new session, and isn't tried when that start failed.
+    async fn run_in_card(
+        &self,
+        r: &Released,
+        a: &Action,
+        threads: &HashMap<(String, String), ThreadMeta>,
+        opened: &mut HashMap<(String, String), Result<(), String>>,
+    ) -> Result<Value, String> {
+        match a {
+            Action::NewSession { node, tab, .. } | Action::Resume { node, tab, .. } => {
+                let result = self.run_action(r, a, threads).await;
+                opened.insert((node.clone(), tab.clone()), result.as_ref().map(|_| ()).map_err(Clone::clone));
+                result
+            }
+            Action::Forward { to, .. } => match opened.get(&(to.node.clone(), to.tab.clone())) {
+                Some(Err(e)) => Err(format!("not sent: the session in {} didn't start ({e})", to.tab)),
+                Some(Ok(())) => {
+                    let mut tries = 0;
+                    loop {
+                        match self.run_action(r, a, threads).await {
+                            Err(e) if e.starts_with("no session named") && tries < FORWARD_WAIT_TRIES => {
+                                tries += 1;
+                                tokio::time::sleep(FORWARD_WAIT_STEP).await;
+                            }
+                            result => return result,
+                        }
+                    }
+                }
+                None => self.run_action(r, a, threads).await,
+            },
+            _ => self.run_action(r, a, threads).await,
+        }
+    }
+
     async fn run_action(
         &self,
         r: &Released,
@@ -588,6 +627,8 @@ impl Runner {
         for r in taken.iter().filter(|r| held.contains(&r.decision.id)) {
             out.claimed.push(r.decision.id);
             let mut reports = Vec::new();
+            // Sessions this card started or resumed, by (node, tab): a forward to one waits for it.
+            let mut opened: HashMap<(String, String), Result<(), String>> = HashMap::new();
             for rec in released_actions(r) {
                 let started = match self.deck.start(rec.id).await {
                     Ok(s) => s,
@@ -602,7 +643,7 @@ impl Runner {
                 let result = if started.action != rec.action || started.card_version != rec.card_version {
                     Err("the action's payload changed after it was released: not run".to_string())
                 } else {
-                    self.run_action(r, &rec.action, &threads).await
+                    self.run_in_card(r, &rec.action, &threads, &mut opened).await
                 };
                 match result {
                     Ok(outcome) => {
