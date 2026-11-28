@@ -48,7 +48,7 @@ export function App() {
       </main>
     );
   }
-  if (!signedIn) return <SignInScreen setupNeeded={auth.data.setup_needed} />;
+  if (!signedIn) return <SignInScreen setupNeeded={auth.data.setup_needed} signin={auth.data.signin ?? false} />;
   return (
     // One column at least the screen's height: the header, then the screen, which can fill the rest (the Inbox does,
     // so its bar sits at the bottom with no scroll), without adding up pixel heights that rounding can upset.

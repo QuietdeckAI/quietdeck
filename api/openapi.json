@@ -1067,6 +1067,11 @@
           },
           "signed_in": {
             "type": "boolean"
+          },
+          "signin": {
+            "default": false,
+            "description": "The deck signs its owner in through Fleetlayer's sign-in service too: the web app offers it, at\n`/auth/signin?next=<path>`.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -6733,7 +6738,7 @@
     },
     "summary": "Quietdeck's core: cards, decisions, actions, rules, leases, sessions and the timeline.",
     "title": "Quietdeck API",
-    "version": "1.6.0"
+    "version": "1.7.0"
   },
   "openapi": "3.1.0",
   "paths": {

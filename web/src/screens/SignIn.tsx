@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { KeyRound } from "lucide-react";
+import { KeyRound, LogIn } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,8 +8,17 @@ import { createPasskey, getPasskey, guessDeviceName, passkeysSupported } from "@
 import type { AuthState } from "@/types/AuthState";
 import type { Ceremony } from "@/types/Ceremony";
 
-/** Passkeys only. The first one takes a one-time setup code from the server (`quietdeck-server setup-code`). */
-export function SignInScreen({ setupNeeded }: { setupNeeded: boolean }) {
+/** Where Fleetlayer's sign-in brings the browser back to: the page it was on. */
+function signinHref() {
+  const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  return `/auth/signin?next=${encodeURIComponent(next)}`;
+}
+
+/**
+ * Passkeys, and Fleetlayer's sign-in service when the deck has it (`signin`). The first passkey takes a one-time setup
+ * code from the server (`quietdeck-server setup-code`).
+ */
+export function SignInScreen({ setupNeeded, signin = false }: { setupNeeded: boolean; signin?: boolean }) {
   const qc = useQueryClient();
   const [code, setCode] = useState("");
   const [device, setDevice] = useState(guessDeviceName);
@@ -47,8 +56,20 @@ export function SignInScreen({ setupNeeded }: { setupNeeded: boolean }) {
   return (
     <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-4 py-16">
       <h1 className="mb-1 text-2xl">Quietdeck</h1>
+      {signin && !registering && (
+        <div className="mt-6 flex flex-col gap-4">
+          <Button asChild variant="primary">
+            <a href={signinHref()}>
+              <LogIn aria-hidden />
+              Sign in with Fleetlayer
+            </a>
+          </Button>
+        </div>
+      )}
       {!passkeysSupported() ? (
+        signin ? null : (
         <p className="text-muted">This browser can’t use passkeys. Open the deck in Safari, Chrome, Edge or Firefox.</p>
+        )
       ) : registering ? (
         <form
           className="mt-6 flex flex-col gap-4"
@@ -91,8 +112,8 @@ export function SignInScreen({ setupNeeded }: { setupNeeded: boolean }) {
           )}
         </form>
       ) : (
-        <div className="mt-6 flex flex-col gap-4">
-          <Button variant="primary" loading={signIn.isPending} onClick={() => signIn.mutate()}>
+        <div className={signin ? "mt-4 flex flex-col gap-4" : "mt-6 flex flex-col gap-4"}>
+          <Button variant={signin ? "quiet" : "primary"} loading={signIn.isPending} onClick={() => signIn.mutate()}>
             <KeyRound aria-hidden />
             Sign in with a passkey
           </Button>

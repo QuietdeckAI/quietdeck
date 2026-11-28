@@ -134,9 +134,9 @@ pub async fn resolve(state: &AppState, parts: &Parts) -> Result<Caller, AppError
         }
         return Err(AppError::Unauthorized("unknown token type".into()));
     }
-    if let Some((passkey_id, device)) = crate::passkeys::owner_from_cookie(&state.db, parts).await? {
+    if let Some(signed_in) = crate::passkeys::owner_from_cookie(&state.db, parts).await? {
         same_origin(state, parts)?;
-        return Ok(Caller::Owner { device: format!("{device} (passkey {passkey_id})") });
+        return Ok(Caller::Owner { device: signed_in.device });
     }
     if state.dev_trust_local {
         return Ok(Caller::Owner { device: "development".into() });
@@ -208,9 +208,10 @@ impl FromRequestParts<AppState> for Agent {
     }
 }
 
-/// The owner in a browser, signed in with a passkey.
+/// The owner in a browser, signed in with a passkey or through Fleetlayer's sign-in service.
 pub struct Owner {
-    /// The passkey this browser signed in with (none in development, with QUIETDECK_DEV_TRUST_LOCAL).
+    /// The passkey this browser signed in with (none through Fleetlayer's sign-in, and in development, with
+    /// QUIETDECK_DEV_TRUST_LOCAL).
     pub passkey_id: Option<i64>,
 }
 
@@ -220,14 +221,14 @@ impl FromRequestParts<AppState> for Owner {
         if parts.headers.contains_key(axum::http::header::AUTHORIZATION) {
             return Err(AppError::Forbidden("only the owner, in the web app, can do this".into()));
         }
-        if let Some((passkey_id, _)) = crate::passkeys::owner_from_cookie(&state.db, parts).await? {
+        if let Some(signed_in) = crate::passkeys::owner_from_cookie(&state.db, parts).await? {
             same_origin(state, parts)?;
-            return Ok(Owner { passkey_id: Some(passkey_id) });
+            return Ok(Owner { passkey_id: signed_in.passkey_id });
         }
         if state.dev_trust_local {
             return Ok(Owner { passkey_id: None });
         }
-        Err(AppError::Unauthorized("sign in with your passkey".into()))
+        Err(AppError::Unauthorized("sign in with your passkey, or through Fleetlayer's sign-in".into()))
     }
 }
 

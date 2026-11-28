@@ -17,6 +17,9 @@ path = "src/main.rs"
 aide = { version = "=0.16.0-alpha.4", features = ["axum", "axum-json", "axum-query", "axum-ws"] }
 indexmap = "2"
 webauthn-rs = "0.6.2"
+# Signing the owner in through Fleetlayer's sign-in service (OpenID Connect with PKCE). Fleetlayer's own client, the
+# one pages and its Claude sign-in hub use; same licence as Quietdeck (FSL-1.1-ALv2).
+fleetlayer-oidc = { git = "https://github.com/fleetlayer/fleetlayer", tag = "v0.3.13" }
 quietdeck-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -54,6 +57,9 @@ tokio-tungstenite = "0.30.0"
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+# The sign-in tests' issuer signs ID tokens with a test-only key (tests-data/). fleetlayer-oidc's own fake issuer needs
+# rsa 0.10, which can't sit beside webauthn-rs's 0.10 release candidate.
+jsonwebtoken = { version = "12", default-features = false, features = ["rust_crypto", "use_pem"] }
 
 [lints]
 workspace = true

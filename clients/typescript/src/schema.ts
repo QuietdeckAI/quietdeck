@@ -1991,6 +1991,12 @@ export interface components {
             /** @description No passkey is registered yet: the first one needs a setup code from the deck's container. */
             setup_needed: boolean;
             signed_in: boolean;
+            /**
+             * @description The deck signs its owner in through Fleetlayer's sign-in service too: the web app offers it, at
+             *     `/auth/signin?next=<path>`.
+             * @default false
+             */
+            signin?: boolean;
         };
         /**
          * @description A blocked prompt: one of the harness's own menus (Claude Code's question form, a permission prompt, a plan to

@@ -162,6 +162,10 @@ pub struct AuthState {
     pub signed_in: bool,
     /// No passkey is registered yet: the first one needs a setup code from the deck's container.
     pub setup_needed: bool,
+    /// The deck signs its owner in through Fleetlayer's sign-in service too: the web app offers it, at
+    /// `/auth/signin?next=<path>`.
+    #[serde(default)]
+    pub signin: bool,
 }
 
 /// Start registering a passkey. Signed in, it adds one for this device; with a setup code (from

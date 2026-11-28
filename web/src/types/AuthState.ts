@@ -7,4 +7,9 @@ export type AuthState = { signed_in: boolean,
 /**
  * No passkey is registered yet: the first one needs a setup code from the deck's container.
  */
-setup_needed: boolean, };
+setup_needed: boolean, 
+/**
+ * The deck signs its owner in through Fleetlayer's sign-in service too: the web app offers it, at
+ * `/auth/signin?next=<path>`.
+ */
+signin: boolean, };
