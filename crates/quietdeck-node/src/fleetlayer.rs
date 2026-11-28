@@ -607,7 +607,7 @@ mod tests {
         nw.write_all(format!("{gone}\n").as_bytes()).await.unwrap();
         let err = answered.await.unwrap().unwrap().unwrap_err();
         assert_eq!(err.code, Some(code::PROMPT_GONE));
-        let refused = call_via(&socket, "_fleetlayer.dev/session/start", json!({})).await.unwrap().unwrap_err();
+        let refused = call_via(&socket, "_fleetlayer.dev/session/command", json!({})).await.unwrap().unwrap_err();
         assert!(refused.message.contains("isn't something the node may call"), "{refused}");
     }
 
