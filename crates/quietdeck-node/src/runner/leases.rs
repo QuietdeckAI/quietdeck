@@ -121,15 +121,24 @@ pub struct Held {
 }
 
 /// The payloads the held leases of `kind` ask for, once each, from `fleetlayer lease list --json`
-/// (`{kinds: [{name, held: [lease]}]}`), in the order Fleetlayer lists them.
-pub fn held(list: &Value, kind: &str) -> Vec<Held> {
+/// (`{kinds: [{name, held: [lease]}], unlisted: [lease]}`: a held lease of a kind since removed from the settings is
+/// in `unlisted` until it ends), in the order Fleetlayer lists them. None when the answer doesn't know the kind at all:
+/// then nothing changes, rather than every filter going at once.
+pub fn held(list: &Value, kind: &str) -> Option<Vec<Held>> {
     let mut out: Vec<Held> = vec![];
-    let leases = list["kinds"]
+    let listed: Vec<&Value> =
+        list["kinds"].as_array().into_iter().flatten().filter(|k| k["name"].as_str() == Some(kind)).collect();
+    let unlisted: Vec<Value> = list["unlisted"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|k| k["name"].as_str() == Some(kind))
-        .flat_map(|k| k["held"].as_array().cloned().unwrap_or_default());
+        .filter(|l| l["kind"].as_str() == Some(kind))
+        .cloned()
+        .collect();
+    if listed.is_empty() && unlisted.is_empty() {
+        return None;
+    }
+    let leases = listed.into_iter().flat_map(|k| k["held"].as_array().cloned().unwrap_or_default()).chain(unlisted);
     for l in leases {
         let (Some(account), Some(query)) = (l["payload"]["account"].as_str(), l["payload"]["query"].as_str()) else {
             continue;
@@ -144,7 +153,7 @@ pub fn held(list: &Value, kind: &str) -> Vec<Held> {
             holder: l["holder"].as_str().unwrap_or("-").to_string(),
         });
     }
-    out
+    Some(out)
 }
 
 /// What to make and what to take away so the filters match the held payloads exactly.
@@ -166,7 +175,8 @@ pub fn holder_label(holder: &str) -> String {
 pub async fn reconcile(r: &Runner, fl: &FleetlayerLeasesConfig, made: &mut Vec<LeaseFilter>) -> Result<(), String> {
     let cfg = r.cfg.gmail_filters.as_ref().ok_or("runner.gmail_filters isn't set in node.yaml")?;
     let list = lease_list(fl).await?;
-    let held = held(&list, &fl.kind);
+    let held = held(&list, &fl.kind)
+        .ok_or_else(|| format!("Fleetlayer's leases list no {} kind: the filters stay as they are", fl.kind))?;
     let (missing, stale) = plan(&held, made);
     let (missing, stale): (Vec<Held>, Vec<LeaseFilter>) =
         (missing.into_iter().cloned().collect(), stale.into_iter().cloned().collect());
@@ -254,8 +264,13 @@ mod tests {
                  "payload": {"account": "personal", "query": "from:x@y.com"}}
             ], "asking": [{"id": 5, "holder": "z@agents", "payload": {"account": "a", "query": "from:q"}}]}
         ], "ended": []});
-        let held = held(&list, "gmail-filter");
+        let held = held(&list, "gmail-filter").unwrap();
         assert_eq!(held.len(), 2, "one per payload, held leases only");
+        assert_eq!(super::held(&json!({"kinds": [], "ended": []}), "gmail-filter"), None, "unknown kind: no change");
+        let removed = json!({"kinds": [], "unlisted": [
+            {"kind": "gmail-filter", "holder": "a@b", "payload": {"account": "x", "query": "from:y"}}
+        ]});
+        assert_eq!(super::held(&removed, "gmail-filter").unwrap().len(), 1, "a removed kind's held lease counts");
         assert_eq!(held[0].holder, "ci watch@agents");
         assert_eq!(holder_label(&held[0].holder), "Quietdeck/Lease/ci watch");
         assert_eq!(holder_label(&held[1].holder), "Quietdeck/Lease/script");
