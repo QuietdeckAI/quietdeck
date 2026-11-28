@@ -23,14 +23,19 @@ const STALE_SECONDS: i64 = 15 * 60;
 /// A failing watch is a problem on /healthz/runners after this long (until then the last state stands).
 pub const PROBLEM_AFTER_MS: i64 = 15 * 60_000;
 
-/// What the runners were last told: Some(asleep), or None while unknown.
-static ASLEEP: Mutex<Option<bool>> = Mutex::new(None);
+/// The person's state as last read (`present`, `semi_present`, `away`, `asleep`), or None while unknown.
+static STATE: Mutex<Option<String>> = Mutex::new(None);
 /// Since when (epoch ms) and why the watch has failed, cleared by a good read.
 static PROBLEM: Mutex<Option<(i64, String)>> = Mutex::new(None);
 
 /// Whether the person is asleep, as far as the deck knows.
 pub fn asleep() -> Option<bool> {
-    *ASLEEP.lock().expect("presence lock")
+    STATE.lock().expect("presence lock").as_deref().map(|s| s == "asleep")
+}
+
+/// The person is known to be away or asleep: background work only they read can wait (the overseer's idle wake-ups).
+pub fn away() -> bool {
+    matches!(STATE.lock().expect("presence lock").as_deref(), Some("away" | "asleep"))
 }
 
 /// The watch's problem once it has lasted [`PROBLEM_AFTER_MS`] at `now` (epoch ms).
@@ -45,9 +50,9 @@ pub fn target(s: &str) -> Option<(String, String)> {
     (!person.is_empty() && !node.is_empty()).then(|| (person.to_string(), node.to_string()))
 }
 
-/// The person's state from a `/v1/readings` page: Some(asleep) from a fresh reading by the authority's node, None from
-/// a stale one, an error when there's none from that node.
-pub fn judge(page: &Value, person: &str, node: &str, now: Timestamp) -> Result<Option<bool>, String> {
+/// The person's state from a `/v1/readings` page: from a fresh reading by the authority's node, None from a stale one,
+/// an error when there's none from that node.
+pub fn judge(page: &Value, person: &str, node: &str, now: Timestamp) -> Result<Option<String>, String> {
     let reading = page["readings"]
         .as_array()
         .into_iter()
@@ -63,9 +68,8 @@ pub fn judge(page: &Value, person: &str, node: &str, now: Timestamp) -> Result<O
         return Ok(None);
     }
     match reading["data"]["state"].as_str() {
-        Some("asleep") => Ok(Some(true)),
-        Some(_) => Ok(Some(false)),
-        None => Err("the presence reading has no state".into()),
+        Some(state) if !state.is_empty() => Ok(Some(state.to_string())),
+        _ => Err("the presence reading has no state".into()),
     }
 }
 
@@ -75,7 +79,7 @@ async fn check(state: &AppState, client: &Client, person: &str, node: &str) {
         Ok(page) => judge(&page, person, node, now),
         Err(e) => Err(e.to_string()),
     };
-    let asleep = match judged {
+    let person_state = match judged {
         Ok(a) => {
             *PROBLEM.lock().expect("presence lock") = None;
             a
@@ -92,13 +96,10 @@ async fn check(state: &AppState, client: &Client, person: &str, node: &str) {
             None
         }
     };
-    let changed = {
-        let mut told = ASLEEP.lock().expect("presence lock");
-        let changed = *told != asleep;
-        *told = asleep;
-        changed
-    };
-    if changed {
+    let was_asleep = asleep();
+    *STATE.lock().expect("presence lock") = person_state;
+    let asleep = asleep();
+    if was_asleep != asleep {
         tracing::info!(?asleep, "the person's presence changed");
         let active = crate::reading::is_active(&state.db).await.unwrap_or(false);
         crate::runner::tell_runners(state, DeckRequest::Presence { active, asleep }).await;
@@ -129,11 +130,17 @@ mod tests {
     fn asleep_counts_only_from_the_authority_and_only_while_fresh() {
         let now: Timestamp = "2026-11-29T12:00:00Z".parse().unwrap();
         let fresh = "2026-11-29T11:57:00Z";
-        assert_eq!(judge(&page("agents-presence", "asleep", fresh), "nathan", "agents-presence", now), Ok(Some(true)));
-        assert_eq!(judge(&page("agents-presence", "away", fresh), "nathan", "agents-presence", now), Ok(Some(false)));
+        assert_eq!(
+            judge(&page("agents-presence", "asleep", fresh), "nathan", "agents-presence", now),
+            Ok(Some("asleep".into()))
+        );
+        assert_eq!(
+            judge(&page("agents-presence", "away", fresh), "nathan", "agents-presence", now),
+            Ok(Some("away".into()))
+        );
         assert_eq!(
             judge(&page("agents-presence", "present", fresh), "nathan", "agents-presence", now),
-            Ok(Some(false))
+            Ok(Some("present".into()))
         );
         // Another node's reading of the same kind isn't the authority's.
         assert!(judge(&page("laptop", "asleep", fresh), "nathan", "agents-presence", now).is_err());

@@ -6,7 +6,9 @@
 //! for everything that was already there. Left out: the overseer itself, the writers of other documents, the agents runners work for (the
 //! triage agent), ignored sessions and parked ones, except when blocked on a prompt. A session with an entry on Work
 //! that starts working again is named too, once per change, so the overseer sees what was answered in its tab. Every three hours without
-//! another wake-up it asks for a refresh (tasks due today, stale entries).
+//! another wake-up it asks for a refresh (tasks due today, stale entries). While Fleetlayer presence says the person is
+//! away or asleep, sessions that merely went idle wait and no refresh goes (nobody reads it then); blocked prompts and
+//! sessions on Work still count, and the first refresh after they return covers what finished meanwhile.
 //!
 //! `/healthz/overseer` fails while the watch has stopped ticking, or while the last wake-up couldn't be delivered for
 //! ten minutes, so an uptime checker sees a watch that's up but no longer reaching its agent.
@@ -80,16 +82,19 @@ pub async fn tick(state: &AppState, now: i64) -> anyhow::Result<()> {
     .fetch_all(&state.db)
     .await?;
     for (node, tab) in writers {
-        let changes = changes_for(state, &node, &tab, now).await?;
+        // While the person is away or asleep, sessions merely going idle wait: nobody reads the result overnight
+        // (Nathan, 28 Nov). Blocked prompts and sessions on Work still count.
+        let away = crate::presence::away();
+        let changes = changes_for(state, &node, &tab, now, away).await?;
         let to = format!("{tab}@{node}");
         let (refresh_at,): (Option<i64>,) =
             sqlx::query_as("SELECT refresh_at FROM overseer_watch WHERE id = 1").fetch_one(&state.db).await?;
         let body = if !changes.is_empty() {
             message(&changes, now)
-        } else if refresh_at.is_none_or(|at| now - at > REFRESH_MS) {
+        } else if !away && refresh_at.is_none_or(|at| now - at > REFRESH_MS) {
             "From the deck's overseer watch: a periodic refresh. Bring the Work document up to date: today's tasks \
              (due today or started), entries that are done or no longer relevant, and any snoozed session that's back \
-             (`quietdeck marks`). Then end your turn."
+             (`quietdeck marks`), and sessions that finished while the person was away. Then end your turn."
                 .to_string()
         } else {
             continue;
@@ -140,8 +145,9 @@ async fn record_error(db: &Db, error: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The sessions the writer `tab@node` should hear about now.
-pub async fn changes_for(state: &AppState, node: &str, tab: &str, now: i64) -> anyhow::Result<Vec<Change>> {
+/// The sessions the writer `tab@node` should hear about now. While the person is `away`, an idle session counts only
+/// when it has an entry on Work.
+pub async fn changes_for(state: &AppState, node: &str, tab: &str, now: i64, away: bool) -> anyhow::Result<Vec<Change>> {
     let rows: Vec<(String, String, String, String, i64)> = sqlx::query_as(
         "SELECT s.node, s.session_id, s.tab, s.status, s.status_changed_at FROM sessions s \
          WHERE s.running = 1 AND s.tab IS NOT NULL AND s.closed_at IS NULL \
@@ -171,6 +177,9 @@ pub async fn changes_for(state: &AppState, node: &str, tab: &str, now: i64) -> a
     // spacing, since that's when the entry goes out of date.
     let on_work = sessions_on_work(&state.db, node, tab).await?;
     let mut rows = rows;
+    if away {
+        rows.retain(|(n, _, t, status, _)| status == "blocked" || on_work.contains(&format!("{t}@{n}")));
+    }
     if !on_work.is_empty() {
         let resumed: Vec<(String, String, String, String, i64)> = sqlx::query_as(
             "SELECT s.node, s.session_id, s.tab, s.status, s.status_changed_at FROM sessions s \
@@ -359,8 +368,11 @@ mod tests {
         crate::documents::mark_set(&state, mark("sso", MarkKind::Parked)).await.unwrap();
         crate::documents::mark_set(&state, mark("talira worker", MarkKind::Ignored)).await.unwrap();
         let tabs = |c: Vec<Change>| c.into_iter().map(|c| c.tab).collect::<Vec<_>>();
-        let first = changes_for(&state, "laptop", "overseer", now).await.unwrap();
+        let first = changes_for(&state, "laptop", "overseer", now, false).await.unwrap();
         assert_eq!(tabs(first.clone()), vec!["talira worker", "onboarding", "search"]);
+        // While the person is away or asleep, a session that merely went idle waits; blocked prompts still count.
+        let away = changes_for(&state, "laptop", "overseer", now, true).await.unwrap();
+        assert_eq!(tabs(away), vec!["talira worker", "onboarding"]);
         assert!(message(&first, now).contains("`onboarding@laptop` is blocked on a prompt"));
         // Told: not again for the same change.
         for c in &first {
@@ -374,18 +386,18 @@ mod tests {
                 .await
                 .unwrap();
         }
-        assert!(changes_for(&state, "laptop", "overseer", now).await.unwrap().is_empty());
+        assert!(changes_for(&state, "laptop", "overseer", now, false).await.unwrap().is_empty());
         // idle to done at the same moment (herdr reports both) isn't a new change.
         sqlx::query("UPDATE sessions SET status = 'done' WHERE session_id = 's1'").execute(&state.db).await.unwrap();
-        assert!(changes_for(&state, "laptop", "overseer", now).await.unwrap().is_empty());
+        assert!(changes_for(&state, "laptop", "overseer", now, false).await.unwrap().is_empty());
         // done, then idle a few minutes later (seen in herdr): no new work, not named.
         session(&state, "s1", "search", "idle", now - 3 * 60_000).await;
-        assert!(changes_for(&state, "laptop", "overseer", now).await.unwrap().is_empty());
+        assert!(changes_for(&state, "laptop", "overseer", now, false).await.unwrap().is_empty());
         // It works again (a tick sees it), then goes idle: a new change.
         session(&state, "s1", "search", "working", now - 2 * 60_000).await;
         sqlx::query("UPDATE overseer_told SET worked = 1 WHERE session_id = 's1'").execute(&state.db).await.unwrap();
         session(&state, "s1", "search", "idle", now - 3 * 60_000 + 1).await;
-        assert_eq!(tabs(changes_for(&state, "laptop", "overseer", now).await.unwrap()), vec!["search"]);
+        assert_eq!(tabs(changes_for(&state, "laptop", "overseer", now, false).await.unwrap()), vec!["search"]);
     }
 
     #[tokio::test]
@@ -418,8 +430,14 @@ mod tests {
             .execute(&state.db)
             .await
             .unwrap();
-        let first = changes_for(&state, "laptop", "overseer", now).await.unwrap();
+        let first = changes_for(&state, "laptop", "overseer", now, false).await.unwrap();
         assert_eq!(first.iter().map(|c| c.session_id.as_str()).collect::<Vec<_>>(), ["s1"]);
+        let away = changes_for(&state, "laptop", "overseer", now, true).await.unwrap();
+        assert_eq!(
+            away.iter().map(|c| c.session_id.as_str()).collect::<Vec<_>>(),
+            ["s1"],
+            "sessions on Work count while away"
+        );
         assert!(message(&first, now).contains("`security@laptop` started working again"), "{}", message(&first, now));
         sqlx::query("INSERT INTO overseer_told (node, session_id, status, status_changed_at, told_at) VALUES ('laptop', 's1', 'working', ?, ?)")
             .bind(now - 60_000)
@@ -427,7 +445,7 @@ mod tests {
             .execute(&state.db)
             .await
             .unwrap();
-        assert!(changes_for(&state, "laptop", "overseer", now).await.unwrap().is_empty(), "once per change");
+        assert!(changes_for(&state, "laptop", "overseer", now, false).await.unwrap().is_empty(), "once per change");
     }
 
     #[tokio::test]
