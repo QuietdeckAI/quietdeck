@@ -55,13 +55,17 @@ fn inbox_id() -> i64 {
 }
 
 /// A Work document's FYI part without its items: the lines under its `# FYI` (or `## FYI`) heading that are list items,
-/// with their continuation lines, up to the next heading of that level or higher, or a `---` rule. The heading and
-/// any other text stay. None when there's nothing to clear.
+/// with their continuation lines, up to the next heading of that level or higher, or a `---` rule. Other text stays,
+/// and the heading with it; with nothing left under it, the heading goes too (Nathan, 28 Nov 2026: "when i archive all
+/// under fyi i also want the fyi heading to disappear"). None when there's nothing to clear.
 pub fn fyi_cleared(markdown: &str) -> Option<String> {
     let mut out: Vec<&str> = Vec::new();
     let mut level: Option<usize> = None;
     let mut in_item = false;
     let mut removed = false;
+    // The FYI heading's place in `out`, and whether any text under it stays.
+    let mut fyi_at: Option<(usize, bool)> = None;
+    let mut bare: Vec<usize> = Vec::new();
     for line in markdown.split('\n') {
         let trimmed = line.trim_start();
         let hashes = trimmed.chars().take_while(|c| *c == '#').count();
@@ -69,8 +73,10 @@ pub fn fyi_cleared(markdown: &str) -> Option<String> {
         if heading {
             let title = trimmed[hashes..].trim().trim_end_matches(':');
             if title.eq_ignore_ascii_case("fyi") || title.to_ascii_lowercase().starts_with("fyi ") {
+                bare.extend(fyi_at.take().filter(|(_, kept)| !kept).map(|(at, _)| at));
                 level = Some(hashes);
                 in_item = false;
+                fyi_at = Some((out.len(), false));
                 out.push(line);
                 continue;
             }
@@ -80,6 +86,9 @@ pub fn fyi_cleared(markdown: &str) -> Option<String> {
         }
         if level.is_some() && line.trim() == "---" {
             level = None;
+        }
+        if level.is_none() {
+            bare.extend(fyi_at.take().filter(|(_, kept)| !kept).map(|(at, _)| at));
         }
         if level.is_some() {
             let indent = line.len() - trimmed.len();
@@ -95,6 +104,9 @@ pub fn fyi_cleared(markdown: &str) -> Option<String> {
             }
             if !trimmed.is_empty() {
                 in_item = false;
+                if let Some((_, kept)) = fyi_at.as_mut() {
+                    *kept = true;
+                }
             }
         }
         out.push(line);
@@ -102,10 +114,17 @@ pub fn fyi_cleared(markdown: &str) -> Option<String> {
     if !removed {
         return None;
     }
+    bare.extend(fyi_at.filter(|(_, kept)| !kept).map(|(at, _)| at));
+    for at in bare.into_iter().rev() {
+        out.remove(at);
+    }
     // No run of blank lines where the items were.
     let mut joined = out.join("\n");
     while joined.contains("\n\n\n") {
         joined = joined.replace("\n\n\n", "\n\n");
+    }
+    while joined.ends_with("\n\n") {
+        joined.pop();
     }
     Some(joined)
 }
@@ -377,6 +396,46 @@ pub fn ask_keys(markdown: &str) -> Vec<(String, bool)> {
     out
 }
 
+/// An `<Ask>` about one session (`session="<tab>@<node>"`): its text and options as the person saw them, so the deck
+/// can hand his answer to that session itself.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SessionAsk {
+    pub text: String,
+    pub options: Vec<String>,
+    pub session: String,
+}
+
+/// The `<Ask>` with this key (its `id`, else its text), if it names a session.
+pub fn session_ask(markdown: &str, key: &str) -> Option<SessionAsk> {
+    let mut rest = markdown;
+    while let Some(at) = rest.find("<Ask") {
+        rest = &rest[at + "<Ask".len()..];
+        if !rest.starts_with(|c: char| c.is_whitespace() || c == '>') {
+            continue;
+        }
+        let end = rest.find('>')?;
+        let attrs = &rest[..end];
+        let body = &rest[end + 1..];
+        let text = body.find("</Ask>").map(|c| body[..c].trim()).unwrap_or_default();
+        if attr(attrs, "id").unwrap_or(text) == key {
+            let session = attr(attrs, "session").map(str::trim).filter(|s| !s.is_empty())?;
+            return Some(SessionAsk {
+                text: text.to_string(),
+                options: attr(attrs, "options")
+                    .unwrap_or_default()
+                    .split('|')
+                    .map(str::trim)
+                    .filter(|o| !o.is_empty())
+                    .map(str::to_string)
+                    .collect(),
+                session: session.to_string(),
+            });
+        }
+        rest = &rest[end..];
+    }
+    None
+}
+
 /// An `<Ask>` that waits for an email the person sends himself (`thread="<Gmail thread ID>"`, several separated by
 /// spaces): its key, its text, its options and the threads. When one of those threads gets a message he sent, the deck
 /// answers it for him.
@@ -486,6 +545,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_ask_names_its_session() {
+        let md = "1. <Ask id=\"post\" options=\"Post it|Hold\" session=\"livesync@agents\">Post the PR comment?</Ask>\n\
+                  2. <Ask session=\"mobile@agents\">Which push provider?</Ask>\n3. <Ask id=\"x\" options=\"Go\">No session</Ask>";
+        let ask = session_ask(md, "post").unwrap();
+        assert_eq!(ask.session, "livesync@agents");
+        assert_eq!(ask.options, vec!["Post it", "Hold"]);
+        assert_eq!(ask.text, "Post the PR comment?");
+        let panel = session_ask(md, "Which push provider?").unwrap();
+        assert!(panel.options.is_empty());
+        assert_eq!(session_ask(md, "x"), None);
+        assert_eq!(session_ask(md, "missing"), None);
+    }
+
+    #[test]
     fn asks_waiting_for_sent_mail_name_their_threads() {
         let md = "- <Ask id=\"patronus\" options=\"Done\" thread=\"19a1 19a2\" session=\"x@y\">Done when you've sent the \
                   Patronus reply</Ask>\n- <Ask id=\"other\" options=\"Yes|No\">No thread</Ask>\n\
@@ -536,6 +609,12 @@ mod tests {
             "# Needs you\n\n1. **enterprise:** PR #12 waits for review.\n\n## FYI\n\nKept text.\n\n# Later\n\n- stays\n"
         );
         assert_eq!(fyi_cleared("# Needs you\n\n- a\n"), None);
+        // Nothing left under it: the heading goes too.
+        assert_eq!(
+            fyi_cleared("# Needs you\n\n1. a\n\n## FYI\n\n- `ci` finished.\n\n# Later\n\n- stays\n").unwrap(),
+            "# Needs you\n\n1. a\n\n# Later\n\n- stays\n"
+        );
+        assert_eq!(fyi_cleared("# Needs you\n\n1. a\n\n# FYI\n\n- done\n- also\n").unwrap(), "# Needs you\n\n1. a\n");
         assert_eq!(fyi_cleared("# FYI\n\nNothing new.\n"), None);
     }
 
