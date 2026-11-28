@@ -66,6 +66,11 @@ pub async fn report(state: &AppState, now: i64) -> anyhow::Result<(bool, Value)>
             }
             None => problems.push("no complete mail check reported since the deck started".into()),
         }
+        // What went wrong in its last check: an account, the support inbox, the lease filters. Each clears on the
+        // next check that works (28 Nov 2026: the lease filters failed for 11 minutes and nothing here said so).
+        if let Some(e) = health.get(&name).and_then(|(h, _)| h.mail_error.clone()) {
+            problems.push(format!("its last check failed: {e}"));
+        }
         // The oldest approved action waiting on any of its agents' cards.
         let mut waiting: Option<i64> = None;
         for (n, t) in info.agents(&name) {
@@ -131,6 +136,16 @@ mod tests {
         state.runner_health.lock().unwrap().insert("box-runner".into(), (stale, Timestamp::now()));
         let (_, body) = report(&state, now).await.unwrap();
         assert!(body["runners"][0]["problems"].to_string().contains("30 min"), "{body}");
+
+        // A check that failed part-way (the lease filters here) is a problem too, though mail was read.
+        let failing = RunnerHealth {
+            mail_ok_at: Timestamp::from_millisecond(now - 60_000).ok(),
+            mail_error: Some("Lease filters: no leases authority found".into()),
+            ..Default::default()
+        };
+        state.runner_health.lock().unwrap().insert("box-runner".into(), (failing, Timestamp::now()));
+        let (_, body) = report(&state, now).await.unwrap();
+        assert!(body["runners"][0]["problems"].to_string().contains("Lease filters: no leases"), "{body}");
 
         // An approved action the runner hasn't run: fine at first, a problem after 15 minutes.
         let me = quietdeck_types::SessionRef { node: "box".into(), tab: "triage".into(), session_id: None };
