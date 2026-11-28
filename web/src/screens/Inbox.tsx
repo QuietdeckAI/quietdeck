@@ -241,12 +241,21 @@ function ReportScreen({
       saveApproved(report.id, value);
       return value;
     });
+  // This document's cards: the ones its report names, and its open cards no default names. Approve All on the Inbox
+  // mustn't make Work look busy (or the other way round): each document shows only its own cards' work, so Nathan
+  // can approve the Inbox and work through Work while the triage agent carries it out.
+  const mine = new Set([
+    ...reportDefaults(report.markdown).flatMap((d) => d.cards),
+    ...report.cards_not_in_report.map(Number),
+    ...(approved?.cards ?? []),
+  ]);
   const inFlight = [
     ...(inbox.approving?.cards.map(Number) ?? []),
     ...[...cardsById(inbox).values()]
       .filter((c) => c.state === "approved" || c.state === "executing" || c.state === "handed_off")
       .map((c) => Number(c.id)),
   ]
+    .filter((id) => mine.has(id))
     .sort((a, b) => a - b)
     .join(",");
   useEffect(() => {
@@ -271,7 +280,10 @@ function ReportScreen({
   const executing =
     [...(approved?.cards ?? [])].filter(whole).some(unfinished) ||
     inFlight.split(",").filter((id) => id !== "" && whole(Number(id))).length > 0;
-  const approvingAll = inbox.approving !== null && inbox.approving.cards.map(Number).some(whole);
+  const approvingMine = inbox.approving !== null && inbox.approving.cards.map(Number).some((id) => mine.has(id));
+  const approvingAll = approvingMine && (inbox.approving?.cards.map(Number).some((id) => mine.has(id) && whole(id)) ?? false);
+  // What the bar and the chat box see: this document's Approve All and Stop only.
+  const scoped: Inbox = { ...inbox, approving: approvingMine ? inbox.approving : null, running: inbox.running && executing };
   const busy = sending || approvingAll || executing;
   // Carrying out the approved actions (the undo window is over): the sheen moves.
   const working = executing && !approvingAll && !sending;
@@ -439,11 +451,11 @@ function ReportScreen({
       <ReportChatBox
         doc={doc && Number(doc.id) !== 1 ? doc.slug : undefined}
         by={report.posted_by}
-        running={inbox.running}
+        running={scoped.running}
         corner={<UpdatedAt at={report.updated_at} stacked />}
       >
         <ApproveAllBar
-          inbox={inbox}
+          inbox={scoped}
           request={request}
           report={{ id: Number(report.id), version: Number(report.version) }}
           beforeApprove={beforeApprove}

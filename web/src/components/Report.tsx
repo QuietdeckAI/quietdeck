@@ -919,7 +919,7 @@ function ChoiceAsk({
   return (
     <span className="report-ask relative">
       <span>{children}</span>{" "}
-      <span className="inline-flex flex-wrap items-center gap-1.5 align-baseline">
+      <span className="mt-1.5 ml-[5px] inline-flex flex-wrap items-center gap-1.5 align-baseline">
         {choices.map((c) => (
           <Button
             key={c}
