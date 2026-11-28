@@ -29,4 +29,9 @@ finished: boolean,
 /**
  * The document it's on (`GET /documents`); 1 is the Inbox.
  */
-document_id: number, };
+document_id: number, 
+/**
+ * When each top-level list item's text last changed, in the order the items are written (`items`): the Work tab
+ * shows it as "(1 hour ago)".
+ */
+item_times?: Array<string>, };

@@ -157,11 +157,12 @@ async fn from_row(db: &Db, r: ReportRow) -> AppResult<Report> {
     let (named, _) = default_cards(&r.markdown);
     let cards_not_in_report =
         open_cards_of(db, r.document_id).await?.into_iter().filter(|id| !named.contains(id)).collect();
+    // Reports saved before the deck fixed item Defaults on the way in (27 Nov 2026) are fixed on the way out.
+    let markdown = quietdeck_types::report::item_defaults_indented(&r.markdown);
     Ok(Report {
         id: r.id,
         version: r.version,
-        // Reports saved before the deck fixed item Defaults on the way in (27 Nov 2026) are fixed on the way out.
-        markdown: quietdeck_types::report::item_defaults_indented(&r.markdown),
+        markdown: markdown.clone(),
         posted_by: SessionRef { node: r.posted_node, tab: r.posted_tab, session_id: r.posted_session_id },
         created_at: ts(r.created_at),
         updated_at: ts(r.updated_at),
@@ -169,8 +170,47 @@ async fn from_row(db: &Db, r: ReportRow) -> AppResult<Report> {
         cards_not_in_report,
         changes: changes(db, r.id).await?,
         finished: r.finished_at.is_some(),
+        item_times: item_times(db, r.document_id, &markdown, r.updated_at).await?,
         document_id: r.document_id,
     })
+}
+
+/// Notes when each of the report's items was first written as it reads now, and forgets items that are gone.
+async fn track_items(tx: &mut sqlx::SqliteConnection, doc: i64, markdown: &str, now: i64) -> AppResult<()> {
+    let hashes: Vec<String> =
+        quietdeck_types::report::items(markdown).iter().map(|i| crate::auth::sha256_hex(i)).collect();
+    for h in &hashes {
+        sqlx::query("INSERT OR IGNORE INTO report_items (document_id, hash, changed_at) VALUES (?, ?, ?)")
+            .bind(doc)
+            .bind(h)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+    }
+    let kept: Vec<(String,)> =
+        sqlx::query_as("SELECT hash FROM report_items WHERE document_id = ?").bind(doc).fetch_all(&mut *tx).await?;
+    for (h,) in kept.into_iter().filter(|(h,)| !hashes.contains(h)) {
+        sqlx::query("DELETE FROM report_items WHERE document_id = ? AND hash = ?")
+            .bind(doc)
+            .bind(h)
+            .execute(&mut *tx)
+            .await?;
+    }
+    Ok(())
+}
+
+/// When each item last changed, in order; an item the deck never noted (written before it kept track) gets the
+/// report's last edit.
+async fn item_times(db: &Db, doc: i64, markdown: &str, updated_at: i64) -> AppResult<Vec<jiff::Timestamp>> {
+    let rows: Vec<(String, i64)> = sqlx::query_as("SELECT hash, changed_at FROM report_items WHERE document_id = ?")
+        .bind(doc)
+        .fetch_all(db)
+        .await?;
+    let known: std::collections::HashMap<String, i64> = rows.into_iter().collect();
+    Ok(quietdeck_types::report::items(markdown)
+        .iter()
+        .map(|i| ts(known.get(&crate::auth::sha256_hex(i)).copied().unwrap_or(updated_at)))
+        .collect())
 }
 
 /// `quietdeck report set`: replace the report's text, from the version the agent last saw.
@@ -272,6 +312,7 @@ pub async fn set(state: &AppState, me: &SessionRef, doc: &Document, mut req: Rep
             .await?;
         }
     }
+    track_items(&mut tx, doc.id, &req.markdown, now).await?;
     let (report_id, version): (i64, i64) = sqlx::query_as(
         "SELECT id, version FROM reports WHERE closed_at IS NULL AND document_id = ? ORDER BY id DESC LIMIT 1",
     )
@@ -337,6 +378,7 @@ pub async fn fyi_clear(state: &AppState, doc: &Document) -> AppResult<Option<Rep
         .bind(now)
         .execute(&mut *tx)
         .await?;
+    track_items(&mut tx, doc.id, &cleared, now).await?;
     tx.commit().await?;
     state.changed(Changed::Cards);
     current(&state.db, doc.id).await
@@ -1222,6 +1264,30 @@ mod tests {
             "an empty FYI loses its heading"
         );
         assert!(snapshots_between(&state.db, 0, i64::MAX).await.unwrap().is_empty(), "History keeps the Inbox only");
+    }
+
+    #[tokio::test]
+    async fn each_item_keeps_the_time_its_text_last_changed() {
+        let state = AppState::for_tests().await;
+        let write = |md: &'static str, now: i64| {
+            let db = state.db.clone();
+            async move {
+                let mut tx = db.begin().await.unwrap();
+                track_items(&mut tx, 7, md, now).await.unwrap();
+                tx.commit().await.unwrap();
+            }
+        };
+        write("# Needs you\n\n1. a\n2. b\n", 1_000).await;
+        write("# Needs you\n\n1. a\n2. b, reworded\n3. c\n", 5_000).await;
+        let times =
+            item_times(&state.db, 7, "# Needs you\n\n1. a\n2. b, reworded\n3. c\n- unknown\n", 9_000).await.unwrap();
+        let ms: Vec<i64> = times.iter().map(|t| t.as_millisecond()).collect();
+        assert_eq!(ms, vec![1_000, 5_000, 5_000, 9_000]);
+        let (left,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM report_items WHERE document_id = 7")
+            .fetch_one(&state.db)
+            .await
+            .unwrap();
+        assert_eq!(left, 3, "the old wording of b is forgotten");
     }
 
     #[tokio::test]

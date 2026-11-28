@@ -3274,6 +3274,11 @@ export interface components {
             finished?: boolean;
             /** Format: int64 */
             id: number;
+            /**
+             * @description When each top-level list item's text last changed, in the order the items are written (`items`): the Work tab
+             *     shows it as "(1 hour ago)".
+             */
+            item_times?: string[] | null;
             markdown: string;
             posted_by: components["schemas"]["SessionRef"];
             updated_at: string;

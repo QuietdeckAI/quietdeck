@@ -13,7 +13,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import type { Settings } from "@/types/Settings";
 import { Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api";
-import { clock } from "@/lib/format";
+import { agoWords, clock, stampWithZone } from "@/lib/format";
+import { useNow } from "@/components/ReportMeta";
 import { cn, enterSends } from "@/lib/utils";
 import type { Approving } from "@/types/Approving";
 import type { Card } from "@/types/Card";
@@ -1248,14 +1249,25 @@ function Link(props: React.ComponentProps<"a">) {
   return <a {...props} target="_blank" rel="noreferrer noopener" />;
 }
 
+/** A Work item's "(1 hour ago)": when its text last changed, counting up as it sits there. */
+function Ago({ at }: { at?: string }) {
+  const now = useNow(60_000);
+  if (!at) return null;
+  return (
+    <span className="report-ago text-ink-3" title={stampWithZone(at)}>
+      ({agoWords(at, now)})
+    </span>
+  );
+}
+
 const OPTIONS = {
   forceBlock: true,
-  overrides: { Default, Ask, FyiClear, a: Link, code: Code },
+  overrides: { Default, Ask, FyiClear, Ago, a: Link, code: Code },
 };
 
 const SNAPSHOT_OPTIONS = {
   forceBlock: true,
-  overrides: { Default: SnapshotDefault, Ask: SnapshotAsk, FyiClear: () => null, a: Link, code: Code },
+  overrides: { Default: SnapshotDefault, Ask: SnapshotAsk, FyiClear: () => null, Ago: () => null, a: Link, code: Code },
 };
 
 /** An agent's reply in a thread: inline Markdown, with no headings or blocks of the report's size. */
@@ -1288,7 +1300,49 @@ export function withoutEmptyTop(markdown: string): string {
 }
 
 export function onlyReportTags(markdown: string): string {
-  return markdown.replace(/<(?!\/?(?:Default|Ask|FyiClear)\b)/g, "&lt;");
+  return markdown.replace(/<(?!\/?(?:Default|Ask|FyiClear|Ago)\b)/g, "&lt;");
+}
+
+/**
+ * Each top-level list item outside FYI gets `<Ago>` at the end of its first paragraph, with the time the deck noted for
+ * it (`item_times`, in the order the items are written: a `- `, `* ` or `1. ` line flush left, as the deck counts them).
+ */
+export function withItemTimes(markdown: string, times: string[] | undefined): string {
+  if (!times?.length) return markdown;
+  const lines = markdown.split("\n");
+  let item = -1;
+  let fyi = false;
+  let open = false;
+  let mark = -1;
+  const marks: [number, string][] = [];
+  const close = () => {
+    if (open && mark >= 0 && !fyi && times[item]) marks.push([mark, times[item]]);
+    open = false;
+    mark = -1;
+  };
+  let para = false;
+  lines.forEach((line, i) => {
+    const t = line.trimStart();
+    const indent = line.length - t.length;
+    if (indent === 0 && t !== "") {
+      close();
+      const h = t.match(/^(#+)\s+(.*)$/);
+      if (h) fyi = /^fyi\b/i.test(h[2].trim());
+      if (/^(?:[-*] |\d{1,3}\. )/.test(t)) {
+        item += 1;
+        open = true;
+        para = true;
+        mark = i;
+      }
+      return;
+    }
+    if (!open || !para) return;
+    if (t === "" || t.startsWith("<")) para = false;
+    else mark = i;
+  });
+  close();
+  for (const [i, at] of marks) lines[i] = `${lines[i].trimEnd()} <Ago at="${at}"></Ago>`;
+  return lines.join("\n");
 }
 
 /** A Work document's FYI part ends with the deck's Archive all panel, while it has items. */
@@ -1449,7 +1503,8 @@ export function ReportBody({
   const work = doc?.kind === "work";
   const marks = useSessionMarks().data ?? [];
   const parkedMarks = work ? marks.filter((m) => m.mark === "parked") : [];
-  const { main, parked } = splitParked(report.markdown, new Set(parkedMarks.map((m) => `${m.tab}@${m.node}`)));
+  const timed = work ? withItemTimes(report.markdown, report.item_times) : report.markdown;
+  const { main, parked } = splitParked(timed, new Set(parkedMarks.map((m) => `${m.tab}@${m.node}`)));
   const markdown = work ? withFyiPanel(main) : report.markdown;
   return (
     <ReportCtx

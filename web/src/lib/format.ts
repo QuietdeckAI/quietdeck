@@ -45,6 +45,17 @@ export function ago(iso: string): string {
   return `on ${when(iso)}`;
 }
 
+/** "1 hour ago", "3 days ago": how long ago in words, for a Work item's "(…)". */
+export function agoWords(iso: string, now = Date.now()): string {
+  const mins = Math.floor(Math.max(0, now - new Date(iso).getTime()) / 60_000);
+  const n = (v: number, unit: string) => `${v} ${unit}${v === 1 ? "" : "s"} ago`;
+  if (mins < 1) return "just now";
+  if (mins < 60) return n(mins, "minute");
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return n(hours, "hour");
+  return n(Math.floor(hours / 24), "day");
+}
+
 /** "23 min ago": how long ago, in whole minutes up to an hour, then hours, then days. */
 export function agoShort(iso: string, now = Date.now()): string {
   const secs = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));

@@ -48,6 +48,12 @@ pub struct Report {
     /// The document it's on (`GET /documents`); 1 is the Inbox.
     #[serde(default = "inbox_id")]
     pub document_id: i64,
+    /// When each top-level list item's text last changed, in the order the items are written (`items`): the Work tab
+    /// shows it as "(1 hour ago)".
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<string>", optional)]
+    #[schemars(with = "Option<Vec<String>>")]
+    pub item_times: Vec<Timestamp>,
 }
 
 fn inbox_id() -> i64 {
@@ -127,6 +133,28 @@ pub fn fyi_cleared(markdown: &str) -> Option<String> {
         joined.pop();
     }
     Some(joined)
+}
+
+/// The report's top-level list items (a `- `, `* ` or `1. ` line written flush left, with the indented and blank lines
+/// after it), in order, each trimmed. The deck notes when each one's text last changed, and the Work tab shows it.
+pub fn items(markdown: &str) -> Vec<String> {
+    let mut out: Vec<Vec<&str>> = vec![];
+    let mut open = false;
+    for line in markdown.split('\n') {
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        if indent == 0 && !trimmed.is_empty() {
+            open = trimmed.starts_with("- ") || trimmed.starts_with("* ") || numbered_item_width(trimmed).is_some();
+            if open {
+                out.push(vec![line]);
+            }
+            continue;
+        }
+        if open && let Some(item) = out.last_mut() {
+            item.push(line);
+        }
+    }
+    out.into_iter().map(|lines| lines.join("\n").trim().to_string()).collect()
 }
 
 /// `quietdeck report set`: the whole report, as the agent wants it now.
@@ -543,6 +571,12 @@ fn attr<'a>(attrs: &'a str, name: &str) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn items_are_the_top_level_list_entries() {
+        let md = "# Needs you\n\n1. **a:** one\n   <Ask id=\"x\">Q?</Ask>\n\n2. **b:** two\n\nText.\n\n## FYI\n\n- c\n  more\n";
+        assert_eq!(items(md), vec!["1. **a:** one\n   <Ask id=\"x\">Q?</Ask>", "2. **b:** two", "- c\n  more"]);
+    }
 
     #[test]
     fn an_ask_names_its_session() {
