@@ -213,8 +213,8 @@ harnesses:
 
 Fleetlayer's access rules decide it as a call from that machine's own user (`-@<node>`). A refusal comes back to the
 deck as Fleetlayer wrote it, and the node doesn't then try herdr. The node uses herdr with `sessions.claude_args` only
-when no Fleetlayer node answers on the machine, or when the start names a model, an effort or a session name other than
-its tab, which Fleetlayer can't pass.
+when no Fleetlayer node answers on the machine, or when the start names a session other than its tab, which Fleetlayer
+can't do. A model and an effort go through to Fleetlayer (it needs Fleetlayer 0.4.0 or later on that machine).
 
 ## Moving a session: handoffs
 

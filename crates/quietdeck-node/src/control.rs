@@ -4,8 +4,8 @@
 //!
 //! Where this machine runs a Fleetlayer node, Fleetlayer does it (`node/session_open`, `node/session_close` on its local
 //! socket, as `fleetlayer session start|resume|close` would), and the agents' flags come from Fleetlayer's node.yaml
-//! (`harnesses:`). Without Fleetlayer, or for a start that names a model, an effort or a name other than its tab (which
-//! Fleetlayer can't pass), the orchestrator (herdr) does it with node.yaml's `sessions:` flags.
+//! (`harnesses:`), with the model and effort asked for. Without Fleetlayer, or for a start naming a session other than
+//! its tab, the orchestrator (herdr) does it with node.yaml's `sessions:` flags.
 
 use std::path::Path;
 use std::time::Duration;
@@ -40,15 +40,16 @@ fn harness(agent: AgentKind) -> &'static str {
     }
 }
 
-/// Whether Fleetlayer can start this one as asked: it takes no model, effort or name apart from the tab.
+/// Whether Fleetlayer can start this one as asked: it names a session after its tab, so a different name needs herdr.
+/// Model and effort go through (Fleetlayer 0.4.0).
 fn fleetlayer_can_start(spec: &SessionStart) -> bool {
-    spec.model.is_none() && spec.effort.is_none() && spec.name.as_deref().is_none_or(|n| n == spec.tab)
+    spec.name.as_deref().is_none_or(|n| n == spec.tab)
 }
 
 fn start_params(spec: &SessionStart, cwd: &str) -> serde_json::Value {
     serde_json::json!({
         "tab": spec.tab, "cwd": cwd, "harness": harness(spec.agent), "prompt": spec.prompt,
-        "why": "started from Quietdeck's deck",
+        "model": spec.model, "effort": spec.effort, "why": "started from Quietdeck's deck",
     })
 }
 
@@ -457,7 +458,7 @@ mod tests {
     fn fleetlayer_starts_what_it_can_pass_and_herdr_keeps_the_rest() {
         assert!(fleetlayer_can_start(&spec(None, None)));
         assert!(fleetlayer_can_start(&spec(None, Some("esign cert"))), "a name that is the tab");
-        assert!(!fleetlayer_can_start(&spec(Some("opus"), None)), "a model Fleetlayer can't pass");
+        assert!(fleetlayer_can_start(&spec(Some("opus"), None)), "a model goes through");
         assert!(!fleetlayer_can_start(&spec(None, Some("other"))), "a name other than the tab");
     }
 
@@ -491,6 +492,7 @@ mod tests {
         assert_eq!(asked[0]["params"]["harness"], "claude");
         assert_eq!(asked[0]["params"]["prompt"], "Read the handoff.");
         assert!(asked[0]["params"].get("args").is_none(), "the agent's flags are Fleetlayer's node's to choose");
+        assert!(asked[0]["params"]["model"].is_null(), "no model asked for, none sent");
         assert_eq!(asked[1]["params"]["resume"], "s-1");
         assert_eq!(asked[1]["params"]["cwd"], "/srv");
     }
