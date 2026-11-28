@@ -172,9 +172,9 @@ function SentStatus({ answer }: { answer: ReportAnswer }) {
   const working = useWorkingOn(answer);
   const tab = report.posted_by.tab;
   if (!answer.picked_up)
-    return <span className="block text-sm text-neutral">Not sent to {tab} yet: it gets this when it's next online.</span>;
+    return <span className="mt-1.5 block text-sm text-neutral">Not sent to {tab} yet: it gets this when it's next online.</span>;
   return (
-    <span className="block text-sm text-neutral">
+    <span className="mt-1.5 block text-sm text-neutral">
       {working ? (
         <>
           {tab} is working on it
@@ -852,15 +852,24 @@ function Ask({
   children?: ReactNode;
 }) {
   const choices = (options ?? "").split("|").map((o) => o.trim()).filter(Boolean);
+  const about = text(children).trim();
+  // Called before any return, as every hook must be; a question panel (no options) has its own thread instead.
+  const chat = useAskChat(id ?? about, about);
   if (choices.length === 0) return <QuestionPanel id={id} session={session}>{children}</QuestionPanel>;
-  const ask = <ChoiceAsk id={id} choices={choices} other={other} cards={cards}>{children}</ChoiceAsk>;
+  const ask = (
+    <ChoiceAsk id={id} choices={choices} other={other} cards={cards} chat={chat} chatInHeader={Boolean(session)}>
+      {children}
+    </ChoiceAsk>
+  );
   if (!session) return ask;
-  // On Work, a choice about a session (a Done for something only he can do) sits in a panel with the session's menu.
+  // On Work, a choice about a session (a Done for something only he can do) sits in a panel with the session's menu,
+  // and the chat button sits beside that menu at the top right, as on a default.
   return (
     <span className="report-default relative rounded-md border border-rule bg-paper-2 py-1 pr-1 pl-3">
-      <span className="flex items-start gap-1">
+      <span className="flex items-start gap-0.5">
         <span className="min-w-0 flex-1 py-0.5 [&_.report-ask]:block">{ask}</span>
-        <SessionMenu session={session} about={text(children).trim()} />
+        {chat.button}
+        <SessionMenu session={session} about={about} />
       </span>
     </span>
   );
@@ -872,12 +881,18 @@ function ChoiceAsk({
   choices,
   other,
   cards,
+  chat,
+  chatInHeader,
   children,
 }: {
   id?: string;
   choices: string[];
   other?: unknown;
   cards?: string;
+  /** The question's chat (its button and thread), from [`Ask`]. */
+  chat: { button: ReactNode; body: ReactNode };
+  /** The button sits in the panel's top right, beside the session menu, rather than after the options. */
+  chatInHeader: boolean;
   children?: ReactNode;
 }) {
   const { report, kept } = useReport();
@@ -915,7 +930,6 @@ function ChoiceAsk({
   };
   const shown = sending ?? answered?.value;
   const otherOn = other !== undefined && other !== false && other !== "false";
-  const chat = useAskChat(control, about);
   return (
     <span className="report-ask relative">
       <span>{children}</span>{" "}
@@ -948,11 +962,11 @@ function ChoiceAsk({
           </Button>
         )}
         {undoWindow.pending && <UndoButton onClick={undo} label={`Undo the answer to: ${about}`} />}
-        {chat.button}
+        {!chatInHeader && chat.button}
       </span>
       {shown !== undefined && !choices.includes(shown) && <span className="block text-accent">You said: {shown}</span>}
       {sending !== null ? (
-        <span className="block text-sm text-neutral">Sending to {report.posted_by.tab}…</span>
+        <span className="mt-1.5 block text-sm text-neutral">Sending to {report.posted_by.tab}…</span>
       ) : (
         answered && <SentStatus answer={answered} />
       )}
@@ -990,7 +1004,7 @@ function ChoiceAsk({
  * The chat on an `<Ask>` with options, for when none of them fits and he'd rather talk it over: a button beside the
  * options opens the question's thread (his picks, his messages, the agent's replies) with a box to write in. What he
  * writes goes to the agent as a message about the question, not as his answer, so the question stays open. Closed,
- * the thread's messages show under the question as before.
+ * the chat collapses completely: the button's count says how many messages it holds.
  */
 function useAskChat(control: string, about: string): { button: ReactNode; body: ReactNode } {
   const { report, kept } = useReport();
@@ -1070,16 +1084,7 @@ function useAskChat(control: string, about: string): { button: ReactNode; body: 
       </span>
       {send.error && <span className="block text-sm text-danger">{send.error.message}</span>}
     </span>
-  ) : (
-    (talk.length > 0 || sending !== null) && (
-      <span className="mt-1.5 flex flex-col gap-2">
-        {talk.map((a) => (
-          <Bubble key={a.id} answer={a} />
-        ))}
-        {sending !== null && <Bubble pending={sending} />}
-      </span>
-    )
-  );
+  ) : null;
   return { button, body };
 }
 
