@@ -2,6 +2,7 @@
 //! Quietdeck solo, which runs the deck and a node in one process.
 
 pub mod api;
+pub mod approvals;
 pub mod auth;
 pub mod config;
 pub mod control;
@@ -129,6 +130,24 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
     tokio::spawn(reading::ticker(state.clone()));
     tokio::spawn(fleetlayer::ticker(state.clone()));
     tokio::spawn(overseer::ticker(state.clone()));
+    match (&env.fleetlayer_url, &env.fleetlayer_approve_token) {
+        (Some(url), Some(token)) => {
+            let tenant = env.fleetlayer_tenant.as_deref().unwrap_or("default");
+            let a =
+                approvals::Approver::new(url, token, env.fleetlayer_signin_url.as_deref(), tenant, &env.public_url)?;
+            let _ = approvals::APPROVER.set(a);
+            if env.fleetlayer_signin_url.is_none() {
+                tracing::warn!(
+                    "QUIETDECK_FLEETLAYER_SIGNIN_URL isn't set: Fleetlayer requests can be decided on the deck, but \
+                     opening an admin window (which needs the passkey page) can't"
+                );
+            }
+        }
+        (None, Some(_)) => tracing::warn!(
+            "QUIETDECK_FLEETLAYER_APPROVE_TOKEN needs QUIETDECK_FLEETLAYER_URL: Fleetlayer requests stay off the deck"
+        ),
+        _ => {}
+    }
     match (&env.fleetlayer_url, &env.fleetlayer_send_token) {
         (Some(url), Some(token)) => {
             let _ = relay::FLEETLAYER.set(fleetlayer::Sender::new(url, token)?);

@@ -3,6 +3,7 @@
 
 pub mod action;
 pub mod api;
+pub mod approvals;
 pub mod card;
 pub mod decision;
 pub mod directory;

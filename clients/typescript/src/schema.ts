@@ -400,6 +400,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/fleetlayer/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fleetlayer's pending access requests and open admin windows */
+        get: operations["fleet_approvals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fleetlayer/approvals/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve or refuse a Fleetlayer request (a window needs the passkey page first) */
+        post: operations["fleet_decide"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fleetlayer/windows/{id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close a Fleetlayer admin window now (id is its role) */
+        post: operations["fleet_close"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/handoffs": {
         parameters: {
             query?: never;
@@ -2523,6 +2574,70 @@ export interface components {
             label: string;
             /** @description "$1,200", "1 December". */
             value: string;
+        };
+        /** @description One pending request. */
+        FleetApproval: {
+            /**
+             * Format: int64
+             * @description Milliseconds since the epoch.
+             */
+            created_at: number;
+            /** @description What else Fleetlayer says about it (the call's arguments, the reason). */
+            detail?: string | null;
+            /**
+             * Format: int64
+             * @description When the request lapses, if it does.
+             */
+            expires_at?: number | null;
+            /** @description Who asks (`ops@server-admin`). */
+            from: string;
+            id: string;
+            /** @description Approving allows one use only. */
+            once: boolean;
+            /** @description On what (`node:laptop`, `tool:browser@laptop`, `window:admin`). */
+            to: string;
+            /** @description What it asks to do (`start`, `use_tool`, `activate`). */
+            verb: string;
+            /** @description It asks to open a role's window: approving needs the person's passkey first. */
+            window: boolean;
+        };
+        /** @description `GET /fleetlayer/approvals`: the pending requests and the open windows. */
+        FleetApprovals: {
+            approvals: components["schemas"]["FleetApproval"][];
+            /** @description The deck has an approve token. Without one, there's nothing to show. */
+            configured: boolean;
+            /** @description Why Fleetlayer couldn't be read, when it couldn't. */
+            error?: string | null;
+            windows: components["schemas"]["FleetWindow"][];
+        };
+        /** @description `POST /fleetlayer/approvals/{id}`: approve or refuse. */
+        FleetDecide: {
+            approve: boolean;
+            /** @description How long an approval holds (`10m`, `1h`); the request's own when absent. For a window, how long it's open. */
+            for?: string | null;
+        };
+        /**
+         * @description What deciding did. A window that needs the passkey first isn't decided: `stepup_url` is the sign-in service's
+         *     page to confirm it on, which comes back to the deck, and the deck then approves it again.
+         */
+        FleetDecided: {
+            decided: boolean;
+            stepup_url?: string | null;
+        };
+        /** @description An open admin window. */
+        FleetWindow: {
+            /**
+             * Format: int64
+             * @description When it closes by itself, in milliseconds since the epoch.
+             */
+            ends_at?: number | null;
+            id: string;
+            /** Format: int64 */
+            opened_at?: number | null;
+            /** @description What went wrong closing an earlier one, if a node reported a problem. */
+            problem?: string | null;
+            requested_by?: string | null;
+            role: string;
         };
         /** @description `quietdeck history --since`: what happened since the calling session last looked. */
         History: {
@@ -4747,6 +4862,95 @@ export interface operations {
                      *     data: "cards"
                      */
                     "text/event-stream": string;
+                };
+            };
+            /** @description An error, with its message. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    fleet_approvals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `GET /fleetlayer/approvals`: the pending requests and the open windows. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetApprovals"];
+                };
+            };
+        };
+    };
+    fleet_decide: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description `POST /fleetlayer/approvals/{id}`: approve or refuse. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FleetDecide"];
+            };
+        };
+        responses: {
+            /**
+             * @description What deciding did. A window that needs the passkey first isn't decided: `stepup_url` is the sign-in service's
+             *     page to confirm it on, which comes back to the deck, and the deck then approves it again.
+             */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetDecided"];
+                };
+            };
+            /** @description An error, with its message. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    fleet_close: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description An error, with its message. */

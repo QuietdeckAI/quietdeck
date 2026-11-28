@@ -2593,6 +2593,179 @@
         ],
         "type": "object"
       },
+      "FleetApproval": {
+        "description": "One pending request.",
+        "properties": {
+          "created_at": {
+            "description": "Milliseconds since the epoch.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "detail": {
+            "description": "What else Fleetlayer says about it (the call's arguments, the reason).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "description": "When the request lapses, if it does.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "from": {
+            "description": "Who asks (`ops@server-admin`).",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "once": {
+            "description": "Approving allows one use only.",
+            "type": "boolean"
+          },
+          "to": {
+            "description": "On what (`node:laptop`, `tool:browser@laptop`, `window:admin`).",
+            "type": "string"
+          },
+          "verb": {
+            "description": "What it asks to do (`start`, `use_tool`, `activate`).",
+            "type": "string"
+          },
+          "window": {
+            "description": "It asks to open a role's window: approving needs the person's passkey first.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "from",
+          "verb",
+          "to",
+          "created_at",
+          "once",
+          "window"
+        ],
+        "type": "object"
+      },
+      "FleetApprovals": {
+        "description": "`GET /fleetlayer/approvals`: the pending requests and the open windows.",
+        "properties": {
+          "approvals": {
+            "items": {
+              "$ref": "#/components/schemas/FleetApproval"
+            },
+            "type": "array"
+          },
+          "configured": {
+            "description": "The deck has an approve token. Without one, there's nothing to show.",
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Why Fleetlayer couldn't be read, when it couldn't.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "windows": {
+            "items": {
+              "$ref": "#/components/schemas/FleetWindow"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "configured",
+          "approvals",
+          "windows"
+        ],
+        "type": "object"
+      },
+      "FleetDecide": {
+        "description": "`POST /fleetlayer/approvals/{id}`: approve or refuse.",
+        "properties": {
+          "approve": {
+            "type": "boolean"
+          },
+          "for": {
+            "description": "How long an approval holds (`10m`, `1h`); the request's own when absent. For a window, how long it's open.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "approve"
+        ],
+        "type": "object"
+      },
+      "FleetDecided": {
+        "description": "What deciding did. A window that needs the passkey first isn't decided: `stepup_url` is the sign-in service's\npage to confirm it on, which comes back to the deck, and the deck then approves it again.",
+        "properties": {
+          "decided": {
+            "type": "boolean"
+          },
+          "stepup_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "decided"
+        ],
+        "type": "object"
+      },
+      "FleetWindow": {
+        "description": "An open admin window.",
+        "properties": {
+          "ends_at": {
+            "description": "When it closes by itself, in milliseconds since the epoch.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "opened_at": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "problem": {
+            "description": "What went wrong closing an earlier one, if a node reported a problem.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requested_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role"
+        ],
+        "type": "object"
+      },
       "History": {
         "description": "`quietdeck history --since`: what happened since the calling session last looked.",
         "properties": {
@@ -6560,7 +6733,7 @@
     },
     "summary": "Quietdeck's core: cards, decisions, actions, rules, leases, sessions and the timeline.",
     "title": "Quietdeck API",
-    "version": "1.5.0"
+    "version": "1.6.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -7792,6 +7965,138 @@
             "$ref": "#/components/schemas/Changed"
           }
         }
+      }
+    },
+    "/api/v1/fleetlayer/approvals": {
+      "get": {
+        "operationId": "fleet_approvals",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetApprovals"
+                }
+              }
+            },
+            "description": "`GET /fleetlayer/approvals`: the pending requests and the open windows."
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          }
+        ],
+        "summary": "Fleetlayer's pending access requests and open admin windows",
+        "tags": [
+          "report"
+        ],
+        "x-quietdeck-ui": "report"
+      }
+    },
+    "/api/v1/fleetlayer/approvals/{id}": {
+      "post": {
+        "operationId": "fleet_decide",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FleetDecide"
+              }
+            }
+          },
+          "description": "`POST /fleetlayer/approvals/{id}`: approve or refuse.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetDecided"
+                }
+              }
+            },
+            "description": "What deciding did. A window that needs the passkey first isn't decided: `stepup_url` is the sign-in service's\npage to confirm it on, which comes back to the deck, and the deck then approves it again."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "An error, with its message."
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          }
+        ],
+        "summary": "Approve or refuse a Fleetlayer request (a window needs the passkey page first)",
+        "tags": [
+          "report"
+        ],
+        "x-quietdeck-ui": "report"
+      }
+    },
+    "/api/v1/fleetlayer/windows/{id}/close": {
+      "post": {
+        "operationId": "fleet_close",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "An error, with its message."
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          }
+        ],
+        "summary": "Close a Fleetlayer admin window now (id is its role)",
+        "tags": [
+          "report"
+        ],
+        "x-quietdeck-ui": "report"
       }
     },
     "/api/v1/handoffs": {

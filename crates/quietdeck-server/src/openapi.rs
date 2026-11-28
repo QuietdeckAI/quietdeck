@@ -36,7 +36,7 @@ use crate::{api, passkeys};
 
 /// `info.version`: the minor version goes up with each additive change, the patch version with fixes to the
 /// description alone. A breaking change is a new `/api/v2`, never a new major version of v1.
-pub const API_VERSION: &str = "1.5.0";
+pub const API_VERSION: &str = "1.6.0";
 
 /// The versioned prefix the spec describes.
 pub const V1: &str = "/api/v1";
@@ -296,6 +296,9 @@ pub const OPERATIONS: &[Doc] = &[
     ui("report", "post", "/chat/reply", "chat_reply", "report", "The triage agent replies in the report's chat"),
     ui("report", "get", "/report/snapshots/{id}", "report_snapshot", "report", "An earlier version of the report"),
     ui("report", "post", "/report/fyi/clear", "report_fyi_clear", "report", "Clear a Work document's FYI list"),
+    ui("report", "get", "/fleetlayer/approvals", "fleet_approvals", "report", "Fleetlayer's pending access requests and open admin windows"),
+    ui("report", "post", "/fleetlayer/approvals/{id}", "fleet_decide", "report", "Approve or refuse a Fleetlayer request (a window needs the passkey page first)"),
+    ui("report", "post", "/fleetlayer/windows/{id}/close", "fleet_close", "report", "Close a Fleetlayer admin window now (id is its role)"),
     op("get", "/documents", "documents_list", "documents", "The documents, in order, with the tab each sits under"),
     op("post", "/documents", "documents_add", "documents", "Add a document"),
     op("patch", "/documents/{id}", "documents_edit", "documents", "Rename a document, move it, or change who writes it"),

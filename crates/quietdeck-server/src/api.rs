@@ -106,6 +106,9 @@ pub fn router() -> ApiRouter<AppState> {
         .api_route("/report/replies", post(report_reply))
         .api_route("/report/snapshots/{id}", get(report_snapshot))
         .api_route("/report/fyi/clear", post(report_fyi_clear))
+        .api_route("/fleetlayer/approvals", get(fleet_approvals))
+        .api_route("/fleetlayer/approvals/{id}", post(fleet_decide))
+        .api_route("/fleetlayer/windows/{id}/close", post(fleet_close))
         .api_route("/documents", get(documents_list).post(documents_add))
         .api_route("/documents/{id}", axum_patch(documents_edit))
         .api_route("/documents/{id}/remove", post(documents_remove))
@@ -263,6 +266,24 @@ async fn report_fyi_clear(
 ) -> AppResult<Json<Option<quietdeck_types::report::Report>>> {
     let doc = crate::documents::resolve(&state.db, q.doc.as_deref(), None).await?;
     Ok(Json(crate::reports::fyi_clear(&state, &doc).await?))
+}
+
+async fn fleet_approvals(_owner: Owner) -> Json<quietdeck_types::approvals::FleetApprovals> {
+    Json(crate::approvals::list().await)
+}
+
+async fn fleet_decide(
+    _owner: Owner,
+    Path(TextId { id }): Path<TextId>,
+    Json(d): Json<quietdeck_types::approvals::FleetDecide>,
+) -> AppResult<Json<quietdeck_types::approvals::FleetDecided>> {
+    Ok(Json(crate::approvals::decide(&id, &d).await?))
+}
+
+/// `id` is the window's role (`admin`).
+async fn fleet_close(_owner: Owner, Path(TextId { id }): Path<TextId>) -> AppResult<Json<serde_json::Value>> {
+    let closed = crate::approvals::close(&id).await?;
+    Ok(Json(serde_json::json!({"role": id, "closed": closed})))
 }
 
 async fn documents_list(

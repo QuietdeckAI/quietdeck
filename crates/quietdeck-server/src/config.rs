@@ -27,6 +27,18 @@ pub struct Env {
     /// the session's node only where Fleetlayer doesn't know the session.
     #[arg(long, env = "QUIETDECK_FLEETLAYER_SEND_TOKEN", hide_env_values = true)]
     pub fleetlayer_send_token: Option<String>,
+    /// An approve-scoped Fleetlayer token (`fleetlayer-control token add quietdeck-approve --scope approve --owner
+    /// <person>`): Fleetlayer's access requests and admin windows show on the Work tab, decided there as that person.
+    /// Keep it with the deck only, where no agent can read it: whoever reads it can approve any request but a window.
+    #[arg(long, env = "QUIETDECK_FLEETLAYER_APPROVE_TOKEN", hide_env_values = true)]
+    pub fleetlayer_approve_token: Option<String>,
+    /// Fleetlayer's sign-in service (`https://signin.example.com`), whose `/stepup` page confirms opening an admin
+    /// window with the person's passkey. The deck's address must be in its `stepup_return_origins`.
+    #[arg(long, env = "QUIETDECK_FLEETLAYER_SIGNIN_URL")]
+    pub fleetlayer_signin_url: Option<String>,
+    /// Fleetlayer's place (tenant) slug, for the passkey page. `default` when unset.
+    #[arg(long, env = "QUIETDECK_FLEETLAYER_TENANT")]
+    pub fleetlayer_tenant: Option<String>,
     #[arg(long, env = "QUIETDECK_VAPID_PUBLIC_KEY", hide_env_values = true)]
     pub vapid_public_key: Option<String>,
     #[arg(long, env = "QUIETDECK_VAPID_PRIVATE_KEY", hide_env_values = true)]
