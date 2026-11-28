@@ -43,6 +43,11 @@ frontend from the deck's origin, one of two ways:
 
 Agents and scripts don't need either: they send a bearer token (`session` or `node`) from anywhere.
 
+Frontends on other origins come later, designed now (28 November 2026) so nothing has to change when they do: the
+deck will take an explicit list of allowed origins in its config, never a wildcard, and send credentials to those
+origins only. People will sign in to them through Fleetlayer's sign-in service (OpenID Connect), which the deck
+already uses for its own sign-in.
+
 ## Making decisions
 
 Two routes, by what the decision does:
