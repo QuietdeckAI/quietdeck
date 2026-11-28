@@ -234,6 +234,14 @@ searches subagents' and ended sessions' transcripts and redacts what it finds. T
 mention the text and when, as before. When Fleetlayer's node is older, refuses, or hasn't answered within 20 seconds,
 the node searches the transcripts itself.
 
+## Session statuses for the overseer watch
+
+With a Fleetlayer address and read token, the deck also reads the `session.status` channel from the control plane's
+event log (the same long poll as the rooms below) and applies each change to its sessions: working, idle, done, blocked
+and gone. The overseer watch's rules don't change, but it now sees sessions on machines without a Quietdeck node, and a
+session that worked between two of its ticks still counts as new work. A status older than the one the deck already
+has (from a Quietdeck node reporting the same session) is ignored.
+
 ## Read Matrix rooms through Fleetlayer
 
 Fleetlayer's [Matrix plugin](https://fleetlayer.ai/docs/plugins/matrix/) reads rooms as its bot and puts each message on
@@ -316,7 +324,7 @@ stays with Quietdeck's node.
   [crates/quietdeck-node/src/link.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-node/src/link.rs)
 - The deck pulling summaries and asking for catch-ups:
   [crates/quietdeck-server/src/fleetlayer.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/fleetlayer.rs)
-- The deck reading Matrix rooms from Fleetlayer's event log:
+- The deck reading session statuses and Matrix rooms from Fleetlayer's event log:
   [crates/quietdeck-server/src/fleetlayer_events.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/fleetlayer_events.rs)
 - The deck copying Fleetlayer's handoffs:
   [crates/quietdeck-server/src/fleetlayer_handoffs.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/fleetlayer_handoffs.rs)

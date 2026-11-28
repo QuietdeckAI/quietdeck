@@ -1,4 +1,9 @@
-//! Matrix rooms read through Fleetlayer's Matrix plugin, in place of the node's own Matrix reader.
+//! What the deck reads from Fleetlayer's event log: session status changes (`session.status`), and Matrix rooms read
+//! through Fleetlayer's Matrix plugin in place of the node's own Matrix reader.
+//!
+//! Each status change is applied to the deck's sessions (`sessions::apply_status`), so the overseer watch and the
+//! Sessions screen see Fleetlayer's statuses as they change, for machines without a Quietdeck node too, and a session
+//! seen working counts as new work for the overseer even when it went idle again between two of the watch's ticks.
 //!
 //! The deck reads the control plane's event log (`GET /v1/events?after=<id>&channel=…&wait=30`, with the read token)
 //! for the channels in `QUIETDECK_FLEETLAYER_ROOM_CHANNELS`, and stores each room message as the node's reader did
@@ -33,6 +38,8 @@ pub struct Feed {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Event {
     pub id: i64,
+    #[serde(default)]
+    pub channel: String,
     pub kind: String,
     #[serde(default)]
     pub body: serde_json::Value,
@@ -59,6 +66,54 @@ fn message(e: &Event) -> Option<IncomingMessage> {
         body: text("text").unwrap_or_default(),
         sent_at: jiff::Timestamp::from_millisecond(e.at).unwrap_or_else(|_| jiff::Timestamp::now()),
     })
+}
+
+/// Fleetlayer's status channel.
+pub const STATUS_CHANNEL: &str = "session.status";
+
+/// A `session.status` event's time: `statusChangedAt` (RFC 3339 or milliseconds), else the event's own.
+fn status_at(e: &Event) -> i64 {
+    match &e.body["statusChangedAt"] {
+        serde_json::Value::String(t) => t.parse::<jiff::Timestamp>().map(|t| t.as_millisecond()).unwrap_or(e.at),
+        serde_json::Value::Number(n) => n.as_i64().unwrap_or(e.at),
+        _ => e.at,
+    }
+}
+
+/// Applies a `session.status` event to the deck's sessions.
+async fn apply_status(state: &AppState, e: &Event) -> anyhow::Result<()> {
+    use quietdeck_types::AgentStatus;
+    let b = &e.body;
+    let (Some(node), Some(session_id)) = (b["node"].as_str(), b["sessionId"].as_str()) else { return Ok(()) };
+    let status = match e.kind.strip_prefix("session.") {
+        Some("working") => Some(AgentStatus::Working),
+        Some("idle") => Some(AgentStatus::Idle),
+        Some("done") => Some(AgentStatus::Done),
+        Some("blocked") => Some(AgentStatus::Blocked),
+        Some("gone") => None,
+        _ => return Ok(()),
+    };
+    let at = status_at(e);
+    crate::store::sessions::apply_status(
+        &state.db,
+        &state.config,
+        node,
+        session_id,
+        b["tab"].as_str(),
+        b["cwd"].as_str(),
+        status,
+        at,
+    )
+    .await?;
+    if status == Some(AgentStatus::Working) {
+        // Its next idle is new work for the overseer, however soon it comes.
+        sqlx::query("UPDATE overseer_told SET worked = 1 WHERE worked = 0 AND node = ? AND session_id = ?")
+            .bind(node)
+            .bind(session_id)
+            .execute(&state.db)
+            .await?;
+    }
+    Ok(())
 }
 
 /// The node that read an event (`matrix@agents` → `agents`), for the stored message's `node`.
@@ -91,7 +146,13 @@ async fn set_cursor(state: &AppState, value: i64) -> anyhow::Result<()> {
 /// Stores one answer's room messages, grouped by the node that read them. Returns how many were new.
 async fn store(state: &AppState, events: &[Event]) -> anyhow::Result<u32> {
     let mut by_node: Vec<(String, Vec<IncomingMessage>)> = Vec::new();
+    let mut statuses = false;
     for e in events {
+        if e.channel == STATUS_CHANNEL {
+            apply_status(state, e).await?;
+            statuses = true;
+            continue;
+        }
         let Some(m) = message(e) else { continue };
         let node = reader(e);
         match by_node.iter_mut().find(|(n, _)| *n == node) {
@@ -104,6 +165,9 @@ async fn store(state: &AppState, events: &[Event]) -> anyhow::Result<u32> {
         for chunk in ms.chunks(quietdeck_types::message::MAX_INGEST) {
             new += crate::messages::ingest(state, &node, chunk.to_vec()).await?.new;
         }
+    }
+    if statuses {
+        state.changed(crate::events::Changed::Sessions);
     }
     Ok(new)
 }
@@ -118,15 +182,18 @@ pub async fn read_once(state: &AppState, client: &Client, channels: &str) -> any
     Ok(Some(new))
 }
 
-/// Runs for as long as the deck does, when it has a Fleetlayer address and token and room channels to read.
-pub async fn ticker(state: AppState, channels: Option<String>) {
+/// The channels to read: the status channel and the rooms.
+fn channels(rooms: Option<&str>) -> String {
+    let mut all = vec![STATUS_CHANNEL];
+    all.extend(rooms.unwrap_or_default().split(',').map(str::trim).filter(|c| !c.is_empty() && *c != STATUS_CHANNEL));
+    all.join(",")
+}
+
+/// Runs for as long as the deck does, when it has a Fleetlayer address and token.
+pub async fn ticker(state: AppState, rooms: Option<String>) {
     let Some(client) = state.fleetlayer.clone() else { return };
-    let channels =
-        channels.unwrap_or_default().split(',').map(str::trim).filter(|c| !c.is_empty()).collect::<Vec<_>>().join(",");
-    if channels.is_empty() {
-        return;
-    }
-    tracing::info!(%channels, "reading Matrix rooms from Fleetlayer's event log");
+    let channels = channels(rooms.as_deref());
+    tracing::info!(%channels, "reading Fleetlayer's event log");
     let (mut failing, mut absent) = (false, false);
     loop {
         // A read waits up to WAIT_SECS for an event; stopping the deck doesn't wait for it.
@@ -195,6 +262,59 @@ mod tests {
         let other: Event =
             serde_json::from_value(serde_json::json!({"id": 5, "kind": "alertmanager.firing", "at": 0})).unwrap();
         assert!(message(&other).is_none(), "only room messages");
+    }
+
+    fn status_event(id: i64, kind: &str, changed_at: &str) -> Event {
+        serde_json::from_value(serde_json::json!({
+            "id": id, "channel": "session.status", "kind": kind, "subject": "api@laptop", "summary": "",
+            "source": "control", "at": 1764300000000i64,
+            "body": {"node": "laptop", "sessionId": "s-api", "tab": "api", "cwd": "/home/me/code/api",
+                     "status": kind.trim_start_matches("session."), "statusChangedAt": changed_at}
+        }))
+        .unwrap()
+    }
+
+    async fn status_of(state: &AppState) -> (String, i64, i64) {
+        sqlx::query_as(
+            "SELECT status, status_changed_at, running FROM sessions WHERE node = 'laptop' AND session_id = 's-api'",
+        )
+        .fetch_one(&state.db)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn status_changes_reach_the_deck_and_an_older_one_doesnt_undo_a_newer() {
+        let state = AppState::for_tests().await;
+        store(&state, &[status_event(1, "session.working", "2026-11-29T05:00:00Z")]).await.unwrap();
+        let t = |s: &str| s.parse::<jiff::Timestamp>().unwrap().as_millisecond();
+        assert_eq!(status_of(&state).await, ("working".into(), t("2026-11-29T05:00:00Z"), 1));
+        store(&state, &[status_event(2, "session.idle", "2026-11-29T05:02:00Z")]).await.unwrap();
+        store(&state, &[status_event(3, "session.blocked", "2026-11-29T05:01:00Z")]).await.unwrap();
+        assert_eq!(status_of(&state).await.0, "idle", "the older change is ignored");
+        store(&state, &[status_event(4, "session.gone", "2026-11-29T05:03:00Z")]).await.unwrap();
+        assert_eq!(status_of(&state).await.2, 0);
+    }
+
+    #[tokio::test]
+    async fn working_counts_as_new_work_for_the_overseer() {
+        let state = AppState::for_tests().await;
+        sqlx::query(
+            "INSERT INTO overseer_told (node, session_id, status, status_changed_at, told_at, worked) \
+             VALUES ('laptop', 's-api', 'idle', 1, 1, 0)",
+        )
+        .execute(&state.db)
+        .await
+        .unwrap();
+        store(&state, &[status_event(1, "session.working", "2026-11-29T05:00:00Z")]).await.unwrap();
+        let (worked,): (i64,) = sqlx::query_as("SELECT worked FROM overseer_told").fetch_one(&state.db).await.unwrap();
+        assert_eq!(worked, 1);
+    }
+
+    #[test]
+    fn the_status_channel_is_always_read() {
+        assert_eq!(channels(None), "session.status");
+        assert_eq!(channels(Some("infrastructure-alerts, family,")), "session.status,infrastructure-alerts,family");
     }
 
     #[test]

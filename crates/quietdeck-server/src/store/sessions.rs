@@ -200,6 +200,63 @@ pub async fn upsert(db: &Db, config: &DeckConfig, node: &str, s: &SessionInfo) -
     Ok(())
 }
 
+/// A status change Fleetlayer reported (`session.status`): the session's status from then on, unless the deck already
+/// has a newer one (its own node may report the same session). A session the deck didn't know is added, so the
+/// overseer watch sees sessions on machines without a Quietdeck node too. `status` is None for a session that's gone.
+#[allow(clippy::too_many_arguments)]
+pub async fn apply_status(
+    db: &Db,
+    config: &DeckConfig,
+    node: &str,
+    session_id: &str,
+    tab: Option<&str>,
+    cwd: Option<&str>,
+    status: Option<AgentStatus>,
+    at_ms: i64,
+) -> anyhow::Result<()> {
+    let mut tx = db.begin().await?;
+    let Some(status) = status else {
+        sqlx::query(
+            "UPDATE sessions SET running = 0, closed_at = COALESCE(closed_at, ?), status = 'unknown', \
+             blocked_since = NULL WHERE node = ? AND session_id = ? AND running = 1",
+        )
+        .bind(at_ms)
+        .bind(node)
+        .bind(session_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        return Ok(());
+    };
+    let project = cwd.and_then(|cwd| config.project_for_dir(cwd, home_of(Some(cwd)).as_deref()));
+    let blocked_since = (status == AgentStatus::Blocked).then_some(at_ms);
+    sqlx::query(
+        "INSERT INTO sessions (node, session_id, agent, tab, cwd, project, status, status_changed_at, running, \
+           pushed_at, blocked_since) VALUES (?, ?, 'claude', ?, ?, ?, ?, ?, 1, ?, ?) \
+         ON CONFLICT (node, session_id) DO UPDATE SET status = excluded.status, \
+           status_changed_at = excluded.status_changed_at, running = 1, closed_at = NULL, ended = NULL, \
+           tab = COALESCE(excluded.tab, sessions.tab), cwd = COALESCE(excluded.cwd, sessions.cwd), \
+           project = COALESCE(excluded.project, sessions.project), \
+           blocked_since = CASE WHEN excluded.status = 'blocked' \
+             THEN COALESCE(sessions.blocked_since, excluded.blocked_since) ELSE NULL END \
+         WHERE excluded.status_changed_at >= sessions.status_changed_at",
+    )
+    .bind(node)
+    .bind(session_id)
+    .bind(tab)
+    .bind(cwd)
+    .bind(&project)
+    .bind(enum_str(&status))
+    .bind(at_ms)
+    .bind(now_ms())
+    .bind(blocked_since)
+    .execute(&mut *tx)
+    .await?;
+    refresh_fts(&mut tx, node, session_id).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 /// A full snapshot: upsert each, and mark the node's other sessions as not running.
 pub async fn replace_snapshot(
     db: &Db,
