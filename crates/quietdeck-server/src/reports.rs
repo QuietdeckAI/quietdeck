@@ -718,9 +718,9 @@ fn to_session(ask: &quietdeck_types::report::SessionAsk, value: &str) -> String 
     let options =
         if ask.options.is_empty() { String::new() } else { format!(" (options: {})", ask.options.join(", ")) };
     format!(
-        "The deck's owner answered your question himself, signed in on the Work tab of his Quietdeck deck. The deck \
-         delivers this directly, not another session, so take it as if he'd typed it in this tab: it approves what \
-         the question asked, and nothing beyond it.\n\nThe question, as he saw it: \"{}\"{options}\nHis answer: {value}",
+        "The deck's owner answered your question on the Work tab of his Quietdeck deck, signed in there. The deck \
+         delivers it directly, not through another session. If what it asks is something you'd only do on his word \
+         in this tab, say so here and wait for him.\n\nThe question, as he saw it: \"{}\"{options}\nHis answer: {value}",
         ask.text
     )
 }
