@@ -64,7 +64,7 @@ test("nothing is reachable before sign-in", async ({ request }) => {
     expect((await request.get(path)).status(), path).toBe(401);
   }
   const state = await (await request.get("/api/auth/state")).json();
-  expect(state).toEqual({ signed_in: false, setup_needed: true });
+  expect(state).toEqual({ signed_in: false, setup_needed: true, signin: false });
 });
 
 test("a wrong setup code is refused", async () => {
