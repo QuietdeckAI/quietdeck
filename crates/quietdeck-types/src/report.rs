@@ -297,6 +297,22 @@ pub fn default_cards(markdown: &str) -> (Vec<i64>, Vec<String>) {
     (ids, bad)
 }
 
+/// The `<Default>`s the person changed on this version of the report that the agent hasn't answered yet: Approve All
+/// leaves their cards out, and the Inbox greys out their approve buttons. The agent answers a change by rewriting the
+/// report (a new version, which this version's changes don't carry into) or by replying in the default's thread, when
+/// it keeps the default as it was. Either way the default can be approved again (Nathan, 28 Nov 2026: a test message
+/// the agent answered without rewriting the report left its default unapprovable for good).
+pub fn changes_waiting(answers: &[ReportAnswer], version: i64) -> std::collections::HashSet<&str> {
+    let mut waiting = std::collections::HashSet::new();
+    for a in answers.iter().filter(|a| a.kind == AnswerKind::Change && a.report_version == version) {
+        let answered = answers.iter().any(|r| r.kind == AnswerKind::Reply && r.control == a.control && r.id > a.id);
+        if !answered {
+            waiting.insert(a.control.as_str());
+        }
+    }
+    waiting
+}
+
 /// Each `<Default>`'s key, as the Inbox and the person's answers name it (its `id`, else `cards:` and its `cards`
 /// value as written), and the cards it names.
 pub fn default_keys(markdown: &str) -> Vec<(String, Vec<i64>)> {
@@ -672,6 +688,34 @@ mod tests {
         assert_eq!(bad, vec!["line 5: \"x9\" isn't a card ID (c_12)".to_string()]);
         assert_eq!(default_cards("<Default>x</Default>").1, vec!["line 1: a <Default> has no cards=\"…\"".to_string()]);
         assert_eq!(default_cards("# A\n\n<Default>x</Default>").1[0], "line 3: a <Default> has no cards=\"…\"");
+    }
+
+    #[test]
+    fn a_reply_answers_a_change() {
+        let at = Timestamp::UNIX_EPOCH;
+        let answer = |id, version, control: &str, kind| ReportAnswer {
+            id,
+            report_version: version,
+            control: control.into(),
+            kind,
+            about: String::new(),
+            value: String::new(),
+            answered_at: at,
+            picked_up: true,
+            cards: None,
+        };
+        let answers = vec![
+            answer(1, 3, "a", AnswerKind::Change),
+            answer(2, 3, "b", AnswerKind::Change),
+            answer(3, 3, "a", AnswerKind::Reply),
+            answer(4, 3, "c", AnswerKind::Reply),
+            answer(5, 3, "c", AnswerKind::Change),
+            answer(6, 2, "d", AnswerKind::Change),
+        ];
+        let waiting = changes_waiting(&answers, 3);
+        // "a" was answered; "b" wasn't; "c"'s reply came before its change; "d" was on an older version.
+        assert_eq!(waiting, ["b", "c"].into_iter().collect());
+        assert!(changes_waiting(&answers, 4).is_empty());
     }
 
     #[test]

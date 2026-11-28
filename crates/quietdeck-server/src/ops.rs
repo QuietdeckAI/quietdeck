@@ -395,7 +395,7 @@ async fn approve_all_on(state: &AppState, req: ApproveAll, snapshot: bool) -> Ap
     Ok(a)
 }
 
-/// Approve All for the report on screen: the cards of every `<Default>` the person didn't change on this version,
+/// Approve All for the report on screen: the cards of every `<Default>` without a change the agent hasn't answered yet,
 /// open or handed off, each approved as it stands (a suggestion with its actions as they are).
 pub async fn approve_report(state: &AppState, req: quietdeck_types::decision::ApproveReport) -> AppResult<Approving> {
     garde::Validate::validate(&req).map_err(bad)?;
@@ -412,12 +412,7 @@ pub async fn approve_report(state: &AppState, req: quietdeck_types::decision::Ap
             report.version, req.report_version
         )));
     }
-    let changed: std::collections::HashSet<&str> = report
-        .answers
-        .iter()
-        .filter(|a| a.kind == quietdeck_types::report::AnswerKind::Change && a.report_version == report.version)
-        .map(|a| a.control.as_str())
-        .collect();
+    let changed = quietdeck_types::report::changes_waiting(&report.answers, report.version);
     let mut seen = std::collections::HashSet::new();
     let mut decisions = Vec::new();
     for (key, ids) in quietdeck_types::report::default_keys(&report.markdown) {

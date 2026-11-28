@@ -51,10 +51,18 @@ export function reportDefaults(markdown: string): { key: string; about: string; 
   return out;
 }
 
-/** The defaults the person changed on this version of the report: Approve All leaves their cards to the agent. */
+/**
+ * The defaults the person changed on this version of the report that the agent hasn't answered yet: Approve All leaves
+ * their cards to the agent. A reply in the default's thread answers the change as well as a new version does (the deck's
+ * `changes_waiting`), so a change the agent keeps the default through doesn't block it for good.
+ */
 export function changedKeys(report: Report): Set<string> {
+  const answers = report.answers;
   return new Set(
-    report.answers.filter((a) => a.kind === "change" && a.report_version === report.version).map((a) => a.control),
+    answers
+      .filter((a) => a.kind === "change" && a.report_version === report.version)
+      .filter((a) => !answers.some((r) => r.kind === "reply" && r.control === a.control && r.id > a.id))
+      .map((a) => a.control),
   );
 }
 
@@ -66,9 +74,11 @@ function useRunningSessions() {
 /** The session that writes the report, if it's running. */
 export function useReportAgent(by: SessionRef): SessionRow | undefined {
   const sessions = useRunningSessions().data ?? [];
-  return sessions.find(
-    (s) => s.node === by.node && s.tab === by.tab && (by.session_id === null || s.session_id === by.session_id),
-  );
+  const inTab = sessions.filter((s) => s.node === by.node && s.tab === by.tab);
+  // The same session if it's still there; else whatever runs in that tab now. A headless agent (solo) is listed as
+  // `headless:<tab>` while each turn posts with its own Claude session ID, so an exact match never finds it, and the
+  // Inbox called a running agent offline (Nathan, 28 Nov 2026).
+  return inTab.find((s) => by.session_id === null || s.session_id === by.session_id) ?? inTab[0];
 }
 
 /**
@@ -122,10 +132,11 @@ const smallButton =
   "hover:text-ink active:translate-y-px disabled:opacity-45 aria-expanded:bg-paper-3 aria-expanded:text-ink " +
   "[&_svg]:size-4 [&_svg]:shrink-0";
 
-type AgentState = "working" | "idle" | "blocked" | "offline";
+type AgentState = "working" | "idle" | "blocked" | "stopped" | "unreachable";
 
 function agentState(agent: SessionRow | undefined): AgentState {
-  if (!agent?.running || !agent.node_online) return "offline";
+  if (!agent?.running) return "stopped";
+  if (!agent.node_online) return "unreachable";
   if (agent.status === "working") return "working";
   if (agent.status === "blocked") return "blocked";
   return "idle";
@@ -134,7 +145,15 @@ function agentState(agent: SessionRow | undefined): AgentState {
 /** Bottom left of the chat bar: the agent's dot and what it's doing. Green idle, yellow working. */
 export function AgentStatus({ by }: { by: SessionRef }) {
   const state = agentState(useReportAgent(by));
-  const words = { working: "Working", idle: "Idle", blocked: "Waiting on you", offline: "Offline" }[state];
+  // Not "offline": a headless agent runs only for each batch of mail, and isn't offline in between (Nathan, 28 Nov
+  // 2026). It's idle then; "Not running" is a session that has ended, and the machine itself can be out of reach.
+  const words = {
+    working: "Working",
+    idle: "Idle",
+    blocked: "Waiting on you",
+    stopped: "Not running",
+    unreachable: `Can't reach ${by.node}`,
+  }[state];
   return (
     <span
       role="status"
@@ -148,7 +167,7 @@ export function AgentStatus({ by }: { by: SessionRef }) {
           state === "idle" && "bg-ok",
           state === "working" && "bg-busy motion-safe:animate-pulse",
           state === "blocked" && "bg-busy",
-          state === "offline" && "bg-neutral",
+          (state === "stopped" || state === "unreachable") && "bg-neutral",
         )}
       />
       <span className="max-sm:sr-only">{words}</span>
