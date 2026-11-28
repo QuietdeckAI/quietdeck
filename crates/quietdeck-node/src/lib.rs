@@ -49,11 +49,16 @@ impl Node {
     /// rather than when the orchestrator next reports the session's status, which can be seconds later; that report
     /// then takes over.
     pub async fn mark_working(&self, session_id: &str) {
+        self.set_status(session_id, quietdeck_types::AgentStatus::Working).await;
+    }
+
+    /// A running session's status, here and on the deck, when it's changed.
+    async fn set_status(&self, session_id: &str, status: quietdeck_types::AgentStatus) {
         let changed = {
             let mut sessions = self.sessions.lock().await;
             sessions.iter_mut().find(|s| s.session_id == session_id && s.running).and_then(|s| {
-                (s.status != quietdeck_types::AgentStatus::Working).then(|| {
-                    s.status = quietdeck_types::AgentStatus::Working;
+                (s.status != status).then(|| {
+                    s.status = status;
                     s.status_changed_at = jiff::Timestamp::now();
                     s.clone()
                 })
@@ -61,6 +66,18 @@ impl Node {
         };
         if let Some(session) = changed {
             self.link.push(NodeFrame::Session { session }).await;
+        }
+    }
+
+    /// The headless agent (solo) has no orchestrator to report its status: it's working while one of its turns runs
+    /// and idle between them, shown at the bottom of the Inbox (Nathan, 28 Nov 2026: it said Idle all through a turn).
+    async fn follow_headless_turns(self: Arc<Self>, session_id: String) {
+        let mut busy = self.headless_turns.busy();
+        while busy.changed().await.is_ok() {
+            let working = *busy.borrow_and_update();
+            let status =
+                if working { quietdeck_types::AgentStatus::Working } else { quietdeck_types::AgentStatus::Idle };
+            self.set_status(&session_id, status).await;
         }
     }
 }
@@ -164,6 +181,7 @@ pub async fn run(config: NodeConfig, opts: RunOptions) -> anyhow::Result<()> {
         );
         // A headless agent has no tab for the orchestrator to report: the node lists it itself, so the deck can reach it.
         if let Some(session) = r.headless_session() {
+            tokio::spawn(node.clone().follow_headless_turns(session.session_id.clone()));
             node.sessions.lock().await.push(session);
         }
         let _ = node.runner.set(runner::spawn(r));

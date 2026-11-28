@@ -30,9 +30,19 @@ pub struct TokenCache {
     by_caller: Mutex<HashMap<String, MintedToken>>,
 }
 
-/// The headless agent turns running now, by the pid of each turn's `claude` process.
-#[derive(Debug, Default)]
-pub struct HeadlessTurns(std::sync::Mutex<HashMap<u32, (u64, TokenSession)>>);
+/// The headless agent turns running now, by the pid of each turn's `claude` process, and whether any is: the node
+/// shows the agent as working while one runs (Nathan, 28 Nov 2026: solo's Inbox said Idle all through a turn).
+#[derive(Debug)]
+pub struct HeadlessTurns {
+    turns: std::sync::Mutex<HashMap<u32, (u64, TokenSession)>>,
+    busy: tokio::sync::watch::Sender<bool>,
+}
+
+impl Default for HeadlessTurns {
+    fn default() -> Self {
+        HeadlessTurns { turns: std::sync::Mutex::default(), busy: tokio::sync::watch::channel(false).0 }
+    }
+}
 
 /// A turn's place in [`HeadlessTurns`], given up when it's dropped: when the child exits, is stopped on a timeout
 /// or the turn's future is dropped, so a pid used again later never inherits the identity.
@@ -44,10 +54,12 @@ pub struct TurnRegistration {
 
 impl Drop for TurnRegistration {
     fn drop(&mut self) {
-        let mut map = self.turns.0.lock().expect("headless turns");
+        let mut map = self.turns.turns.lock().expect("headless turns");
         if map.get(&self.pid).is_some_and(|(seq, _)| *seq == self.seq) {
             map.remove(&self.pid);
         }
+        let now = !map.is_empty();
+        self.turns.busy.send_if_modified(|busy| std::mem::replace(busy, now) != now);
     }
 }
 
@@ -57,23 +69,29 @@ impl HeadlessTurns {
         static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let session = TokenSession { session_id: Some(session_id), tab: Some(tab), address: None };
-        self.0.lock().expect("headless turns").insert(pid, (seq, session));
+        self.turns.lock().expect("headless turns").insert(pid, (seq, session));
+        self.busy.send_if_modified(|busy| !std::mem::replace(busy, true));
         TurnRegistration { turns: self.clone(), pid, seq }
+    }
+
+    /// Whether a turn is running, told each time that changes.
+    pub fn busy(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.busy.subscribe()
     }
 
     /// The turns running now.
     #[cfg(test)]
     pub fn running(&self) -> Vec<TokenSession> {
-        self.0.lock().expect("headless turns").values().map(|(_, s)| s.clone()).collect()
+        self.turns.lock().expect("headless turns").values().map(|(_, s)| s.clone()).collect()
     }
 
     fn get(&self, pid: u32) -> Option<TokenSession> {
-        self.0.lock().expect("headless turns").get(&pid).map(|(_, s)| s.clone())
+        self.turns.lock().expect("headless turns").get(&pid).map(|(_, s)| s.clone())
     }
 
     /// The running turn `pid` is or descends from, if any.
     pub async fn caller(&self, pid: u32) -> Option<TokenSession> {
-        if self.0.lock().expect("headless turns").is_empty() {
+        if self.turns.lock().expect("headless turns").is_empty() {
             return None;
         }
         let mut current = pid;
@@ -245,6 +263,20 @@ async fn parent_of(pid: u32) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn busy_while_any_turn_runs() {
+        let turns = Arc::new(HeadlessTurns::default());
+        let mut busy = turns.busy();
+        assert!(!*busy.borrow());
+        let first = turns.begin(1, "t".into(), "s1".into());
+        assert!(busy.has_changed().unwrap() && *busy.borrow_and_update());
+        let second = turns.begin(2, "t".into(), "s2".into());
+        drop(first);
+        assert!(!busy.has_changed().unwrap(), "still busy while the second runs");
+        drop(second);
+        assert!(busy.has_changed().unwrap() && !*busy.borrow_and_update());
+    }
 
     #[tokio::test]
     async fn only_a_running_turn_and_what_it_starts_get_its_identity() {
