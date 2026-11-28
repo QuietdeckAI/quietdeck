@@ -9,6 +9,6 @@ const deck = process.env.QUIETDECK_DEV_DECK ?? "http://localhost:8080";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
-  server: { proxy: { "/api": { target: deck, changeOrigin: false } } },
+  server: { proxy: { "/api": { target: deck, changeOrigin: false }, "/auth": { target: deck, changeOrigin: false } } },
   build: { outDir: "dist", emptyOutDir: true, sourcemap: false },
 });

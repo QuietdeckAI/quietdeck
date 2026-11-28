@@ -36,6 +36,18 @@ pub struct Env {
     /// window with the person's passkey. The deck's address must be in its `stepup_return_origins`.
     #[arg(long, env = "QUIETDECK_FLEETLAYER_SIGNIN_URL")]
     pub fleetlayer_signin_url: Option<String>,
+    /// The deck's client ID at Fleetlayer's sign-in service, for signing the owner in there (OpenID Connect). `quietdeck`
+    /// when unset. Sign-in through Fleetlayer is on when QUIETDECK_FLEETLAYER_SIGNIN_URL, the secret file and the owner
+    /// are all set; passkeys keep working beside it.
+    #[arg(long, env = "QUIETDECK_FLEETLAYER_SIGNIN_CLIENT")]
+    pub fleetlayer_signin_client: Option<String>,
+    /// The file holding the deck's client secret at the sign-in service (mode 600).
+    #[arg(long, env = "QUIETDECK_FLEETLAYER_SIGNIN_SECRET_FILE")]
+    pub fleetlayer_signin_secret_file: Option<std::path::PathBuf>,
+    /// Who may sign in to the deck through Fleetlayer: the person's handle (`nathan`) or ID (`p_…`) at the sign-in
+    /// service. Anyone else the sign-in service lets through is refused here: a deck has one owner.
+    #[arg(long, env = "QUIETDECK_FLEETLAYER_SIGNIN_OWNER")]
+    pub fleetlayer_signin_owner: Option<String>,
     /// Fleetlayer's place (tenant) slug, for the passkey page. `default` when unset.
     #[arg(long, env = "QUIETDECK_FLEETLAYER_TENANT")]
     pub fleetlayer_tenant: Option<String>,

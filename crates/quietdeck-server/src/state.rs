@@ -30,6 +30,8 @@ pub struct AppState {
     pub hooks_public_url: Option<String>,
     /// Fleetlayer's control plane, when the deck has its address and a token.
     pub fleetlayer: Option<Arc<crate::fleetlayer::Client>>,
+    /// Signing the owner in through Fleetlayer's sign-in service, when it's configured.
+    pub signin: Option<Arc<crate::signin::Signin>>,
     /// True once the deck is stopping (SIGTERM): long-lived connections close.
     pub stopping: tokio::sync::watch::Receiver<bool>,
     /// Each node's last [`quietdeck_types::node::RunnerHealth`], and when it came. In memory only.
@@ -71,6 +73,7 @@ impl AppState {
             pusher: None,
             hooks_public_url: Some("https://hooks.example.com".into()),
             fleetlayer: None,
+            signin: None,
             stopping: tokio::sync::watch::channel(false).1,
             runner_health: Arc::default(),
             solo: false,

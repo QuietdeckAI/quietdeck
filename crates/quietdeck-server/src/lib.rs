@@ -31,6 +31,7 @@ pub mod relay;
 pub mod reports;
 pub mod rules;
 pub mod runner;
+pub mod signin;
 pub mod solo;
 pub mod state;
 pub mod store;
@@ -118,6 +119,7 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
             }
             (None, None) => None,
         },
+        signin: signin::Signin::from_env(&env)?.map(Arc::new),
         stopping: stop_rx.clone(),
         runner_health: Arc::default(),
         solo: local_only.is_some(),
@@ -178,6 +180,7 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
         .route("/healthz", get(health))
         .route("/healthz/runners", get(crate::health::runners))
         .route("/healthz/overseer", get(crate::overseer::health))
+        .merge(signin::router())
         .merge(openapi::routes(state.clone()).0)
         .nest_service("/mcp", mcp::service(state.clone()));
     if local_only.is_some() {

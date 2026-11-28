@@ -106,19 +106,45 @@ fn cookie_token(headers: &HeaderMap) -> Option<String> {
     })
 }
 
-/// The signed-in browser's passkey (its id and name), if the request's cookie is a live session.
-pub async fn owner_from_cookie(db: &Db, parts: &Parts) -> Result<Option<(i64, String)>, AppError> {
+/// A signed-in browser: its passkey, or none for a session from Fleetlayer's sign-in service.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignedIn {
+    pub passkey_id: Option<i64>,
+    /// How the Caller is described: `<device> (passkey <id>)`, or `<handle> (Fleetlayer sign-in)`.
+    pub device: String,
+}
+
+/// A browser session's row: last seen, its passkey and that passkey's name, or the sign-in's person and handle.
+type SessionRow = (i64, Option<i64>, Option<String>, Option<String>, Option<String>);
+
+/// The signed-in browser, if the request's cookie is a live session.
+pub async fn owner_from_cookie(db: &Db, parts: &Parts) -> Result<Option<SignedIn>, AppError> {
     let Some(token) = cookie_token(&parts.headers) else { return Ok(None) };
     let hash = sha256_hex(&token);
     let now = now_ms();
-    let row: Option<(i64, i64, String)> = sqlx::query_as(
-        "SELECT s.last_seen_at, p.id, COALESCE(p.device_name, 'passkey') FROM auth_sessions s \
-         JOIN passkeys p ON p.id = s.passkey_id WHERE s.token_hash = ?",
+    // A passkey session ends with its passkey (ON DELETE CASCADE); a sign-in session has none.
+    let row: Option<SessionRow> = sqlx::query_as(
+        "SELECT s.last_seen_at, p.id, p.device_name, s.signin_sub, s.signin_handle FROM auth_sessions s \
+         LEFT JOIN passkeys p ON p.id = s.passkey_id WHERE s.token_hash = ? \
+         AND (p.id IS NOT NULL OR s.signin_sub IS NOT NULL)",
     )
     .bind(&hash)
     .fetch_optional(db)
     .await?;
-    let Some((last_seen, passkey_id, device)) = row else { return Ok(None) };
+    let Some((last_seen, passkey_id, device_name, signin_sub, signin_handle)) = row else { return Ok(None) };
+    let signed_in = match passkey_id {
+        Some(id) => SignedIn {
+            passkey_id: Some(id),
+            device: format!("{} (passkey {id})", device_name.as_deref().unwrap_or("passkey")),
+        },
+        None => SignedIn {
+            passkey_id: None,
+            device: format!(
+                "{} (Fleetlayer sign-in)",
+                signin_handle.or(signin_sub).unwrap_or_else(|| "the owner".into())
+            ),
+        },
+    };
     if now - last_seen > IDLE_MS {
         sqlx::query("DELETE FROM auth_sessions WHERE token_hash = ?").bind(&hash).execute(db).await?;
         return Ok(None);
@@ -130,14 +156,14 @@ pub async fn owner_from_cookie(db: &Db, parts: &Parts) -> Result<Option<(i64, St
             .execute(db)
             .await?;
     }
-    Ok(Some((passkey_id, device)))
+    Ok(Some(signed_in))
 }
 
 fn secure(state: &AppState) -> bool {
     state.public_url.starts_with("https://")
 }
 
-fn set_cookie(state: &AppState, token: &str) -> HeaderValue {
+pub(crate) fn set_cookie(state: &AppState, token: &str) -> HeaderValue {
     // 400 days is the longest browsers keep a cookie; the session itself ends after 30 days unused.
     let attrs = if secure(state) { "; Secure" } else { "" };
     HeaderValue::from_str(&format!("{COOKIE_NAME}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=34560000{attrs}"))
@@ -170,7 +196,9 @@ fn credential_id(p: &Passkey) -> String {
 async fn auth_state(State(state): State<AppState>, parts: Parts) -> AppResult<Json<AuthState>> {
     let signed_in = owner_from_cookie(&state.db, &parts).await?.is_some() || state.dev_trust_local;
     let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM passkeys").fetch_one(&state.db).await?;
-    Ok(Json(AuthState { signed_in, setup_needed: count.0 == 0 }))
+    let signin = state.signin.is_some();
+    // With Fleetlayer's sign-in, no passkey is needed to get in, so no setup code is asked for first.
+    Ok(Json(AuthState { signed_in, setup_needed: count.0 == 0 && !signin, signin }))
 }
 
 async fn setup_code_valid(db: &Db, code: &str) -> Result<String, AppError> {
@@ -285,7 +313,8 @@ async fn sign_in(state: &AppState, headers: &HeaderMap, passkey_id: i64) -> AppR
     .bind(passkey_id)
     .execute(&state.db)
     .await?;
-    let mut res = Json(AuthState { signed_in: true, setup_needed: false }).into_response();
+    let mut res =
+        Json(AuthState { signed_in: true, setup_needed: false, signin: state.signin.is_some() }).into_response();
     res.headers_mut().insert(SET_COOKIE, set_cookie(state, &token));
     Ok(res)
 }
@@ -349,7 +378,8 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> AppResult<
             .execute(&state.db)
             .await?;
     }
-    let mut res = Json(AuthState { signed_in: false, setup_needed: false }).into_response();
+    let mut res =
+        Json(AuthState { signed_in: false, setup_needed: false, signin: state.signin.is_some() }).into_response();
     res.headers_mut().insert(SET_COOKIE, clear_cookie(&state));
     Ok(res)
 }

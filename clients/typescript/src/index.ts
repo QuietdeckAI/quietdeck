@@ -17,7 +17,7 @@ export type { components, operations, paths };
 export type Schemas = components["schemas"];
 
 /** The version of the API this client was generated from (the spec's `info.version`). */
-export const API_VERSION = "1.6.0";
+export const API_VERSION = "1.7.0";
 
 export interface QuietdeckClientOptions {
   /** The deck's address, without `/api/v1`: `https://deck.example.com`. Leave empty in a page the deck serves. */

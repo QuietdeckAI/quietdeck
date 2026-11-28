@@ -216,6 +216,46 @@ deck as Fleetlayer wrote it, and the node doesn't then try herdr. The node uses 
 when no Fleetlayer node answers on the machine, or when the start names a model, an effort or a session name other than
 its tab, which Fleetlayer can't pass.
 
+## Sign in through Fleetlayer
+
+If Fleetlayer's [sign-in service](https://fleetlayer.ai/docs/guides/sign-in/) already signs you in to your other
+services, the deck can use it too. Its sign-in screen then offers "Sign in with Fleetlayer" above the passkey button.
+Passkeys keep working beside it.
+
+1. Make the deck's client secret where the sign-in service runs, and register the deck as a client in its settings:
+
+   ```sh
+   openssl rand -hex 32 > ~/.config/fleetlayer/signin-clients/quietdeck
+   chmod 600 ~/.config/fleetlayer/signin-clients/quietdeck
+   ```
+
+   ```yaml
+   clients:
+     - name: quietdeck
+       redirect_uris: [https://deck.example.com/auth/callback]
+       post_logout_redirect_uris: [https://deck.example.com/]
+       backchannel_logout_uri: https://deck.example.com/auth/backchannel-logout
+       secret_file: ~/.config/fleetlayer/signin-clients/quietdeck
+   ```
+
+2. Give the deck the same secret, in a file only the deck's container reads, and say who its owner is:
+
+   ```sh
+   QUIETDECK_FLEETLAYER_SIGNIN_URL=https://signin.example.com
+   QUIETDECK_FLEETLAYER_SIGNIN_SECRET_FILE=/run/secrets/fleetlayer-signin
+   QUIETDECK_FLEETLAYER_SIGNIN_OWNER=p_…     # your person ID; a handle works too, but can later be given to someone else
+   ```
+
+3. Restart both, then sign in once from the deck's sign-in screen.
+
+Only the owner gets in. Someone else the sign-in service lets through is refused by the deck, by their handle or
+person ID. Signing out at the sign-in service, or "sign out everywhere" there, also signs the deck's browser out,
+through the back-channel logout address. Signing out of the deck ends only the deck's own session.
+
+The callback answers with a small page that moves on to where you were going, rather than a redirect. The deck's
+session cookie is `SameSite=Strict`, and a browser wouldn't send it on a redirect that's still part of the sign-in
+service's cross-site navigation.
+
 ## Claude accounts
 
 Claude sign-ins and their usage belong to Fleetlayer's [Claude accounts

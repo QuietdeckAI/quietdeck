@@ -188,6 +188,13 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
 
 ## Setting up a machine
 
+- **Signing in to the deck through Fleetlayer's sign-in service.** The deck is an OpenID Connect client of
+  fleetlayer-signin (Fleetlayer's own `fleetlayer-oidc` crate, as a git dependency at a release tag), beside passkeys,
+  with its own owner check because the sign-in service only says who someone is. Footguns: a `SameSite=Strict` session
+  cookie set on the callback isn't sent on the redirect that follows (answer with a page that moves on); the
+  `fleetlayer-oidc` crate's `testing` fake issuer needs rsa 0.10, which clashes with webauthn-rs's release candidate
+  under `--locked`, so the deck's tests sign with `jsonwebtoken` and a test-only key. Now:
+  `docs/guides/with-fleetlayer.md` ("Sign in through Fleetlayer"), `crates/quietdeck-server/src/signin.rs`.
 - **Sessions the deck starts, through Fleetlayer.** The node asks its Fleetlayer node (`node/session_open`,
   `node/session_close`), so the agent's flags come from Fleetlayer's node.yaml (`harnesses:`): a machine whose
   Fleetlayer config lacks `--dangerously-skip-permissions` starts sessions that stop at every permission prompt, even
