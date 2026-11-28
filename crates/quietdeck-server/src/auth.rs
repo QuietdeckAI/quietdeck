@@ -134,7 +134,7 @@ pub async fn resolve(state: &AppState, parts: &Parts) -> Result<Caller, AppError
         }
         return Err(AppError::Unauthorized("unknown token type".into()));
     }
-    if let Some(signed_in) = crate::passkeys::owner_from_cookie(&state.db, parts).await? {
+    if let Some(signed_in) = crate::passkeys::owner_from_cookie(state, parts).await? {
         same_origin(state, parts)?;
         return Ok(Caller::Owner { device: signed_in.device });
     }
@@ -221,7 +221,7 @@ impl FromRequestParts<AppState> for Owner {
         if parts.headers.contains_key(axum::http::header::AUTHORIZATION) {
             return Err(AppError::Forbidden("only the owner, in the web app, can do this".into()));
         }
-        if let Some(signed_in) = crate::passkeys::owner_from_cookie(&state.db, parts).await? {
+        if let Some(signed_in) = crate::passkeys::owner_from_cookie(state, parts).await? {
             same_origin(state, parts)?;
             return Ok(Owner { passkey_id: signed_in.passkey_id });
         }

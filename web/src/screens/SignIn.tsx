@@ -15,8 +15,8 @@ function signinHref() {
 }
 
 /**
- * Passkeys, and Fleetlayer's sign-in service when the deck has it (`signin`). The first passkey takes a one-time setup
- * code from the server (`quietdeck-server setup-code`).
+ * Fleetlayer's sign-in service when the deck has it (`signin`), otherwise passkeys. The first passkey takes a one-time
+ * setup code from the server (`quietdeck-server setup-code`).
  */
 export function SignInScreen({ setupNeeded, signin = false }: { setupNeeded: boolean; signin?: boolean }) {
   const qc = useQueryClient();
@@ -53,10 +53,11 @@ export function SignInScreen({ setupNeeded, signin = false }: { setupNeeded: boo
   const error = (registering ? register.error : signIn.error)?.message;
   const cancelled = error?.includes("NotAllowedError") || error?.includes("not allowed");
 
-  return (
-    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-4 py-16">
-      <h1 className="mb-1 text-2xl">Quietdeck</h1>
-      {signin && !registering && (
+  // A deck with Fleetlayer's sign-in doesn't use passkeys: Fleetlayer's sign-in service asks for the passkey.
+  if (signin) {
+    return (
+      <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-4 py-16">
+        <h1 className="mb-1 text-2xl">Quietdeck</h1>
         <div className="mt-6 flex flex-col gap-4">
           <Button asChild variant="primary">
             <a href={signinHref()}>
@@ -65,11 +66,15 @@ export function SignInScreen({ setupNeeded, signin = false }: { setupNeeded: boo
             </a>
           </Button>
         </div>
-      )}
+      </main>
+    );
+  }
+
+  return (
+    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-4 py-16">
+      <h1 className="mb-1 text-2xl">Quietdeck</h1>
       {!passkeysSupported() ? (
-        signin ? null : (
         <p className="text-muted">This browser can’t use passkeys. Open the deck in Safari, Chrome, Edge or Firefox.</p>
-        )
       ) : registering ? (
         <form
           className="mt-6 flex flex-col gap-4"
@@ -112,8 +117,8 @@ export function SignInScreen({ setupNeeded, signin = false }: { setupNeeded: boo
           )}
         </form>
       ) : (
-        <div className={signin ? "mt-4 flex flex-col gap-4" : "mt-6 flex flex-col gap-4"}>
-          <Button variant={signin ? "quiet" : "primary"} loading={signIn.isPending} onClick={() => signIn.mutate()}>
+        <div className="mt-6 flex flex-col gap-4">
+          <Button variant="primary" loading={signIn.isPending} onClick={() => signIn.mutate()}>
             <KeyRound aria-hidden />
             Sign in with a passkey
           </Button>

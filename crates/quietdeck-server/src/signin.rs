@@ -376,7 +376,42 @@ mod tests {
 
     async fn signed_in(state: &AppState, cookie: &str) -> Option<crate::passkeys::SignedIn> {
         let (parts, _) = Request::get("/").header(COOKIE, cookie).body(()).unwrap().into_parts();
-        crate::passkeys::owner_from_cookie(&state.db, &parts).await.unwrap()
+        crate::passkeys::owner_from_cookie(state, &parts).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn with_fleetlayers_sign_in_passkeys_are_off() {
+        let f = Issuer::start().await;
+        let mut state = deck(&f, "sam").await;
+        let now = crate::db::now_ms();
+        sqlx::query(
+            "INSERT INTO passkeys (id, user_id, credential_id, passkey, device_name, created_at) \
+             VALUES (7, 1, 'cred', '{}', 'Mac', ?)",
+        )
+        .bind(now)
+        .execute(&state.db)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO auth_sessions (token_hash, user_id, created_at, last_seen_at, verified_at, passkey_id) \
+             VALUES (?, 1, ?, ?, ?, 7)",
+        )
+        .bind(crate::auth::sha256_hex("old-passkey-session"))
+        .bind(now)
+        .bind(now)
+        .bind(now)
+        .execute(&state.db)
+        .await
+        .unwrap();
+        let cookie = "qd_auth=old-passkey-session";
+        assert!(signed_in(&state, cookie).await.is_none(), "a passkey session from before doesn't count");
+        let passkeys = axum::Router::from(crate::passkeys::router()).with_state(state.clone());
+        let start = passkeys.oneshot(Request::post("/auth/login/start").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(start.status(), StatusCode::CONFLICT, "no passkey sign-in");
+
+        // Without the sign-in service, the same passkey session counts again.
+        state.signin = None;
+        assert_eq!(signed_in(&state, cookie).await.unwrap().passkey_id, Some(7));
     }
 
     #[tokio::test]

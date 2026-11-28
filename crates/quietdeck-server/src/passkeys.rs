@@ -117,8 +117,16 @@ pub struct SignedIn {
 /// A browser session's row: last seen, its passkey and that passkey's name, or the sign-in's person and handle.
 type SessionRow = (i64, Option<i64>, Option<String>, Option<String>, Option<String>);
 
-/// The signed-in browser, if the request's cookie is a live session.
-pub async fn owner_from_cookie(db: &Db, parts: &Parts) -> Result<Option<SignedIn>, AppError> {
+/// Whether this deck signs in with passkeys: not when it signs in through Fleetlayer's sign-in service. The passkeys
+/// stay stored, and come back if the deck stops using the sign-in service.
+pub fn passkeys_on(state: &AppState) -> bool {
+    state.signin.is_none()
+}
+
+/// The signed-in browser, if the request's cookie is a live session. With Fleetlayer's sign-in, only its sessions
+/// count: a browser signed in with a passkey before signs in again through Fleetlayer.
+pub async fn owner_from_cookie(state: &AppState, parts: &Parts) -> Result<Option<SignedIn>, AppError> {
+    let db = &state.db;
     let Some(token) = cookie_token(&parts.headers) else { return Ok(None) };
     let hash = sha256_hex(&token);
     let now = now_ms();
@@ -126,9 +134,10 @@ pub async fn owner_from_cookie(db: &Db, parts: &Parts) -> Result<Option<SignedIn
     let row: Option<SessionRow> = sqlx::query_as(
         "SELECT s.last_seen_at, p.id, p.device_name, s.signin_sub, s.signin_handle FROM auth_sessions s \
          LEFT JOIN passkeys p ON p.id = s.passkey_id WHERE s.token_hash = ? \
-         AND (p.id IS NOT NULL OR s.signin_sub IS NOT NULL)",
+         AND ((p.id IS NOT NULL AND ?) OR s.signin_sub IS NOT NULL)",
     )
     .bind(&hash)
+    .bind(passkeys_on(state))
     .fetch_optional(db)
     .await?;
     let Some((last_seen, passkey_id, device_name, signin_sub, signin_handle)) = row else { return Ok(None) };
@@ -194,7 +203,7 @@ fn credential_id(p: &Passkey) -> String {
 }
 
 async fn auth_state(State(state): State<AppState>, parts: Parts) -> AppResult<Json<AuthState>> {
-    let signed_in = owner_from_cookie(&state.db, &parts).await?.is_some() || state.dev_trust_local;
+    let signed_in = owner_from_cookie(&state, &parts).await?.is_some() || state.dev_trust_local;
     let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM passkeys").fetch_one(&state.db).await?;
     let signin = state.signin.is_some();
     // With Fleetlayer's sign-in, no passkey is needed to get in, so no setup code is asked for first.
@@ -226,11 +235,12 @@ async fn register_start(
     Json(req): Json<RegisterStart>,
 ) -> AppResult<Json<Ceremony>> {
     garde::Validate::validate(&req).map_err(bad)?;
+    passkeys_allowed(&state)?;
     // Signed in adds a device; otherwise only a setup code will do.
     let setup_code_hash = match &req.setup_code {
         Some(code) => Some(setup_code_valid(&state.db, code).await?),
         None => {
-            if owner_from_cookie(&state.db, &parts).await?.is_none() {
+            if owner_from_cookie(&state, &parts).await?.is_none() {
                 return Err(AppError::Unauthorized(
                     "sign in first, or use a setup code from `quietdeck-server setup-code`".into(),
                 ));
@@ -319,7 +329,16 @@ async fn sign_in(state: &AppState, headers: &HeaderMap, passkey_id: i64) -> AppR
     Ok(res)
 }
 
+/// Refuses a passkey ceremony on a deck that signs in through Fleetlayer.
+fn passkeys_allowed(state: &AppState) -> AppResult<()> {
+    if passkeys_on(state) {
+        return Ok(());
+    }
+    Err(AppError::Conflict("this deck signs in through Fleetlayer's sign-in service, not with passkeys".into()))
+}
+
 async fn login_start(State(state): State<AppState>) -> AppResult<Json<Ceremony>> {
+    passkeys_allowed(&state)?;
     let passkeys: Vec<Passkey> = load_passkeys(&state.db).await?.into_iter().map(|(_, p)| p).collect();
     if passkeys.is_empty() {
         return Err(AppError::Conflict("no passkey yet: register one with a setup code".into()));

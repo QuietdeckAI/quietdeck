@@ -237,8 +237,11 @@ the node searches the transcripts itself.
 ## Sign in through Fleetlayer
 
 If Fleetlayer's [sign-in service](https://fleetlayer.ai/docs/guides/sign-in/) already signs you in to your other
-services, the deck can use it too. Its sign-in screen then offers "Sign in with Fleetlayer" above the passkey button.
-Passkeys keep working beside it.
+services, the deck can use it too, in place of its own passkeys: the sign-in screen then offers only "Sign in with
+Fleetlayer", and the sign-in service asks for your passkey. The deck refuses its own passkey sign-in, and a browser
+signed in with a deck passkey before signs in again through Fleetlayer. The deck's passkeys stay stored: remove the
+three settings below and they work again. A deck without the sign-in service (Quietdeck solo included) keeps using
+passkeys.
 
 1. Make the deck's client secret where the sign-in service runs, and register the deck as a client in its settings:
 
