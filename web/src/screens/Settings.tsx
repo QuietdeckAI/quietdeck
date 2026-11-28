@@ -725,8 +725,9 @@ function Leases() {
     onSuccess: (v) => qc.setQueryData(["leases"], v),
   });
   const leases = view.data?.leases ?? [];
+  // Only what's held: ended leases aren't listed (Nathan, 28 Nov 2026: "the 'ended today' list is insanely long, i
+  // don't need all that").
   const current = leases.filter((l) => !l.ended_at);
-  const ended = leases.filter((l) => l.ended_at);
   const approved = (view.data?.patterns ?? []).filter((p) => !p.revoked_at);
   const error = view.error ?? end.error ?? cleaned.error ?? revoke.error;
   return (
@@ -766,22 +767,6 @@ function Leases() {
             </li>
           ))}
         </ul>
-      )}
-      {ended.length > 0 && (
-        <>
-          <h3 className="mt-6 mb-2 text-neutral">Ended today</h3>
-          <ul className="flex flex-col divide-y divide-rule rounded-lg border border-rule">
-            {ended.map((l) => (
-              <li key={l.id} className="p-4">
-                <p className="break-words text-neutral [overflow-wrap:anywhere]">{leaseWhat(l)}</p>
-                <p className="text-sm text-neutral">
-                  {LEASE_STATE[l.state]} {l.ended_at && when(l.ended_at)} · {l.holder.tab}@{l.holder.node}
-                  {l.end_reason && <> · {l.end_reason}</>}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </>
       )}
       <h3 className="mt-6 mb-2">Approved filters</h3>
       <p className="mb-3 text-sm text-neutral">
