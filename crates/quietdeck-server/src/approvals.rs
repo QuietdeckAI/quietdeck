@@ -26,7 +26,8 @@ pub struct Approver {
     signin: Option<String>,
     /// Fleetlayer's place (tenant) slug, which the passkey page names.
     tenant: String,
-    /// Where the passkey page sends the browser back to: the deck's Work tab.
+    /// Where the passkey page sends the browser back to: the deck's own address. The web app takes the request's ID
+    /// from there to wherever the Work document's tab is (its path follows the tab's name, which can change).
     return_to: String,
 }
 
@@ -138,7 +139,7 @@ impl Approver {
             token: token.to_string(),
             signin: signin.map(|s| s.trim_end_matches('/').to_string()),
             tenant: tenant.to_string(),
-            return_to: format!("{}/work", public_url.trim_end_matches('/')),
+            return_to: format!("{}/", public_url.trim_end_matches('/')),
         })
     }
 
@@ -169,7 +170,7 @@ impl Approver {
     }
 
     /// The sign-in service's page that confirms this one request with the owner's passkey, and comes back to the
-    /// deck with the request's ID, so the Work tab approves it again.
+    /// deck with the request's ID (`/?fleet_approve=<id>`), so the Work tab approves it again.
     pub fn stepup_url(&self, id: &str) -> Option<String> {
         let signin = self.signin.as_ref()?;
         let back = format!("{}?fleet_approve={}", self.return_to, encode(id));
@@ -291,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    fn the_passkey_page_comes_back_to_the_work_tab_with_the_request() {
+    fn the_passkey_page_comes_back_to_the_deck_with_the_request() {
         let a = Approver::new(
             "https://fl.example.com/",
             "t",
@@ -303,7 +304,7 @@ mod tests {
         assert_eq!(
             a.stepup_url("ap_1").unwrap(),
             "https://signin.example.com/stepup?tenant=default&approval=ap_1&return=\
-             https%3A%2F%2Fdeck.example.com%2Fwork%3Ffleet_approve%3Dap_1"
+             https%3A%2F%2Fdeck.example.com%2F%3Ffleet_approve%3Dap_1"
         );
         let none = Approver::new("https://fl.example.com", "t", None, "default", "https://deck.example.com").unwrap();
         assert_eq!(none.stepup_url("ap_1"), None);
