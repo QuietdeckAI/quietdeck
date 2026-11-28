@@ -36,7 +36,12 @@ const MESSAGE_SEND: &str = "_fleetlayer.dev/message/send";
 /// The other Fleetlayer methods the node may call through the plugin (its grants decide what Fleetlayer lets it do).
 pub const SESSIONS_QUERY: &str = "_fleetlayer.dev/sessions/query";
 pub const SESSION_ANSWER: &str = "_fleetlayer.dev/session/answer";
-const CALLS: &[&str] = &[SESSIONS_QUERY, SESSION_ANSWER];
+/// Start or resume a session as the plugin (Fleetlayer v0.4.2, grant `session.start`): decided by the control plane as
+/// `plugin:runner@<node>`, with the policy's start limits and its approvals.
+pub const SESSION_START: &str = "_fleetlayer.dev/session/start";
+const CALLS: &[&str] = &[SESSIONS_QUERY, SESSION_ANSWER, SESSION_START];
+/// A start can wait for the agent to come up (Fleetlayer gives it up to two minutes) and for the person's approval.
+pub const START_ANSWERS_WITHIN: Duration = Duration::from_secs(150);
 /// Fleetlayer's error codes (its `rpc::code`).
 pub mod code {
     pub const NOT_HERE: i64 = -32010;
@@ -179,6 +184,16 @@ pub async fn call(method: &str, params: Value) -> Option<Result<Value, SendError
 }
 
 pub async fn call_via(socket: &Path, method: &str, params: Value) -> Option<Result<Value, SendError>> {
+    call_within(socket, method, params, CALLER_WAITS).await
+}
+
+/// [`call_via`], waiting up to `within` for the answer.
+pub async fn call_within(
+    socket: &Path,
+    method: &str,
+    params: Value,
+    within: Duration,
+) -> Option<Result<Value, SendError>> {
     let stream = UnixStream::connect(socket).await.ok()?;
     let ask = async {
         let (r, mut w) = stream.into_split();
@@ -192,10 +207,10 @@ pub async fn call_via(socket: &Path, method: &str, params: Value) -> Option<Resu
             .ok_or_else(|| "Quietdeck's Fleetlayer plugin hung up".to_string())?;
         serde_json::from_str::<BridgeAnswer>(&answer).map_err(|e| e.to_string())
     };
-    Some(match tokio::time::timeout(CALLER_WAITS, ask).await {
+    Some(match tokio::time::timeout(within, ask).await {
         Err(_) => Err(SendError {
             code: None,
-            message: format!("Fleetlayer didn't answer within {} seconds", CALLER_WAITS.as_secs()),
+            message: format!("Fleetlayer didn't answer within {} seconds", within.as_secs()),
         }),
         Ok(Err(e)) => Err(SendError { code: None, message: e }),
         Ok(Ok(BridgeAnswer { error: Some(message), code, .. })) => Err(SendError { code, message }),
@@ -409,17 +424,15 @@ async fn rpc(node: &str, c: BridgeCall, tx: &mpsc::Sender<String>, pending: &Pen
         pending.lock().await.remove(&id);
         return BridgeAnswer { error: Some("the Fleetlayer node has gone".into()), ..Default::default() };
     }
-    match tokio::time::timeout(NODE_ANSWERS_WITHIN, wait).await {
+    let within = if c.rpc == SESSION_START { START_ANSWERS_WITHIN } else { NODE_ANSWERS_WITHIN };
+    match tokio::time::timeout(within, wait).await {
         Ok(Ok(Ok(v))) => BridgeAnswer { result: Some(v), ..Default::default() },
         Ok(Ok(Err((code, message)))) => BridgeAnswer { error: Some(message), code: Some(code), ..Default::default() },
         Ok(Err(_)) => BridgeAnswer { error: Some("the Fleetlayer node has gone".into()), ..Default::default() },
         Err(_) => {
             pending.lock().await.remove(&id);
             BridgeAnswer {
-                error: Some(format!(
-                    "the Fleetlayer node didn't answer within {} seconds",
-                    NODE_ANSWERS_WITHIN.as_secs()
-                )),
+                error: Some(format!("the Fleetlayer node didn't answer within {} seconds", within.as_secs())),
                 ..Default::default()
             }
         }

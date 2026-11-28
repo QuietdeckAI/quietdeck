@@ -91,6 +91,72 @@ pub struct AgentTurns {
     pub failed: Option<(jiff::Timestamp, String)>,
 }
 
+/// An approved start, as Fleetlayer's plugin start takes it: decided by Fleetlayer as the runner.
+fn start_params(spec: &SessionStart) -> serde_json::Value {
+    let harness = match spec.agent {
+        quietdeck_types::AgentKind::Claude => "claude",
+        quietdeck_types::AgentKind::Codex => "codex",
+    };
+    serde_json::json!({
+        "on": spec.on, "tab": spec.tab, "cwd": spec.cwd, "harness": harness, "prompt": spec.prompt,
+        "model": spec.model, "effort": spec.effort, "why": "an approved action on Quietdeck's deck",
+    })
+}
+
+fn resume_params(node: &str, session_id: &str, tab: &str, cwd: &str) -> serde_json::Value {
+    serde_json::json!({
+        "on": node, "resume": session_id, "tab": tab, "cwd": cwd, "why": "an approved action on Quietdeck's deck",
+    })
+}
+
+/// Fleetlayer's answer to a start (`{node, tab, address, sessionId, promptError}`) as the deck's.
+fn started(v: serde_json::Value) -> Result<SessionStarted, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Fl {
+        node: String,
+        tab: String,
+        address: String,
+        session_id: Option<String>,
+        prompt_error: Option<String>,
+    }
+    let f: Fl =
+        serde_json::from_value(v).map_err(|e| format!("Fleetlayer's start answered something unexpected: {e}"))?;
+    Ok(SessionStarted {
+        node: f.node,
+        tab: f.tab,
+        address: f.address,
+        session_id: f.session_id,
+        prompt_error: f.prompt_error,
+    })
+}
+
+/// Starts or resumes a session through Fleetlayer's plugin start (v0.4.2), so Fleetlayer's policy decides it as
+/// `plugin:runner@<node>`, with its start limits and approvals. None when Fleetlayer can't here: no plugin, a node
+/// without the method, or a plugin without the `session.start` grant. The deck's path, with its own cap, does it then.
+/// A refusal by the policy is final: it isn't tried the other way.
+async fn start_via_fleetlayer(
+    socket: &std::path::Path,
+    params: serde_json::Value,
+) -> Option<Result<SessionStarted, String>> {
+    use crate::fleetlayer::{SESSION_START, START_ANSWERS_WITHIN};
+    let answer =
+        crate::fleetlayer::call_within(socket, SESSION_START, params, START_ANSWERS_WITHIN + Duration::from_secs(5))
+            .await?;
+    match answer {
+        Ok(v) => Some(started(v)),
+        Err(e)
+            if e.code == Some(-32601)
+                || e.message.contains("isn't granted")
+                || e.message.contains("isn't something the node may call") =>
+        {
+            tracing::info!(error = %e.message, "Fleetlayer can't start sessions for the runner here; asking the deck");
+            None
+        }
+        Err(e) => Some(Err(e.message)),
+    }
+}
+
 /// The deck, through this node's connection.
 pub struct LinkDeck(pub Arc<Node>);
 
@@ -122,6 +188,9 @@ impl DeckApi for LinkDeck {
         self.ask(NodeRequest::Relay { to, kind, body }, ASK).await
     }
     async fn start_session(&self, spec: SessionStart) -> Result<SessionStarted, String> {
+        if let Some(started) = start_via_fleetlayer(&crate::fleetlayer::bridge_socket(), start_params(&spec)).await {
+            return started;
+        }
         self.ask(NodeRequest::StartSession { spec }, START).await
     }
     async fn close_session(&self, session: String) -> Result<(), String> {
@@ -137,6 +206,10 @@ impl DeckApi for LinkDeck {
         tab: String,
         cwd: String,
     ) -> Result<SessionStarted, String> {
+        let params = resume_params(&node, &session_id, &tab, &cwd);
+        if let Some(started) = start_via_fleetlayer(&crate::fleetlayer::bridge_socket(), params).await {
+            return started;
+        }
         self.ask(NodeRequest::ResumeSession { node, session_id, tab, cwd }, START).await
     }
     async fn hold_check(&self, items: Vec<ItemFacts>) -> Result<Vec<HoldVerdict>, String> {
@@ -222,5 +295,79 @@ impl AgentInbox for LocalAgent {
             self.node.mark_working(&id).await;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    /// A pretend plugin bridge: answers one call with `answer` and gives back what it was asked.
+    fn bridge(
+        dir: &std::path::Path,
+        answer: serde_json::Value,
+    ) -> (std::path::PathBuf, tokio::task::JoinHandle<serde_json::Value>) {
+        let socket = dir.join("bridge.sock");
+        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let task = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let (r, mut w) = stream.into_split();
+            let line = BufReader::new(r).lines().next_line().await.unwrap().unwrap();
+            w.write_all(format!("{answer}\n").as_bytes()).await.unwrap();
+            serde_json::from_str(&line).unwrap()
+        });
+        (socket, task)
+    }
+
+    fn spec() -> SessionStart {
+        serde_json::from_value(serde_json::json!({
+            "on": "agents", "tab": "billing", "agent": "claude", "cwd": "~/code/billing", "prompt": "Look at sc-1."
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn an_approved_start_goes_to_fleetlayer_as_the_runner() {
+        let d = tempfile::tempdir().unwrap();
+        let (socket, asked) = bridge(
+            d.path(),
+            serde_json::json!({"result": {
+                "node": "agents", "tab": "billing", "address": "billing@agents", "sessionId": "s1", "promptError": null
+            }}),
+        );
+        let s = start_via_fleetlayer(&socket, start_params(&spec())).await.unwrap().unwrap();
+        assert_eq!((s.node.as_str(), s.session_id.as_deref()), ("agents", Some("s1")));
+        let call = asked.await.unwrap();
+        assert_eq!(call["rpc"], "_fleetlayer.dev/session/start");
+        assert_eq!(call["params"]["on"], "agents");
+        assert_eq!(call["params"]["prompt"], "Look at sc-1.");
+    }
+
+    #[tokio::test]
+    async fn a_refusal_is_final_but_a_missing_grant_falls_back_to_the_deck() {
+        let d = tempfile::tempdir().unwrap();
+        let (socket, _) = bridge(
+            d.path(),
+            serde_json::json!({"error": "starts_per_day reached for plugin:runner@agents", "code": -32011}),
+        );
+        let refused = start_via_fleetlayer(&socket, start_params(&spec())).await.unwrap();
+        assert!(refused.unwrap_err().contains("starts_per_day"));
+
+        let d = tempfile::tempdir().unwrap();
+        let (socket, _) = bridge(
+            d.path(),
+            serde_json::json!({"error": "session.start isn't granted to plugin runner in node.yaml", "code": -32011}),
+        );
+        assert!(start_via_fleetlayer(&socket, start_params(&spec())).await.is_none());
+
+        let d = tempfile::tempdir().unwrap();
+        assert!(start_via_fleetlayer(&d.path().join("none.sock"), start_params(&spec())).await.is_none(), "no plugin");
+    }
+
+    #[test]
+    fn a_resume_names_the_session() {
+        let p = resume_params("laptop", "s9", "api", "~/code/api");
+        assert_eq!((p["on"].as_str(), p["resume"].as_str()), (Some("laptop"), Some("s9")));
     }
 }

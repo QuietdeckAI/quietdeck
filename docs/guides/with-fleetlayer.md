@@ -216,6 +216,32 @@ deck as Fleetlayer wrote it, and the node doesn't then try herdr. The node uses 
 when no Fleetlayer node answers on the machine, or when the start names a session other than its tab, which Fleetlayer
 can't do. A model and an effort go through to Fleetlayer (it needs Fleetlayer 0.4.0 or later on that machine).
 
+### Automatic starts by the runner
+
+A rule can approve a resume or a new session on its own, and the runner carries it out. With Fleetlayer v0.4.2 or
+later, give the runner's plugin the `session.start` grant and the runner asks Fleetlayer itself
+(`_fleetlayer.dev/session/start`): Fleetlayer's policy decides each start as `plugin:runner@<node>`, an `ask:` rule
+waits for your approval, and a limit in the policy caps how many it may start:
+
+```yaml
+plugins:
+  - name: runner
+    command: quietdeck-node
+    args: [fleetlayer-plugin]
+    grants: [message.send, session.start]
+```
+
+```yaml
+# Fleetlayer's access policy
+limits:
+  - { who: "plugin:runner@agents", starts_per_day: 3 }
+```
+
+A start Fleetlayer refuses (a limit reached, an approval declined) fails the action with Fleetlayer's words, and the
+runner doesn't try another way. Without the grant, or on an older Fleetlayer node, the runner asks the deck as before,
+and the deck keeps its own cap of 3 automatic starts a day. The cap holds only if the runner's node runs as a Unix user
+other than the agents': a call on Fleetlayer's node socket is decided as that machine's own user and isn't counted.
+
 ## Moving a session: handoffs
 
 With Fleetlayer v0.4.0 or later on the control plane, a session moves with `fleetlayer session handoff` (see
