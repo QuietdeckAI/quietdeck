@@ -13,6 +13,26 @@ cards and open Inbox report, and the old transcript stays on its machine and in 
 Two roles: the **old session** (the one being moved) does steps 1, 2, 4 and 6. Whoever prepares the destination (the
 person, or the session that runs that machine's provisioning) does step 3. The **new session** does step 5.
 
+## Through Fleetlayer
+
+When both machines run Fleetlayer v0.4.0 or later (`fleetlayer session handoff --help` works), Fleetlayer starts the
+new session and keeps the handoff, and the deck learns of it from Fleetlayer within a minute. Write the handoff and the
+manifest (steps 1 and 2) as one note, the manifest under its own heading, at most 64 KB, and prepare the destination
+(step 3). Then, instead of `quietdeck handoff add` and step 4:
+
+```bash
+fleetlayer session handoff --to <node> --cwd "~/code/<repo>" --note-file note.md
+```
+
+The new tab keeps the old one's name unless you pass `--tab`; add `--harness codex`, `--model` or `--effort` to match
+the old session. The new session's first prompt says who it takes over from and how to read the note
+(`fleetlayer session handoff-note h…`) and the old transcript. The deck then moves the old session's open cards and
+open Inbox report to it, and `quietdeck sessions show` on either one names the other. There's nothing to claim: a
+start that fails closes its tab and drops the handoff, so deal with the cause and run it again. Steps 5 and 6 are the
+same, reading the note with `fleetlayer session handoff-note` instead of `quietdeck handoff show`.
+
+Without Fleetlayer (Quietdeck solo, or a machine without it), follow the steps below.
+
 ## 1. Write the handoff
 
 A Markdown file for the new session, written by the old one about itself. Write it for a capable stranger who has

@@ -56,6 +56,30 @@ impl Client {
         Ok(res.json().await?)
     }
 
+    /// Handoffs made after `cursor`, oldest first (`GET /v1/handoffs?since=`; empty to start). `None` when the control
+    /// plane has no such feed (older than Fleetlayer v0.4.0).
+    pub async fn handoffs_since(
+        &self,
+        cursor: &str,
+        limit: usize,
+    ) -> anyhow::Result<Option<crate::fleetlayer_handoffs::Feed>> {
+        let res = self
+            .http
+            .get(format!("{}/v1/handoffs", self.base))
+            .query(&[("since", cursor.to_string()), ("limit", limit.to_string())])
+            .bearer_auth(&self.token)
+            .send()
+            .await?;
+        let status = res.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !status.is_success() {
+            anyhow::bail!("GET /v1/handoffs?since= answered {status}: {}", res.text().await.unwrap_or_default());
+        }
+        Ok(Some(res.json().await?))
+    }
+
     /// Every node and session in the fleet (`GET /v1/fleet`), for the Sessions screen.
     pub async fn fleet(&self) -> anyhow::Result<crate::fleet_sessions::Fleet> {
         let res = self

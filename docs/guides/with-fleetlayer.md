@@ -216,6 +216,16 @@ deck as Fleetlayer wrote it, and the node doesn't then try herdr. The node uses 
 when no Fleetlayer node answers on the machine, or when the start names a model, an effort or a session name other than
 its tab, which Fleetlayer can't pass.
 
+## Moving a session: handoffs
+
+With Fleetlayer v0.4.0 or later on the control plane, a session moves with `fleetlayer session handoff` (see
+[Move a session](move-a-session.md#with-fleetlayer)). The deck reads the control plane's handoffs every minute
+(`GET /v1/handoffs?since=`, with the same read token as summaries) and copies each one into its own handoffs once:
+`quietdeck sessions show` names both ends, and the old session's open cards and open Inbox report move to the new
+session. A handoff whose new session is still starting is read again on the next minute. An older control plane
+answers 404, and the deck asks again every minute without complaining. `quietdeck handoff add` keeps working for
+machines without Fleetlayer.
+
 ## Sign in through Fleetlayer
 
 If Fleetlayer's [sign-in service](https://fleetlayer.ai/docs/guides/sign-in/) already signs you in to your other
@@ -279,6 +289,8 @@ stays with Quietdeck's node.
   [crates/quietdeck-node/src/link.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-node/src/link.rs)
 - The deck pulling summaries and asking for catch-ups:
   [crates/quietdeck-server/src/fleetlayer.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/fleetlayer.rs)
+- The deck copying Fleetlayer's handoffs:
+  [crates/quietdeck-server/src/fleetlayer_handoffs.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/fleetlayer_handoffs.rs)
 - Every setting and environment variable: [Configuration](../configuration.md), and the deck's in
   [deploy/README.md](https://github.com/QuietdeckAI/quietdeck/blob/main/deploy/README.md)
 - The summaries module's contract: [summaries-interface.md](../summaries-interface.md)

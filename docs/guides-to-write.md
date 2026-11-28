@@ -285,3 +285,9 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   UnknownTool; `tools["intercom-api"].me` works, through MCP `call` as well as in `execute`. A runner tool path in
   node.yaml must use the bracket form (quote it in YAML). Found setting up Intercom as an inbox (28 November, the
   executor intercom and quietdeck tabs). Now: deploy/node.example.yaml's intercom tools, and this entry.
+- **A feed can hand you a record before it's finished.** Fleetlayer keeps a handoff before its new session has
+  started and fills in the session ID up to two minutes later, so a reader that moves its cursor past the half-written
+  record never sees the session. The deck's reader stops at a handoff without a session that's under five minutes old
+  and asks from just before it next time. Found switching handoffs to Fleetlayer (29 November, the quietdeck cutover
+  tab). Now: crates/quietdeck-server/src/fleetlayer_handoffs.rs, and the "Moving a session" section of
+  docs/guides/with-fleetlayer.md.

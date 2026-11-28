@@ -29,6 +29,21 @@ The steps are also written as a skill for agents,
 agent asked to move itself knows what to do. For Claude Code, copy it to `~/.claude/skills/move-session/SKILL.md` on
 each machine.
 
+## With Fleetlayer
+
+When both machines run [Fleetlayer](with-fleetlayer.md) v0.4.0 or later, Fleetlayer does the handoff itself: the old
+session writes the handoff and the manifest as one note (at most 64 KB) and runs
+
+```sh
+fleetlayer session handoff --to build-server --cwd "~/code/billing" --note-file note.md
+```
+
+Fleetlayer starts the new `billing` tab on `build-server`, keeps the note, and points the new session's first prompt
+at it (`fleetlayer session handoff-note h…`) and at the old transcript. The deck reads Fleetlayer's handoffs every
+minute, records the link both ways and moves the old session's open cards and open report to the new one, as below.
+There's no claim step: a start that fails closes its tab and drops the handoff. Preparing the destination, checking,
+and closing the old session work the same.
+
 ## 1. The old session writes its handoff
 
 The handoff is written by the session being moved, about itself, for a capable stranger who has read none of the
@@ -176,6 +191,8 @@ start as continuing `billing@laptop` from `h_7`.
   [crates/quietdeck-cli/src/main.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-cli/src/main.rs)
 - Storing handoffs, the first prompt, claiming, and moving cards and the report:
   [crates/quietdeck-server/src/handoffs.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/handoffs.rs)
+- Copying Fleetlayer's handoffs into the deck:
+  [crates/quietdeck-server/src/fleetlayer_handoffs.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/fleetlayer_handoffs.rs)
 - Starting from a handoff and who may close a session:
   [crates/quietdeck-server/src/control.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/control.rs)
 - The handoff's fields and limits:
