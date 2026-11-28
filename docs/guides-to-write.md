@@ -299,3 +299,9 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   --payload '{"account": …, "query": …}'`, and the runner makes the Gmail filters match the held leases. Now: the
   fleetlayer repo's `docs/plugins/leases.md`, and `crates/quietdeck-node/src/runner/leases.rs` (`reconcile`) with
   `runner.gmail_filters.fleetlayer` in `docs/configuration.md` (28 November, the quietdeck tab).
+- **Holding the agent overnight also held the alerts room.** `runner.quiet_hours` (and, after it, Fleetlayer
+  presence's "asleep") stopped every wake-up, so #infrastructure-alerts waited until morning, and the agents that own a
+  service couldn't fix it at night. `runner.wake_overnight: [infrastructure-alerts]` now lets such rooms wake the agent
+  for their messages alone; everything else still waits for the catch-up. When you pause an agent for the person's
+  night, list the rooms that must still get through. Now: `runner.wake_overnight` and `QUIETDECK_FLEETLAYER_PRESENCE`
+  in `docs/configuration.md`, a9b1c8b and a378efd (29 November, the quietdeck tab, found by homeserver).
