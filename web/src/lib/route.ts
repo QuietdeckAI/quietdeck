@@ -13,9 +13,10 @@ function subscribe(fn: () => void) {
   };
 }
 
-export function navigate(to: string) {
+export function navigate(to: string, opts: { replace?: boolean } = {}) {
   if (to === window.location.pathname + window.location.search) return;
-  window.history.pushState(null, "", to);
+  if (opts.replace) window.history.replaceState(null, "", to);
+  else window.history.pushState(null, "", to);
   for (const fn of listeners) fn();
   window.scrollTo({ top: 0 });
 }

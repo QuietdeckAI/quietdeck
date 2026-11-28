@@ -7,6 +7,7 @@ import { changedKeys, ReportBody, ReportChatBox, reportDefaults, TriageNotes, tr
 import { ReportMeta, ReportToasts, UpdatedAt } from "@/components/ReportMeta";
 import { SoloHealthStack } from "@/components/SoloHealth";
 import { BlockedPrompts } from "@/components/BlockedPrompts";
+import { FleetRequests } from "@/components/FleetRequests";
 import { TimelineRow } from "@/components/TimelineRow";
 import { api, query } from "@/lib/api";
 import { usePresence } from "@/lib/presence";
@@ -186,7 +187,12 @@ export function InboxScreen({ tab: given }: { tab?: TopTab } = {}) {
     <main className="mx-auto flex max-w-3xl flex-1 flex-col px-4 pt-6 pb-4">
       {tab && doc && <DocTabs tab={tab} doc={doc} />}
       <SoloHealthStack />
-      {doc?.kind === "work" && <BlockedPrompts />}
+      {doc?.kind === "work" && (
+        <>
+          <FleetRequests />
+          <BlockedPrompts />
+        </>
+      )}
       {inbox.isError && (
         <p role="alert" className="mt-8 text-danger">
           {inbox.error.message}
@@ -414,6 +420,7 @@ function ReportScreen({
         <ReportMeta report={report} />
         {work && (
           <div className="mt-4">
+            <FleetRequests />
             <BlockedPrompts />
           </div>
         )}

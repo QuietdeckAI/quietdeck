@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { Header } from "@/components/Header";
 import { api, setSignedOutHandler } from "@/lib/api";
 import { useDeckEvents } from "@/lib/events";
-import { usePath } from "@/lib/route";
+import { navigate, usePath } from "@/lib/route";
 import { ThreadsScreen } from "@/screens/Threads";
 import { HistoryScreen } from "@/screens/History";
 import { InboxScreen } from "@/screens/Inbox";
@@ -18,7 +18,8 @@ import { SettingsScreen } from "@/screens/Settings";
 import { SignInScreen } from "@/screens/SignIn";
 import { SnapshotScreen } from "@/screens/Snapshot";
 import type { AuthState } from "@/types/AuthState";
-import { tabAt, useDocuments } from "@/lib/documents";
+import { tabAt, topTabs, useDocuments } from "@/lib/documents";
+import type { Document } from "@/types/Document";
 
 export function App() {
   const qc = useQueryClient();
@@ -62,9 +63,22 @@ export function App() {
   );
 }
 
+/**
+ * Back from the passkey page, which returns to the deck's root with `?fleet_approve=<id>`: go on to the Work tab,
+ * keeping the parameter, where FleetRequests approves the window.
+ */
+function useFleetApproveReturn(docs: Document[] | undefined, path: string) {
+  useEffect(() => {
+    if (!docs || !new URLSearchParams(window.location.search).has("fleet_approve")) return;
+    const work = topTabs(docs).find((t) => t.docs.some((d) => d.kind === "work"));
+    if (work && work.path !== path) navigate(work.path + window.location.search, { replace: true });
+  }, [docs, path]);
+}
+
 function Screen() {
   const path = usePath();
   const docs = useDocuments().data;
+  useFleetApproveReturn(docs, path);
   const tab = tabAt(docs, path);
   if (tab) return <InboxScreen key={tab.path} tab={tab} />;
   // `/cards` was the screen's old address.
