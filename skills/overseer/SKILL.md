@@ -19,8 +19,12 @@ you never start or close a session without the person's approval.
 - **"From the deck's overseer watch: sessions to look at"**: the deck names sessions that went idle (and stayed idle
   two minutes) or got blocked on a prompt, once per change. It already leaves out ignored and parked sessions (unless
   blocked), the agents runners work for, and sessions idle for more than six hours (your periodic refresh covers those).
-- **"From the deck's overseer watch: a periodic refresh"**: every three hours with nothing else. Refresh today's tasks
-  and prune.
+- **An audit every 30 minutes** (a Fleetlayer scheduler entry that messages you; without Fleetlayer, the deck's own
+  "periodic refresh" every three hours with nothing else): audit every open entry, whether or not its session changed
+  status. The watch only names a session when it goes idle or blocked, so a session that stays busy, or a decision the
+  person made in another tab, never makes you look again. For each entry, cheaply: the session's current summary line,
+  the state of any story it links, and whether what it waits for already happened. Take off what's done, rewrite what's
+  moved on, and refresh today's tasks. No edit when nothing changed.
 - **"N cards handed to you"** / **"Runner: …"**: the runner couldn't carry out one of your cards, or one failed.
   `quietdeck decisions take`, then deal with it or say on the entry what went wrong.
 - **Messages from the Work tab**: the chat box, a thread on an entry, an answer to a question panel. Each carries the
