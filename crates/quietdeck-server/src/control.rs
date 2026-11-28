@@ -213,6 +213,22 @@ pub async fn close(state: &AppState, caller: &Caller, target: SessionTarget) -> 
     Ok(())
 }
 
+/// Compact a session's context: Fleetlayer types `/compact` into it, only while it's idle with an empty input line.
+/// The person approved it on the Work tab; the runner carries it out.
+pub async fn compact(state: &AppState, caller: &Caller, target: SessionTarget) -> AppResult<()> {
+    let row = &running_one(state, &target).await?;
+    let fl = crate::relay::FLEETLAYER.get().ok_or_else(|| {
+        AppError::Unavailable("the deck has no Fleetlayer send token, so it can't compact sessions".into())
+    })?;
+    let tab = row.info.tab.as_deref().ok_or_else(|| AppError::Conflict(format!("{} has no tab", row.address())))?;
+    fl.act(&format!("{tab}@{}", row.node), "/compact", "approved on the deck's Work tab").await?;
+    let refs = vec![row.address(), row.info.session_id.clone()];
+    let text = format!("Compacted {}{}", row.address(), asked_by(caller));
+    timeline::log(&state.db, TimelineKind::SessionResumed, &refs, &text).await?;
+    state.changed(Changed::Timeline);
+    Ok(())
+}
+
 /// The person's answer to a session's blocked prompt: to the session's node, which hands it to Fleetlayer.
 pub async fn answer_prompt(state: &AppState, req: quietdeck_types::directory::PromptAnswerSend) -> AppResult<()> {
     garde::Validate::validate(&req).map_err(|e| AppError::BadRequest(e.to_string()))?;

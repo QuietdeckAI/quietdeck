@@ -226,6 +226,11 @@ async fn answer_inner(state: &AppState, node: &str, request: NodeRequest) -> App
             crate::control::close(state, &caller, target).await?;
             Reply::ok(&())
         }
+        NodeRequest::CompactSession { session } => {
+            let target = quietdeck_types::directory::SessionTarget { session };
+            crate::control::compact(state, &caller, target).await?;
+            Reply::ok(&())
+        }
         NodeRequest::Relay { to, kind, body } => {
             match crate::relay::send(&state.db, &state.hub, &to, kind, body).await {
                 Ok(d) => Reply::ok(&d),

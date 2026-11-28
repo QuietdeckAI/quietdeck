@@ -119,7 +119,13 @@ function actionShort(a: Action): string {
     case "watch":
       return a.on ? "watch" : "stop watching";
     case "session":
-      return a.op === "message" ? `message ${a.to.tab}` : a.op === "wrap_up" ? `wrap up ${a.to.tab}` : `close ${a.to.tab}`;
+      return a.op === "message"
+        ? `message ${a.to.tab}`
+        : a.op === "wrap_up"
+          ? `wrap up ${a.to.tab}`
+          : a.op === "compact"
+            ? `compact ${a.to.tab}`
+            : `close ${a.to.tab}`;
   }
 }
 

@@ -3623,7 +3623,7 @@ export interface components {
             until?: string | null;
         };
         /** @description What to do with another session, approved from the Work tab. */
-        SessionOp: "message" | "wrap_up" | "close";
+        SessionOp: "message" | "wrap_up" | "close" | "compact";
         /** @description A session by its tab, on a node. `session_id` pins one conversation when the tab has been reused. */
         SessionRef: {
             node: string;

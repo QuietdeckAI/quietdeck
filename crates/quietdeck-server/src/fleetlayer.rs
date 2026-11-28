@@ -181,6 +181,40 @@ impl Sender {
     }
 }
 
+impl Sender {
+    /// Type an allowed slash command into an idle session (`POST /v1/sessions/act`, Fleetlayer v0.4.1), as
+    /// service:quietdeck. Busy (working, blocked, someone typing) is a conflict to try again later.
+    pub async fn act(&self, to: &str, command: &str, why: &str) -> crate::error::AppResult<()> {
+        use crate::error::AppError;
+        let res = self
+            .http
+            .post(format!("{}/v1/sessions/act", self.base))
+            .bearer_auth(&self.token)
+            .json(&serde_json::json!({"to": to, "action": "command", "command": command, "why": why}))
+            .send()
+            .await
+            .map_err(|e| AppError::Unavailable(format!("Fleetlayer didn't answer: {e}")))?;
+        let status = res.status().as_u16();
+        if status == 200 {
+            return Ok(());
+        }
+        let body: serde_json::Value = res.json().await.unwrap_or_default();
+        let message =
+            body["message"].as_str().map(str::to_string).unwrap_or_else(|| format!("Fleetlayer answered {status}"));
+        Err(match status {
+            409 => AppError::Conflict(format!(
+                "{to} is busy (working, waiting on a prompt, or someone's typing): {message}"
+            )),
+            403 => AppError::Forbidden(message),
+            404 => {
+                AppError::Conflict(format!("this Fleetlayer can't type commands into sessions yet (v0.4.1): {message}"))
+            }
+            503 => AppError::Offline(message),
+            _ => AppError::Unavailable(message),
+        })
+    }
+}
+
 /// The relay waits 4 seconds for a node; Fleetlayer's own delivery is cut off at 5, and a cross-node one at 12.
 const SEND_WITHIN_SECS: u64 = 13;
 

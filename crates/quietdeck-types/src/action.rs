@@ -119,6 +119,9 @@ pub enum SessionOp {
     WrapUp,
     /// Close it.
     Close,
+    /// Compact its context (`/compact`, typed in by Fleetlayer while it's idle): for a long-running session that
+    /// always has more to do (Nathan, 28 Nov 2026: "compact, not close").
+    Compact,
 }
 
 impl SessionOp {
@@ -127,6 +130,7 @@ impl SessionOp {
             SessionOp::Message => "message",
             SessionOp::WrapUp => "wrap_up",
             SessionOp::Close => "close",
+            SessionOp::Compact => "compact",
         }
     }
 }

@@ -29,6 +29,10 @@ pub trait DeckApi: Send + Sync {
     async fn close_session(&self, _session: String) -> Result<(), String> {
         Err("this deck doesn't close sessions for the runner".into())
     }
+    /// An approved compact of `tab@node`, through the deck.
+    async fn compact_session(&self, _session: String) -> Result<(), String> {
+        Err("this deck doesn't compact sessions for the runner".into())
+    }
     async fn resume_session(
         &self,
         node: String,
@@ -122,6 +126,9 @@ impl DeckApi for LinkDeck {
     }
     async fn close_session(&self, session: String) -> Result<(), String> {
         self.ask(NodeRequest::CloseSession { session }, START).await
+    }
+    async fn compact_session(&self, session: String) -> Result<(), String> {
+        self.ask(NodeRequest::CompactSession { session }, START).await
     }
     async fn resume_session(
         &self,

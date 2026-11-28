@@ -250,6 +250,7 @@ fn describe(a: &Action) -> &'static str {
         Action::Session { op: SessionOp::Message, .. } => "Message session",
         Action::Session { op: SessionOp::WrapUp, .. } => "Wrap up session",
         Action::Session { op: SessionOp::Close, .. } => "Close session",
+        Action::Session { op: SessionOp::Compact, .. } => "Compact session",
     }
 }
 
@@ -591,6 +592,10 @@ impl Runner {
                     SessionOp::Close => {
                         self.deck.close_session(address.clone()).await?;
                         Ok(json!({"closed": address}))
+                    }
+                    SessionOp::Compact => {
+                        self.deck.compact_session(address.clone()).await?;
+                        Ok(json!({"compacted": address}))
                     }
                     SessionOp::Message | SessionOp::WrapUp => {
                         let body = match (op, text) {

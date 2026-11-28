@@ -3,4 +3,4 @@
 /**
  * What to do with another session, approved from the Work tab.
  */
-export type SessionOp = "message" | "wrap_up" | "close";
+export type SessionOp = "message" | "wrap_up" | "close" | "compact";

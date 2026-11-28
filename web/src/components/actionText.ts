@@ -52,6 +52,8 @@ export function actionLine(a: Action): { verb: string; detail?: string } {
         ? { verb: `Message ${sessionName(a.to)}`, detail: a.text ?? undefined }
         : a.op === "wrap_up"
           ? { verb: `Wrap up ${sessionName(a.to)}`, detail: a.text ?? undefined }
-          : { verb: `Close ${sessionName(a.to)}` };
+          : a.op === "compact"
+            ? { verb: `Compact ${sessionName(a.to)}` }
+            : { verb: `Close ${sessionName(a.to)}` };
   }
 }

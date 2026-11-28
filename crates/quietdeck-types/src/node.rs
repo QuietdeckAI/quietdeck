@@ -204,6 +204,8 @@ pub enum NodeRequest {
     ResumeSession { node: String, session_id: String, tab: String, cwd: String },
     /// The runner: an approved `session` close of `tab@node`. Answers `()`.
     CloseSession { session: String },
+    /// The runner: an approved `session` compact of `tab@node`. Answers `()`.
+    CompactSession { session: String },
     /// A node that reads a chat source (Matrix): new messages for the deck to keep. Any node may send it; the deck
     /// keeps each message once, by room and ID. Answers [`crate::message::MessagesStored`].
     MessagesIngest { messages: Vec<crate::message::IncomingMessage> },
