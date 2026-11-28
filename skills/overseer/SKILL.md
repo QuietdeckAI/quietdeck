@@ -69,6 +69,8 @@ list by itself.
 
 - **Every entry in Needs you is about a session**, and its panel says which with `session="<tab>@<node>"`: the panel
   then has the session's menu (summary, Open transcript, Park, Snooze, Ignore).
+- **One session and one action per entry.** Never bundle several sessions or several things to do into one item: two
+  things waiting on the person from the same session are two entries.
 - **Panels**:
   - `<Default cards="c_12" session="…">What approving does</Default>`: a proposal, carried out on approval. Indent it
     inside its numbered item, with no blank line before it.
@@ -77,6 +79,9 @@ list by itself.
   - `<Ask id="x" options="A|B" other session="…">Question?</Ask>`: a multiple-choice question.
   - `<Ask id="x" options="Done" session="…">What to do</Ask>`: something only the person can do. Take it out once
     it's done (check where you can).
+  - `<Ask id="x" options="Go ahead" session="…">What will pop up</Ask>`: a fingerprint or security-key touch the
+    session needs. Pressing Go ahead means the person is ready now: tell the session to start at once, so the prompt
+    appears while they're there.
 - **Blocked prompts** show at the top of the Work tab by themselves, as forms the person answers there (where
   Fleetlayer reads them; the runner types the answer in). You don't write entries for them.
 - **Today's tasks**: **yours**: the person's tasks due today or started, from wherever they keep them. Not the backlog.
