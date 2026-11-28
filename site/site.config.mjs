@@ -43,5 +43,4 @@ export const pages = [
   { file: "orchestrators", group: "Reference", label: "Orchestrators" },
   { file: "claude-code-messaging", group: "Reference", label: "Claude Code messaging" },
   { file: "summaries-interface", group: "Advanced", label: "Summaries interface" },
-  { file: "usage-interface", group: "Advanced", label: "Usage interface" },
 ];

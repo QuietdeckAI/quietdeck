@@ -143,10 +143,8 @@ async fn respond(node: &Node, req: LocalRequest, peer_pid: Option<u32>) -> Local
             version: crate::link::version(),
             runner: node.runner.get().is_some(),
         }),
-        LocalRequest::Usage => match &node.usage {
-            Some(u) => LocalResponse::Usage { accounts: u.snapshot().await },
-            None => LocalResponse::Usage { accounts: vec![] },
-        },
+        // Usage readings are Fleetlayer's; kept answering, empty, for older callers.
+        LocalRequest::Usage => LocalResponse::Usage { accounts: vec![] },
         LocalRequest::ImportSummaries { dir } => match &node.summaries {
             Some(s) => match s.import_claude_summarizer(dir.into()).await {
                 Ok(records) => LocalResponse::Imported { records },

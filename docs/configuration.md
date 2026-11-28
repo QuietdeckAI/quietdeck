@@ -71,16 +71,9 @@ summaries](getting-started.md#session-summaries), [the module's interface](summa
 
 ### usage
 
-Account usage for this machine's Codex sign-in. No token leaves the machine ([the usage module's
-interface](usage-interface.md)).
-
-| Key | Type | Default | What it does |
-|---|---|---|---|
-| `usage.enabled` | bool | `true` | Read usage on this machine. |
-| `usage.poll_minutes` | number | `5` | Poll each account's usage at most this often, and less while sessions report readings. |
-| `usage.codex` | bool | `true` | Read Codex sign-ins. |
-| `usage.claude` | | | Legacy: accepted and ignored. Claude sign-ins belong to Fleetlayer's claude-auth-manager plugin now. |
-| `usage.serve_coordinator_api` | | | Legacy: accepted and ignored, for the same reason. |
+Legacy: the node no longer reads account usage. The section and its keys (`enabled`, `poll_minutes`, `codex`, `claude`,
+`serve_coordinator_api`) are accepted and ignored, so an older node.yaml still loads. Usage readings are Fleetlayer's
+(`fleetlayer readings claude.usage`, from its claude-auth-manager plugin).
 
 ### runner
 

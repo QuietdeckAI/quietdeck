@@ -1,9 +1,6 @@
-//! Account usage: what each node's usage module reads about the Claude and Codex subscriptions signed in on its
-//! machine, and pushes to the deck. Readings only: no token, refresh token or sign-in secret ever leaves the machine.
-//!
-//! The deck merges the same subscription signed in on several machines into one row, matched on
-//! (`provider`, `account_key`), and keeps the newest reading per window. The module's interface is in
-//! `docs/usage-interface.md` and `crates/quietdeck-node/src/usage/mod.rs`.
+//! Account usage records, kept only as wire formats: older nodes push `NodeFrame::Usage`, node.yaml's `usage:` section
+//! is still accepted, and the local socket still answers `Usage` (empty). The node no longer reads usage: Fleetlayer's
+//! readings have it (`fleetlayer readings claude.usage`).
 
 use jiff::Timestamp;
 use schemars::JsonSchema;

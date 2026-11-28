@@ -1,5 +1,5 @@
 > **Superseded (27 Nov 2026):** Claude sign-ins, their usage and the coordinator API moved to Fleetlayer's
-> claude-auth-manager plugin. quietdeck-node reads only Codex usage now (`docs/usage-interface.md`).
+> claude-auth-manager plugin. quietdeck-node reads no usage at all now: Fleetlayer's readings have it.
 
 # Account usage and the rotation add-on
 

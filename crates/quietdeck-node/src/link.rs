@@ -170,12 +170,6 @@ async fn connect_once(node: &Arc<Node>) -> anyhow::Result<Outcome> {
     // A fresh snapshot each time: the deck may have missed pushes while we were away.
     let sessions = node.sessions.lock().await.clone();
     let _ = tx.send(NodeFrame::Sessions { sessions }).await;
-    if let Some(usage) = &node.usage {
-        let accounts = usage.snapshot().await;
-        if !accounts.is_empty() {
-            let _ = tx.send(NodeFrame::Usage { accounts, at: jiff::Timestamp::now() }).await;
-        }
-    }
 
     let held: Vec<NodeFrame> = node.link.outbox.lock().await.drain(..).collect();
     if !held.is_empty() {
@@ -355,13 +349,10 @@ async fn answer(node: &Node, request: DeckRequest) -> Reply {
             },
             None => Reply::Err { error: "this node's runner is off".into() },
         },
-        DeckRequest::Usage { command } => match &node.usage {
-            Some(u) => match u.command(command).await {
-                Ok(()) => Reply::ok(&serde_json::json!({})),
-                Err(e) => Reply::Err { error: e.to_string() },
-            },
-            None => Reply::Err { error: "usage monitoring is off on this node".into() },
-        },
+        // Usage readings are Fleetlayer's (`fleetlayer readings claude.usage`); the variant stays for older decks.
+        DeckRequest::Usage { .. } => {
+            Reply::Err { error: "the node no longer reads usage: Fleetlayer's readings have it".into() }
+        }
     }
 }
 

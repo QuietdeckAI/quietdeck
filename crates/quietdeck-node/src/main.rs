@@ -1,5 +1,5 @@
 //! quietdeck-node: the daemon on each machine that runs agent sessions. It connects out to the deck, watches the orchestrator (herdr),
-//! delivers messages to sessions, writes their summaries, monitors Codex usage, and hands session tokens to the
+//! delivers messages to sessions, writes their summaries, and hands session tokens to the
 //! CLI over its local socket.
 
 use std::path::PathBuf;

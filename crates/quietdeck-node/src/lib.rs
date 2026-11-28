@@ -14,7 +14,6 @@ pub mod runner;
 pub mod service;
 pub mod summaries;
 pub mod transcripts;
-pub mod usage;
 pub mod viewer;
 pub mod watch;
 
@@ -38,7 +37,6 @@ pub struct Node {
     pub orchestrator: Arc<dyn orchestrator::Orchestrator>,
     pub sessions: Mutex<Vec<SessionInfo>>,
     pub summaries: Option<summaries::SummariesHandle>,
-    pub usage: Option<usage::UsageHandle>,
     pub tokens: local::TokenCache,
     /// The runner's headless agent turns running now, for the identity of the CLI calls they make.
     pub headless_turns: Arc<local::HeadlessTurns>,
@@ -114,11 +112,6 @@ pub async fn run(config: NodeConfig, opts: RunOptions) -> anyhow::Result<()> {
             summary_tx,
         )
     });
-    let (usage_tx, mut usage_rx) = mpsc::channel(64);
-    let usage = config
-        .usage
-        .enabled
-        .then(|| usage::spawn(config.usage.clone(), usage::UsageEnv { home: home.clone() }, usage_tx));
 
     let node = Arc::new(Node {
         deliverer: deliver::Deliverer::new(&home, orchestrator.clone()),
@@ -128,7 +121,6 @@ pub async fn run(config: NodeConfig, opts: RunOptions) -> anyhow::Result<()> {
         link: link::Link::default(),
         sessions: Mutex::default(),
         summaries,
-        usage,
         tokens: local::TokenCache::default(),
         headless_turns: Arc::default(),
         runner: std::sync::OnceLock::new(),
@@ -183,25 +175,12 @@ pub async fn run(config: NodeConfig, opts: RunOptions) -> anyhow::Result<()> {
         matrix::spawn(node.clone(), cfg);
     }
 
-    // Summaries and usage go to the deck as they come.
+    // Summaries go to the deck as they come.
     {
         let node = node.clone();
         tokio::spawn(async move {
             while let Some(event) = summary_rx.recv().await {
                 node.link.push_kept(NodeFrame::Summary { event }).await;
-            }
-        });
-    }
-    {
-        let node = node.clone();
-        tokio::spawn(async move {
-            let mut last = None;
-            while let Some(usage::UsageEvent::Snapshot(accounts)) = usage_rx.recv().await {
-                if last.as_ref() == Some(&accounts) {
-                    continue;
-                }
-                node.link.push(NodeFrame::Usage { accounts: accounts.clone(), at: jiff::Timestamp::now() }).await;
-                last = Some(accounts);
             }
         });
     }

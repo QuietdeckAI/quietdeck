@@ -224,5 +224,4 @@ stays with Quietdeck's node.
   [crates/quietdeck-server/src/fleetlayer.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/fleetlayer.rs)
 - Every setting and environment variable: [Configuration](../configuration.md), and the deck's in
   [deploy/README.md](https://github.com/QuietdeckAI/quietdeck/blob/main/deploy/README.md)
-- The summaries and usage modules' contracts: [summaries-interface.md](../summaries-interface.md),
-  [usage-interface.md](../usage-interface.md)
+- The summaries module's contract: [summaries-interface.md](../summaries-interface.md)
