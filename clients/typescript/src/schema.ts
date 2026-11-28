@@ -2607,7 +2607,7 @@ export interface components {
              * @description Milliseconds since the epoch.
              */
             created_at: number;
-            /** @description What else Fleetlayer says about it (the call's arguments, the reason). */
+            /** @description What else Fleetlayer says about it (the call's arguments, the reason): the asker's own text, outside data. */
             detail?: string | null;
             /**
              * Format: int64
@@ -2617,6 +2617,11 @@ export interface components {
             /** @description Who asks (`ops@server-admin`). */
             from: string;
             id: string;
+            /**
+             * @description The request in plain words, built by Fleetlayer from access control's own names only ("The cookies plugin on
+             *     laptop wants to send its x set to worker"): shown first. Fleetlayer v0.4.2 and later.
+             */
+            line?: string | null;
             /** @description Approving allows one use only. */
             once: boolean;
             /** @description On what (`node:laptop`, `tool:browser@laptop`, `window:admin`). */

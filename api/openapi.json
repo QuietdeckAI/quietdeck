@@ -2607,7 +2607,7 @@
             "type": "integer"
           },
           "detail": {
-            "description": "What else Fleetlayer says about it (the call's arguments, the reason).",
+            "description": "What else Fleetlayer says about it (the call's arguments, the reason): the asker's own text, outside data.",
             "type": [
               "string",
               "null"
@@ -2627,6 +2627,13 @@
           },
           "id": {
             "type": "string"
+          },
+          "line": {
+            "description": "The request in plain words, built by Fleetlayer from access control's own names only (\"The cookies plugin on\nlaptop wants to send its x set to worker\"): shown first. Fleetlayer v0.4.2 and later.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "once": {
             "description": "Approving allows one use only.",
@@ -6438,7 +6445,7 @@
     },
     "summary": "Quietdeck's core: cards, decisions, actions, rules, sessions and the timeline.",
     "title": "Quietdeck API",
-    "version": "1.10.0"
+    "version": "1.11.0"
   },
   "openapi": "3.1.0",
   "paths": {

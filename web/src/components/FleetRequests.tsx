@@ -101,7 +101,8 @@ function RequestCard({ request: a, onDone }: { request: FleetApproval; onDone: (
         window.location.assign(r.stepup_url);
         return;
       }
-      notify(approve ? `Approved: ${a.from} ${a.verb} ${a.to}` : `Refused: ${a.from} ${a.verb} ${a.to}`, { ms: 4000 });
+      const what = a.line ?? `${a.from} ${a.verb} ${a.to}`;
+      notify(approve ? `Approved: ${what}` : `Refused: ${what}`, { ms: 4000 });
       onDone();
     },
     onError: (e) => notify(`Not decided: ${e.message}`, { error: true, ms: 30_000 }),
@@ -117,11 +118,18 @@ function RequestCard({ request: a, onDone }: { request: FleetApproval; onDone: (
       <div className="flex items-start gap-2">
         <Icon aria-hidden className="mt-[3px] size-4 shrink-0 text-busy" />
         <div className="min-w-0 flex-1">
-          <p className="text-ink">
-            <span className="font-mono text-sm">{a.from}</span> <span className="text-sm text-neutral">asks to</span>{" "}
-            <span className="font-mono text-sm">{a.verb}</span> <span className="text-sm text-neutral">on</span>{" "}
-            <span className="font-mono text-sm [overflow-wrap:anywhere]">{a.to}</span>
-          </p>
+          {a.line ? (
+            // Fleetlayer's plain words, from access control's names only; the raw terms stay for the curious.
+            <p className="text-ink [overflow-wrap:anywhere]" title={`${a.from} · ${a.verb} · ${a.to}`}>
+              {a.line}
+            </p>
+          ) : (
+            <p className="text-ink">
+              <span className="font-mono text-sm">{a.from}</span> <span className="text-sm text-neutral">asks to</span>{" "}
+              <span className="font-mono text-sm">{a.verb}</span> <span className="text-sm text-neutral">on</span>{" "}
+              <span className="font-mono text-sm [overflow-wrap:anywhere]">{a.to}</span>
+            </p>
+          )}
           <p className="text-xs text-neutral">{meta.join(" · ")}</p>
         </div>
       </div>

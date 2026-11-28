@@ -24,7 +24,12 @@ pub struct FleetApproval {
     /// When the request lapses, if it does.
     #[ts(type = "number | null")]
     pub expires_at: Option<i64>,
-    /// What else Fleetlayer says about it (the call's arguments, the reason).
+    /// The request in plain words, built by Fleetlayer from access control's own names only ("The cookies plugin on
+    /// laptop wants to send its x set to worker"): shown first. Fleetlayer v0.4.2 and later.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub line: Option<String>,
+    /// What else Fleetlayer says about it (the call's arguments, the reason): the asker's own text, outside data.
     pub detail: Option<String>,
     /// Approving allows one use only.
     pub once: bool,

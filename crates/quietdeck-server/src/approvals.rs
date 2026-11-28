@@ -45,6 +45,8 @@ struct RawApproval {
     #[serde(default)]
     expires_at: Option<i64>,
     #[serde(default)]
+    line: Option<String>,
+    #[serde(default)]
     detail: Option<String>,
     #[serde(default)]
     once: bool,
@@ -95,6 +97,7 @@ fn approvals_of(raw: RawApprovals) -> Vec<FleetApproval> {
             to: a.to,
             created_at: a.created_at,
             expires_at: a.expires_at,
+            line: a.line.filter(|l| !l.trim().is_empty()),
             detail: a.detail,
             once: a.once,
         })
@@ -270,7 +273,8 @@ mod tests {
     fn pending_requests_and_open_windows_come_through_and_a_window_request_is_marked() {
         let raw: RawApprovals = serde_json::from_value(json!({"approvals": [
             {"id": "ap_1", "from": "ops@server-admin", "verb": "activate", "to": "window:admin", "status": "pending",
-             "createdAt": 5, "expiresAt": null, "detail": "upgrade postgres", "once": false},
+             "createdAt": 5, "expiresAt": null, "detail": "upgrade postgres", "once": false,
+             "line": "ops on server-admin wants to open the admin window"},
             {"id": "ap_2", "from": "web@laptop", "verb": "start", "to": "node:server", "status": "approved",
              "createdAt": 4},
             {"id": "ap_3", "from": "web@laptop", "verb": "use_tool", "to": "tool:browser@laptop", "status": "pending",
@@ -280,6 +284,8 @@ mod tests {
         let a = approvals_of(raw);
         assert_eq!(a.iter().map(|x| (x.id.as_str(), x.window)).collect::<Vec<_>>(), [("ap_1", true), ("ap_3", false)]);
         assert!(a[1].once);
+        assert_eq!(a[0].line.as_deref(), Some("ops on server-admin wants to open the admin window"));
+        assert_eq!(a[1].line, None, "an older Fleetlayer sends none");
         let w: RawWindows = serde_json::from_value(json!({"roles": [], "windows": [
             {"id": "w2", "role": "admin", "requestedBy": "ops@server-admin", "openedAt": 10, "endsAt": 20,
              "closedAt": null, "closedBy": null, "unconfirmed": [], "problem": null},

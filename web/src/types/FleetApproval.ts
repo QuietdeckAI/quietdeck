@@ -25,7 +25,12 @@ created_at: number,
  */
 expires_at: number | null, 
 /**
- * What else Fleetlayer says about it (the call's arguments, the reason).
+ * The request in plain words, built by Fleetlayer from access control's own names only ("The cookies plugin on
+ * laptop wants to send its x set to worker"): shown first. Fleetlayer v0.4.2 and later.
+ */
+line?: string, 
+/**
+ * What else Fleetlayer says about it (the call's arguments, the reason): the asker's own text, outside data.
  */
 detail: string | null, 
 /**
