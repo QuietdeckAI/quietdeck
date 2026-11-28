@@ -106,6 +106,24 @@ impl Client {
         Ok(Some(res.json().await?))
     }
 
+    /// Every reading's newest value of one kind (`GET /v1/readings?kind=`), as `{readings: [{kind, key, node, at,
+    /// data}]}`.
+    pub async fn readings(&self, kind: &str) -> anyhow::Result<serde_json::Value> {
+        let res = self
+            .http
+            .get(format!("{}/v1/readings", self.base))
+            .query(&[("kind", kind)])
+            .bearer_auth(&self.token)
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await?;
+        let status = res.status();
+        if !status.is_success() {
+            anyhow::bail!("GET /v1/readings answered {status}: {}", res.text().await.unwrap_or_default());
+        }
+        Ok(res.json().await?)
+    }
+
     /// Every node and session in the fleet (`GET /v1/fleet`), for the Sessions screen.
     pub async fn fleet(&self) -> anyhow::Result<crate::fleet_sessions::Fleet> {
         let res = self

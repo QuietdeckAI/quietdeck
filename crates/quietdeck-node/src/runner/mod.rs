@@ -90,6 +90,9 @@ pub struct Runner {
     reading: std::sync::atomic::AtomicBool,
     /// "Triage now": the next wake-up goes even while the person reads.
     release: std::sync::atomic::AtomicBool,
+    /// Whether the person is asleep, from Fleetlayer's presence through the deck; None while unknown, when the fixed
+    /// `quiet_hours` decide instead.
+    asleep: std::sync::Mutex<Option<bool>>,
     /// What the deck was last told the runner holds, so it's told only of changes.
     last_held: std::sync::Mutex<Option<(Option<String>, u64)>>,
     /// Drafts whose headers were read, by message ID (a draft's message ID changes with every save).
@@ -275,6 +278,7 @@ impl Runner {
             send_as: Mutex::default(),
             reading: Default::default(),
             release: Default::default(),
+            asleep: Default::default(),
             last_held: Default::default(),
             draft_cache: Default::default(),
         }
@@ -1186,6 +1190,26 @@ impl Runner {
         state.save(&self.mail_state_path);
     }
 
+    /// The deck says whether the person is asleep (None: it doesn't know). Waking up sends the held catch-up at once.
+    pub async fn set_asleep(&self, asleep: Option<bool>) {
+        let was = std::mem::replace(&mut *self.asleep.lock().expect("asleep lock"), asleep);
+        if was == asleep {
+            return;
+        }
+        tracing::info!(?asleep, "the person's presence changed");
+        let mut state = self.mail.lock().await;
+        self.wake_if_due(&mut state).await;
+        state.save(&self.mail_state_path);
+    }
+
+    /// Overnight: the person is asleep, by Fleetlayer's presence when the deck knows it, else by `quiet_hours`.
+    fn quiet_now(&self) -> bool {
+        match *self.asleep.lock().expect("asleep lock") {
+            Some(asleep) => asleep,
+            None => self.cfg.quiet_hours.as_ref().is_some_and(|q| q.contains(jiff::Timestamp::now())),
+        }
+    }
+
     /// "Triage now": wake the agent for what's held, even while the person reads.
     pub async fn release_held(&self) {
         self.release.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1246,8 +1270,9 @@ impl Runner {
         let reading = self.reading.load(std::sync::atomic::Ordering::SeqCst)
             && !self.release.load(std::sync::atomic::Ordering::SeqCst);
         self.report_held(state, reading).await;
-        // Overnight nothing wakes the agent: it all waits, and the first check after quiet hours sends one wake-up.
-        if self.cfg.quiet_hours.as_ref().is_some_and(|q| q.contains(jiff::Timestamp::now())) {
+        // Overnight nothing wakes the agent: it all waits, and the first check after the person wakes (or after quiet
+        // hours) sends one wake-up.
+        if self.quiet_now() {
             return;
         }
         // No waiting for `round done`: an agent that's busy reads the wake-up on its next turn, so every check with

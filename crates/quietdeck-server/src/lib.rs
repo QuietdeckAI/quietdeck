@@ -26,6 +26,7 @@ pub mod ops;
 pub mod overseer;
 pub mod passkeys;
 pub mod pings;
+pub mod presence;
 pub mod push;
 pub mod reading;
 pub mod relay;
@@ -135,6 +136,11 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
     tokio::spawn(fleetlayer_handoffs::ticker(state.clone()));
     tokio::spawn(fleetlayer_events::ticker(state.clone(), env.fleetlayer_room_channels.clone()));
     tokio::spawn(overseer::ticker(state.clone()));
+    let presence_target = env.fleetlayer_presence.as_deref().and_then(presence::target);
+    if env.fleetlayer_presence.is_some() && presence_target.is_none() {
+        tracing::warn!("QUIETDECK_FLEETLAYER_PRESENCE is <person>@<node> (nathan@agents-presence): presence is off");
+    }
+    tokio::spawn(presence::ticker(state.clone(), presence_target));
     match (&env.fleetlayer_url, &env.fleetlayer_approve_token) {
         (Some(url), Some(token)) => {
             let tenant = env.fleetlayer_tenant.as_deref().unwrap_or("default");

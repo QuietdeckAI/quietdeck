@@ -981,6 +981,48 @@ async fn while_the_person_reads_only_what_the_deck_lets_through_wakes_the_agent(
 }
 
 #[tokio::test]
+async fn while_the_person_is_asleep_nothing_wakes_the_agent_and_waking_sends_the_catch_up() {
+    let head = Arc::new(StdMutex::new(100u64));
+    let added: Added = Arc::default();
+    let (url, _) = executor(feed(head.clone(), added.clone())).await;
+    let dir = tempfile::tempdir().unwrap();
+    let agent = Arc::new(FakeAgent::default());
+    let deck = Arc::new(FakeDeck::default());
+    let mut cfg = config(&url, "");
+    // Quiet hours that cover every moment: presence overrides them while it's known.
+    let hhmm = |t: jiff::Timestamp| t.to_zoned_datetime(jiff::tz::TimeZone::UTC).strftime("%H:%M").to_string();
+    let now = jiff::Timestamp::now();
+    cfg.quiet_hours = Some(super::config::QuietHours {
+        from: hhmm(now - jiff::SignedDuration::from_hours(1)),
+        to: hhmm(now + jiff::SignedDuration::from_hours(1)),
+        tz: Some("UTC".into()),
+    });
+    let tools = ConfiguredTools::new(Some((cfg.executor.clone().unwrap(), "t".into())));
+    let runner = Runner::new(cfg, deck.clone(), Arc::new(tools), agent.clone(), dir.path().to_path_buf());
+    runner.check_mail().await; // first run: starts from now
+    runner.set_asleep(Some(true)).await;
+
+    added.lock().unwrap().push((101, "a", "INBOX"));
+    *head.lock().unwrap() = 101;
+    runner.check_mail().await;
+    assert!(agent.told.lock().unwrap().is_empty(), "held while the person sleeps");
+
+    // Waking sends one catch-up at once, though the fixed quiet hours would still hold it.
+    runner.set_asleep(Some(false)).await;
+    let told = agent.told.lock().unwrap().clone();
+    assert_eq!(told.len(), 1);
+    assert!(told[0].1.starts_with("New mail: 1 Personal."), "{}", told[0].1);
+
+    // Unknown presence falls back to the quiet hours.
+    runner.round_done().await;
+    runner.set_asleep(None).await;
+    added.lock().unwrap().push((102, "b", "INBOX"));
+    *head.lock().unwrap() = 102;
+    runner.check_mail().await;
+    assert_eq!(agent.told.lock().unwrap().len(), 1, "inside quiet hours");
+}
+
+#[tokio::test]
 async fn a_wakeup_for_an_agent_thats_offline_waits_for_the_next_check() {
     let head = Arc::new(StdMutex::new(100u64));
     let added: Added = Arc::default();

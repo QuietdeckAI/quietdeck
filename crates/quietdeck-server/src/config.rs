@@ -61,6 +61,11 @@ pub struct Env {
     /// Fleetlayer's place (tenant) slug, for the passkey page. `default` when unset.
     #[arg(long, env = "QUIETDECK_FLEETLAYER_TENANT")]
     pub fleetlayer_tenant: Option<String>,
+    /// Whose presence the triage runner follows, and the node of Fleetlayer's presence authority: `<person>@<node>`
+    /// (`nathan@agents-presence`). Read with the read token every minute; while the person is asleep the runner's agent
+    /// isn't woken, in place of `runner.quiet_hours`, which still applies when presence is unknown.
+    #[arg(long, env = "QUIETDECK_FLEETLAYER_PRESENCE")]
+    pub fleetlayer_presence: Option<String>,
     #[arg(long, env = "QUIETDECK_VAPID_PUBLIC_KEY", hide_env_values = true)]
     pub vapid_public_key: Option<String>,
     #[arg(long, env = "QUIETDECK_VAPID_PRIVATE_KEY", hide_env_values = true)]

@@ -71,6 +71,10 @@ pub async fn report(state: &AppState, now: i64) -> anyhow::Result<(bool, Value)>
         if let Some(e) = health.get(&name).and_then(|(h, _)| h.mail_error.clone()) {
             problems.push(format!("its last check failed: {e}"));
         }
+        // Its wake-ups follow the person's presence: a watch that keeps failing leaves it on its fixed quiet hours.
+        if let Some(p) = crate::presence::problem(now) {
+            problems.push(p);
+        }
         // The oldest approved action waiting on any of its agents' cards.
         let mut waiting: Option<i64> = None;
         for (n, t) in info.agents(&name) {

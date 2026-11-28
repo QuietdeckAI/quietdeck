@@ -318,6 +318,12 @@ pub enum DeckRequest {
     /// connects. Going idle lets the held wake-up go.
     Presence {
         active: bool,
+        /// Whether the person is asleep, from Fleetlayer's presence authority: while they are, the agent isn't woken
+        /// (in place of `runner.quiet_hours`). None when the deck doesn't know (no presence set up, or no fresh
+        /// reading), and the runner falls back to its quiet hours. Older nodes ignore it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        asleep: Option<bool>,
     },
     /// To the runner: the person pressed "Triage now": wake the agent for what it holds, even while they read.
     ReleaseHeld,

@@ -315,10 +315,13 @@ async fn answer(node: &Node, request: DeckRequest) -> Reply {
             }
             None => Reply::Err { error: "this node's runner is off".into() },
         },
-        DeckRequest::Presence { active } => match node.runner.get() {
+        DeckRequest::Presence { active, asleep } => match node.runner.get() {
             Some(r) => {
                 let runner = r.runner.clone();
-                tokio::spawn(async move { runner.set_reading(active).await });
+                tokio::spawn(async move {
+                    runner.set_asleep(asleep).await;
+                    runner.set_reading(active).await;
+                });
                 Reply::ok(&())
             }
             None => Reply::Err { error: "this node's runner is off".into() },

@@ -79,7 +79,10 @@ async fn settle_told(state: &AppState) -> AppResult<()> {
         tracing::info!(active, "the person's reading the Inbox changed");
         state.changed(Changed::Cards);
         let state = state.clone();
-        tokio::spawn(async move { crate::runner::tell_runners(&state, DeckRequest::Presence { active }).await });
+        tokio::spawn(async move {
+            crate::runner::tell_runners(&state, DeckRequest::Presence { active, asleep: crate::presence::asleep() })
+                .await
+        });
     }
     Ok(())
 }
@@ -100,7 +103,7 @@ pub async fn ticker(state: AppState) {
 
 /// What a runner that just connected is told first.
 pub async fn presence_request(db: &Db) -> AppResult<DeckRequest> {
-    Ok(DeckRequest::Presence { active: is_active(db).await? })
+    Ok(DeckRequest::Presence { active: is_active(db).await?, asleep: crate::presence::asleep() })
 }
 
 /// The runner's question for new items. Not reading: all go through. Reading: an update to a thread an open card
