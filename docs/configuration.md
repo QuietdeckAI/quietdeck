@@ -93,6 +93,7 @@ with gog](guides/mail-through-gog.md)). The node checks this section when it sta
 | `runner.accounts.<id>.label` | string | the ID, capitalised | How wake-ups and reports name the account. |
 | `runner.accounts.<id>.vars` | map of strings | `{}` | Anything else the tool inputs need, as `${account.<name>}`: an Executor account ID, a gog account name. |
 | `runner.mail_watch` | map | | Watch the accounts for new mail. Keys in the next table. Needs `runner.accounts`. |
+| `runner.quiet_hours` | map | | `{from: "23:00", to: "08:00", tz: Pacific/Auckland}`: hours when the agent isn't woken. New mail waits, and the first check after them sends one wake-up with everything (the morning's catch-up round). `to` earlier than `from` runs past midnight; `tz` defaults to the machine's. A stopgap until Fleetlayer's presence plugin says when you're around. |
 | `runner.intercom_watch` | map | | Watch a support inbox (Intercom) like a mailbox. Keys in [runner.intercom_watch](#runnerintercom_watch). |
 | `runner.thread` | tool | | Reads a thread's message IDs, labels and dates (never its content), for the freshness check before an action. |
 | `runner.send_as` | tool | | Lists the addresses an account can send as, read hourly. A draft from any other address goes to the agent. |

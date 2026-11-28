@@ -1224,6 +1224,10 @@ impl Runner {
         let reading = self.reading.load(std::sync::atomic::Ordering::SeqCst)
             && !self.release.load(std::sync::atomic::Ordering::SeqCst);
         self.report_held(state, reading).await;
+        // Overnight nothing wakes the agent: it all waits, and the first check after quiet hours sends one wake-up.
+        if self.cfg.quiet_hours.as_ref().is_some_and(|q| q.contains(jiff::Timestamp::now())) {
+            return;
+        }
         // No waiting for `round done`: an agent that's busy reads the wake-up on its next turn, so every check with
         // something new wakes it (Nathan, 25 November: "why would anything block a wake up ever? just send the
         // message!"). Only the person reading the Inbox holds new items back, and only from the Inbox.

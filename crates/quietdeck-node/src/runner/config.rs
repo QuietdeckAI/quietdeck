@@ -33,6 +33,11 @@ pub struct RunnerConfig {
     /// A support inbox as a source (Intercom): conversations waiting on a reply wake the agent like new mail.
     #[serde(default)]
     pub intercom_watch: Option<IntercomWatchConfig>,
+    /// Hours when the agent isn't woken: new mail waits, and the first check after them sends one wake-up with
+    /// everything (the morning's catch-up round). A stopgap until Fleetlayer's presence plugin says when the person
+    /// is around (Nathan, 28 Nov 2026: pause overnight, catch up at 08:00).
+    #[serde(default)]
+    pub quiet_hours: Option<QuietHours>,
     /// Lists the addresses an account can send as (Gmail's `users.settings.sendAs.list` shape). Read hourly.
     #[serde(default)]
     pub send_as: Option<ToolSpec>,
@@ -148,6 +153,57 @@ pub struct MailWatchConfig {
     /// an agent with no mail tools starts with what's already there. Optional.
     #[serde(default)]
     pub recent: Option<ToolSpec>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuietHours {
+    /// Local time they start, `23:00`.
+    pub from: String,
+    /// Local time they end, `08:00`; earlier than `from` means they run past midnight.
+    pub to: String,
+    /// The time zone (`Pacific/Auckland`). The machine's own when unset.
+    #[serde(default)]
+    pub tz: Option<String>,
+}
+
+impl QuietHours {
+    fn minutes(s: &str) -> Result<i32, String> {
+        let (h, m) = s.trim().split_once(':').ok_or_else(|| format!("{s:?} isn't HH:MM"))?;
+        let (h, m): (i32, i32) = (
+            h.parse().map_err(|_| format!("{s:?} isn't HH:MM"))?,
+            m.parse().map_err(|_| format!("{s:?} isn't HH:MM"))?,
+        );
+        if !(0..24).contains(&h) || !(0..60).contains(&m) {
+            return Err(format!("{s:?} isn't a time of day"));
+        }
+        Ok(h * 60 + m)
+    }
+
+    fn zone(&self) -> Result<jiff::tz::TimeZone, String> {
+        match &self.tz {
+            Some(name) => jiff::tz::TimeZone::get(name).map_err(|e| format!("time zone {name:?}: {e}")),
+            None => Ok(jiff::tz::TimeZone::system()),
+        }
+    }
+
+    pub fn check(&self) -> Result<(), String> {
+        let (a, b) = (Self::minutes(&self.from)?, Self::minutes(&self.to)?);
+        if a == b {
+            return Err("from and to are the same time".into());
+        }
+        self.zone().map(|_| ())
+    }
+
+    /// Whether `now` falls in them.
+    pub fn contains(&self, now: jiff::Timestamp) -> bool {
+        let (Ok(a), Ok(b), Ok(tz)) = (Self::minutes(&self.from), Self::minutes(&self.to), self.zone()) else {
+            return false;
+        };
+        let local = now.to_zoned_datetime(tz);
+        let m = i32::from(local.hour()) * 60 + i32::from(local.minute());
+        if a < b { m >= a && m < b } else { m >= a || m < b }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -378,6 +434,9 @@ impl RunnerConfig {
                 specs.push((name.to_string(), s));
             }
         }
+        if let Some(q) = &self.quiet_hours {
+            q.check().map_err(|e| format!("runner.quiet_hours: {e}"))?;
+        }
         if let Some(w) = &self.intercom_watch {
             parse_duration(&w.every).map_err(|e| format!("runner.intercom_watch.every: {e}"))?;
             if w.account.trim().is_empty() {
@@ -537,6 +596,22 @@ mod tests {
         assert!(c.check().unwrap_err().contains("gog has no op \"archiv\""));
         let c: RunnerConfig = yaml_serde::from_str("agent: { tab: t }\ntools:\n  archive: { gog: archive }\n").unwrap();
         c.check().unwrap();
+    }
+
+    #[test]
+    fn quiet_hours_run_past_midnight_in_their_own_time_zone() {
+        let q = QuietHours { from: "23:00".into(), to: "08:00".into(), tz: Some("Pacific/Auckland".into()) };
+        q.check().unwrap();
+        // Auckland is UTC+13 in November.
+        let at = |s: &str| s.parse::<jiff::Timestamp>().unwrap();
+        assert!(q.contains(at("2026-11-28T10:30:00Z")), "23:30 there");
+        assert!(q.contains(at("2026-11-28T18:59:00Z")), "07:59 there");
+        assert!(!q.contains(at("2026-11-28T19:00:00Z")), "08:00 there: the catch-up");
+        assert!(!q.contains(at("2026-11-28T01:00:00Z")), "14:00 there");
+        let day = QuietHours { from: "12:00".into(), to: "13:00".into(), tz: Some("UTC".into()) };
+        assert!(day.contains(at("2026-11-28T12:30:00Z")) && !day.contains(at("2026-11-28T13:00:00Z")));
+        assert!(QuietHours { from: "25:00".into(), to: "08:00".into(), tz: None }.check().is_err());
+        assert!(QuietHours { from: "23:00".into(), to: "08:00".into(), tz: Some("Mars/Base".into()) }.check().is_err());
     }
 
     #[test]

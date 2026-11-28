@@ -119,6 +119,8 @@ runner:
     delete: { path: tools.google.api.gmail.users.gmailUsersSettingsFiltersDelete, input: { accountId: "${account.executor_account}", input: { path: { userId: me, id: "${lease.filter_id}" } } } }
     inbox: { path: tools.google.api.gmail.users.gmailUsersThreadsList, input: { accountId: "${account.executor_account}", input: { path: { userId: me }, query: { q: "${lease.query} in:inbox", maxResults: 100, fields: "threads(id)" } } } }
     move: { path: tools.google.gmail.modify, input: { account: "${account.address}", threadIds: "${thread_ids}", addLabels: ["${lease.label}"], archive: true, read: true } }
+  # Hours when the agent isn't woken: overnight mail waits for one catch-up wake-up after them.
+  quiet_hours: { from: "23:00", to: "08:00", tz: Pacific/Auckland }
   # A support inbox as a source (Intercom): every 2 minutes, open conversations waiting on a reply wake the agent like
   # new mail, by ID; the agent reads them with its own tools. `account` is the deck's account for it (deck.yaml's
   # `{ id: intercom, label: Intercom }`), not one of `accounts` above. Closing one is the `close_conversation` tool.
