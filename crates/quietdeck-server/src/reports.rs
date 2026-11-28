@@ -206,6 +206,30 @@ pub async fn set(state: &AppState, me: &SessionRef, doc: &Document, mut req: Rep
     .bind(doc.id)
     .fetch_optional(&mut *tx)
     .await?;
+    // While an Approve All on this report is being carried out (its undo window, or its cards approved or running),
+    // the report holds still: an edit would change what he's watching mid-way (Nathan, 28 Nov: "updates like this to
+    // the inbox shouldn't [be] allowed while an 'approve all' is in progress"). Cards handed to the agent don't count:
+    // it carries those out itself.
+    if let Some((_, _, markdown)) = &open {
+        let (named, _) = default_cards(markdown);
+        if !named.is_empty() {
+            let list = named.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+            let (busy,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+                "SELECT COUNT(*) FROM cards c WHERE c.id IN ({list}) AND (c.state IN ('approved', 'executing') \
+                 OR EXISTS (SELECT 1 FROM decisions d JOIN decision_batches b ON b.id = d.batch \
+                            WHERE d.card_id = c.id AND b.released_at IS NULL))"
+            )))
+            .fetch_one(&mut *tx)
+            .await?;
+            if busy > 0 {
+                return Err(AppError::Conflict(format!(
+                    "Approve All is being carried out on this report ({busy} card{} still going): leave the report as \
+                     it is until they're done, then make your edit (new mail waits for it)",
+                    if busy == 1 { "" } else { "s" }
+                )));
+            }
+        }
+    }
     if req.new && open.is_some() && doc.kind == DocumentKind::Work {
         return Err(AppError::BadRequest(format!(
             "the {} document is kept up to date, never replaced: edit it with --base (no --new)",
@@ -1231,6 +1255,42 @@ mod tests {
         )
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_report_holds_still_while_its_approve_all_is_carried_out() {
+        let state = AppState::for_tests().await;
+        let input: quietdeck_types::card::CardInput = serde_json::from_value(serde_json::json!({
+            "account": "personal", "thread_key": "t1", "subject": "s", "summary": "x", "section": "archive_list",
+            "reason": "r", "actions": [{"type": "archive", "account": "personal", "thread_id": "t1"}]}))
+        .unwrap();
+        let c = crate::store::cards::add(&state.db, &me(), &input, quietdeck_types::card::CardState::Open, None)
+            .await
+            .unwrap()
+            .card;
+        let set = |markdown: String, base: Option<i64>| ReportSet { markdown, base, new: false, change: None };
+        let r = super::set(
+            &state,
+            &me(),
+            &inbox(&state.db).await.unwrap(),
+            set(format!("<Default cards=\"c_{}\">Archive</Default>", c.id), None),
+        )
+        .await
+        .unwrap();
+        let req =
+            quietdeck_types::decision::ApproveReport { report_id: r.id, report_version: r.version, timeline: vec![] };
+        let a = crate::ops::approve_report(&state, req).await.unwrap();
+        assert_eq!(a.cards, vec![c.id]);
+        let refused =
+            super::set(&state, &me(), &inbox(&state.db).await.unwrap(), set("# New mail".into(), Some(r.version)))
+                .await
+                .unwrap_err();
+        assert!(matches!(refused, AppError::Conflict(_)), "{refused}");
+        assert!(refused.to_string().contains("Approve All"), "{refused}");
+        crate::ops::undo(&state, &a.batch).await.unwrap();
+        super::set(&state, &me(), &inbox(&state.db).await.unwrap(), set("# New mail".into(), Some(r.version)))
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

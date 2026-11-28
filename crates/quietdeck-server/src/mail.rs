@@ -230,11 +230,13 @@ pub async fn badges(db: &Db) -> AppResult<MailBadges> {
         AppResult::Ok(n.max(0) as u32)
     };
     // Emails waiting for approval, as the person counts them: the distinct threads across the open cards (one card
-    // often groups many related emails), each card's own thread included.
+    // often groups many related emails), each card's own thread included. Work's cards (about sessions, not mail)
+    // count on the Work tab, never here.
     let open: Vec<(String, String, String)> = sqlx::query_as(
         "SELECT account, thread_key, input FROM cards WHERE state = 'open' \
-         AND section IN ('actions', 'suggestion', 'archive_list')",
+         AND section IN ('actions', 'suggestion', 'archive_list') AND account != ?",
     )
+    .bind(quietdeck_types::document::SESSIONS_ACCOUNT)
     .fetch_all(db)
     .await?;
     let mut threads = std::collections::HashSet::new();
