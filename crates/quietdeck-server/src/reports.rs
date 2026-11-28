@@ -234,6 +234,7 @@ pub async fn set(state: &AppState, me: &SessionRef, doc: &Document, mut req: Rep
     }
     if doc.kind == DocumentKind::Inbox {
         problems.extend(archive_all_problems(&state.db, &req.markdown).await?);
+        problems.extend(finished_problem(&state.db, &ids).await?);
     }
     if !problems.is_empty() {
         return Err(AppError::BadRequest(format!("the report's <Default> tags: {}", problems.join("; "))));
@@ -382,6 +383,34 @@ pub async fn fyi_clear(state: &AppState, doc: &Document) -> AppResult<Option<Rep
     tx.commit().await?;
     state.changed(Changed::Cards);
     current(&state.db, doc.id).await
+}
+
+/// The Inbox shows only what still waits: a card that's finished (carried out, automatic, handled in Gmail) comes
+/// out of the report, with the text about it, the next time the agent edits it. Left in, it came back with the next
+/// new mail after "All done." (Nathan, 28 Nov 2026: "i approve, it goes to all done, then i check later and it's back
+/// on the old inbox content").
+async fn finished_problem(db: &Db, ids: &[i64]) -> AppResult<Option<String>> {
+    if ids.is_empty() {
+        return Ok(None);
+    }
+    let list = ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+    let done: Vec<(i64,)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT id FROM cards WHERE id IN ({list}) AND state IN ('done', 'automatic', 'handled_elsewhere') ORDER BY id"
+    )))
+    .fetch_all(db)
+    .await?;
+    if done.is_empty() {
+        return Ok(None);
+    }
+    let names: Vec<String> = done.iter().map(|(id,)| format!("c_{id}")).collect();
+    Ok(Some(format!(
+        "{} {} finished: take {} out of the report, with the text about {}, since the Inbox shows only what still \
+         waits for him",
+        names.join(", "),
+        if names.len() == 1 { "is" } else { "are" },
+        if names.len() == 1 { "it" } else { "them" },
+        if names.len() == 1 { "it" } else { "them" },
+    )))
 }
 
 /// The archive part's `archive-all` Default may name only cards whose sole action is an archive (or marking read):

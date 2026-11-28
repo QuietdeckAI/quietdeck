@@ -310,13 +310,18 @@ function ReportScreen({
   };
   // Nothing left to act on: every card the defaults name is finished, or there are no defaults or questions at all
   // (whatever text the agent left).
-  // Or the agent said so (`quietdeck report done`), whatever text it left.
+  // Or the agent said so (`quietdeck report done`), whatever text it left. New mail the report doesn't name yet doesn't
+  // bring the finished text back (its waiting toast says so) until the agent writes it in (Nathan, 28 Nov 2026: "i
+  // approve, it goes to all done, then i check later and it's back on the old inbox content"); a report with no
+  // defaults at all still shows while such cards wait.
   const notes = triageNotes(report.markdown);
   // Work is an ongoing document: it never rolls up.
   const allDone =
     !work &&
     (report.finished ||
-    (named.every(finished) && unansweredAsks(report).length === 0 && report.cards_not_in_report.length === 0));
+      (named.every(finished) &&
+        unansweredAsks(report).length === 0 &&
+        (named.length > 0 || report.cards_not_in_report.length === 0)));
   // "rolling" slides and fades the parts away; "gone" then removes them, so the space closes. A report that's already
   // done when the page opens (or when a new one arrives done) shows "All done." at once, without the roll.
   const [rolled, setRolled] = useState<"no" | "rolling" | "gone">(() => (allDone ? "gone" : "no"));
