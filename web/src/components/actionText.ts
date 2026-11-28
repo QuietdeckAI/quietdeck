@@ -12,6 +12,8 @@ export function actionLine(a: Action): { verb: string; detail?: string } {
       return { verb: "Mark read" };
     case "not_spam":
       return { verb: "Mark as not spam" };
+    case "close_conversation":
+      return { verb: "Close the conversation" };
     case "label": {
       const parts = [...a.add.map((l) => `+${l}`), ...a.remove.map((l) => `−${l}`)];
       return { verb: "Label", detail: parts.join("  ") };

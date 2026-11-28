@@ -30,6 +30,9 @@ pub struct RunnerConfig {
     pub accounts: BTreeMap<String, AccountConfig>,
     #[serde(default)]
     pub mail_watch: Option<MailWatchConfig>,
+    /// A support inbox as a source (Intercom): conversations waiting on a reply wake the agent like new mail.
+    #[serde(default)]
+    pub intercom_watch: Option<IntercomWatchConfig>,
     /// Lists the addresses an account can send as (Gmail's `users.settings.sendAs.list` shape). Read hourly.
     #[serde(default)]
     pub send_as: Option<ToolSpec>,
@@ -147,6 +150,20 @@ pub struct MailWatchConfig {
     pub recent: Option<ToolSpec>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IntercomWatchConfig {
+    #[serde(default = "default_intercom_every")]
+    pub every: String,
+    /// The deck's account for the support inbox (`intercom`), which its cards and `close_conversation` actions name.
+    /// It isn't one of `runner.accounts`, which are mailboxes.
+    pub account: String,
+    /// Lists the open conversations changed since `${updated_since}` (seconds since the epoch), the next page from
+    /// `${starting_after}`: `{conversations: [{id, state, updated_at, waiting_since}], next}`. A conversation with no
+    /// `waiting_since` (answered, or closed) doesn't wake the agent.
+    pub conversations: ToolSpec,
+}
+
 /// One tool: an Executor app tool by path, a command that reads the input as JSON on stdin and prints JSON, or a
 /// gog op (`gog: archive`, see [`super::gog::OPS`]) that runs the user's gog CLI with the input's fields. In
 /// `input`, `${...}` names a value: `account.address`, `account.<var>`, `action.<field>`, `card.<field>` and, for
@@ -209,6 +226,10 @@ fn default_every() -> String {
     "30s".into()
 }
 
+fn default_intercom_every() -> String {
+    "2m".into()
+}
+
 fn default_inbox_every() -> String {
     "5m".into()
 }
@@ -238,10 +259,11 @@ pub fn parse_duration(s: &str) -> Result<Duration, String> {
 }
 
 /// The names `runner.tools` takes: one per action the runner carries out with a tool.
-pub const TOOL_KEYS: [&str; 11] = [
+pub const TOOL_KEYS: [&str; 12] = [
     "archive",
     "mark_read",
     "not_spam",
+    "close_conversation",
     "label",
     "draft",
     "calendar",
@@ -355,6 +377,20 @@ impl RunnerConfig {
             if let Some(s) = s {
                 specs.push((name.to_string(), s));
             }
+        }
+        if let Some(w) = &self.intercom_watch {
+            parse_duration(&w.every).map_err(|e| format!("runner.intercom_watch.every: {e}"))?;
+            if w.account.trim().is_empty() {
+                return Err("runner.intercom_watch.account is empty".into());
+            }
+            if self.accounts.contains_key(&w.account) {
+                return Err(format!(
+                    "runner.intercom_watch.account {:?} is also in runner.accounts, which are mailboxes: give the \
+                     support inbox an account of its own",
+                    w.account
+                ));
+            }
+            specs.push(("intercom_watch.conversations".into(), &w.conversations));
         }
         for (name, s) in [("send_as", &self.send_as), ("thread", &self.thread), ("labels", &self.labels)] {
             if let Some(s) = s {

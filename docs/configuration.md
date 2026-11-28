@@ -100,13 +100,14 @@ with gog](guides/mail-through-gog.md)). The node checks this section when it sta
 | `runner.accounts.<id>.label` | string | the ID, capitalised | How wake-ups and reports name the account. |
 | `runner.accounts.<id>.vars` | map of strings | `{}` | Anything else the tool inputs need, as `${account.<name>}`: an Executor account ID, a gog account name. |
 | `runner.mail_watch` | map | | Watch the accounts for new mail. Keys in the next table. Needs `runner.accounts`. |
+| `runner.intercom_watch` | map | | Watch a support inbox (Intercom) like a mailbox. Keys in [runner.intercom_watch](#runnerintercom_watch). |
 | `runner.thread` | tool | | Reads a thread's message IDs, labels and dates (never its content), for the freshness check before an action. |
 | `runner.send_as` | tool | | Lists the addresses an account can send as, read hourly. A draft from any other address goes to the agent. |
 | `runner.labels` | tool | | Lists an account's labels, so a label that doesn't exist yet goes to the agent, and a lease finds its label. |
 | `runner.boards.<name>` | map | | The IDs your story tool needs for each board named in `deck.yaml`, as `${board.<field>}` (a workflow state, a team, a list). |
 | `runner.gmail_filters` | map | | The tools behind gmail-filter leases. Keys below. Without it, each holder makes its own filters ([Leases](leases.md#the-runners-filter-tools)). |
 | `runner.eligible` | list of action types | every type except `reply` | The action types the runner takes on. A type left out always goes to the agent. `reply` is refused: a reply always goes through the agent. |
-| `runner.tools.<name>` | tool | | The tool that carries out each action. Names: `archive`, `mark_read`, `label`, `draft`, `calendar`, `story.create`, `story.comment`, `task.create`, `task.update`, `task.done`. Any other name is refused. Forwards, resumes, new sessions, leases and watches need no tool. An action with no tool goes to the agent. |
+| `runner.tools.<name>` | tool | | The tool that carries out each action. Names: `archive`, `mark_read`, `not_spam`, `close_conversation`, `label`, `draft`, `calendar`, `story.create`, `story.comment`, `task.create`, `task.update`, `task.done`. Any other name is refused. Forwards, resumes, new sessions, leases and watches need no tool. An action with no tool goes to the agent. |
 
 The default `eligible` list is `archive`, `mark_read`, `label`, `draft`, `forward`, `watch`, `lease`, `story`, `task`,
 `calendar`, `resume` and `new_session`.
@@ -162,6 +163,20 @@ least ([Archive in Gmail and the report keeps up](guides/archive-in-gmail.md)).
 | `runner.mail_watch.message_text` | tool | | Reads one new message's headers and sanitised text, so each wake-up carries the mail itself, for an agent with no mail tools of its own. |
 | `runner.mail_watch.recent` | tool | | Lists the inbox's newest messages once, on the first check, so such an agent starts with what's already there. |
 
+#### runner.intercom_watch
+
+Open conversations waiting on a reply wake the agent like new mail: the wake-up counts them and gives their IDs, and
+the agent reads each with its own tools (customer text never passes through the runner). A conversation you answered
+or closed has no `waiting_since`, so your own work doesn't wake it. The first check only notes the time: what's
+already open is the agent's first round. A conversation and its email copies make one card, which closes the
+conversation (`close_conversation`) and archives the emails.
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `runner.intercom_watch.every` | duration | `2m` | How often the conversations are listed (on the mail watch's tick). |
+| `runner.intercom_watch.account` | string | required | The deck's account for the support inbox (`deck.yaml`'s `{ id: intercom, label: Intercom }`), which its cards and `close_conversation` actions name. Not one of `runner.accounts`, which are mailboxes. |
+| `runner.intercom_watch.conversations` | tool | required | Lists open conversations changed since `${updated_since}` (seconds since the epoch), the next page from `${starting_after}`: `{conversations: [{id, state, updated_at, waiting_since}], next}`. |
+
 #### runner.gmail_filters
 
 In each input, `${lease.query}`, `${lease.label}`, `${lease.label_id}`, `${lease.filter_id}` and `${thread_ids}` name
@@ -211,8 +226,8 @@ The deck reads it when it starts. A missing file means every default. An example
 | `projects.<name>.accounts` | list of strings | `[]` | Accounts in this project, for actions on no session. |
 | `projects.<name>.automatic` | list of action types | `[]` | The action types the project's policy lets run automatically, under a rule you granted. Adding `reply` works but logs a warning ([Automatic actions](getting-started.md#automatic-actions-rules-and-policies)). |
 
-Action types are `archive`, `mark_read`, `label`, `forward`, `draft`, `reply`, `story`, `task`, `calendar`, `resume`,
-`new_session`, `lease` and `watch`.
+Action types are `archive`, `mark_read`, `not_spam`, `close_conversation`, `label`, `forward`, `draft`, `reply`,
+`story`, `task`, `calendar`, `resume`, `new_session`, `lease`, `watch` and `session`.
 
 ## Environment variables
 

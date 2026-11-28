@@ -79,6 +79,32 @@
           },
           {
             "additionalProperties": false,
+            "description": "Close a support conversation (Intercom): its \"archive\". `account` is the deck's account for the support inbox\n(`intercom`), `conversation_id` the conversation's ID there.",
+            "properties": {
+              "account": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "conversation_id": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": {
+                "const": "close_conversation",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "account",
+              "conversation_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
             "description": "Out of spam and back into the inbox: Gmail's \"Not spam\".",
             "properties": {
               "account": {
@@ -873,6 +899,7 @@
           "archive",
           "mark_read",
           "not_spam",
+          "close_conversation",
           "label",
           "forward",
           "draft",
@@ -6533,7 +6560,7 @@
     },
     "summary": "Quietdeck's core: cards, decisions, actions, rules, leases, sessions and the timeline.",
     "title": "Quietdeck API",
-    "version": "1.4.0"
+    "version": "1.5.0"
   },
   "openapi": "3.1.0",
   "paths": {

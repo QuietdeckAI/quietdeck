@@ -16,6 +16,7 @@ export const ACTION_WORD: Record<ActionType, string> = {
   archive: "Archive",
   mark_read: "Mark read",
   not_spam: "Mark as not spam",
+  close_conversation: "Close the conversation",
   label: "Label",
   forward: "Forward",
   draft: "Draft",

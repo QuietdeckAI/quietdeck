@@ -1676,6 +1676,11 @@ export interface components {
             type: "mark_read";
         } | {
             account: string;
+            conversation_id: string;
+            /** @constant */
+            type: "close_conversation";
+        } | {
+            account: string;
             thread_id: string;
             /** @constant */
             type: "not_spam";
@@ -1870,7 +1875,7 @@ export interface components {
          * @description An action's type alone: the `type` tag, the names `runner.eligible` and project policies use.
          * @enum {string}
          */
-        ActionType: "archive" | "mark_read" | "not_spam" | "label" | "forward" | "draft" | "reply" | "story" | "task" | "calendar" | "resume" | "new_session" | "lease" | "watch" | "session";
+        ActionType: "archive" | "mark_read" | "not_spam" | "close_conversation" | "label" | "forward" | "draft" | "reply" | "story" | "task" | "calendar" | "resume" | "new_session" | "lease" | "watch" | "session";
         /**
          * @description Which harness runs the session.
          * @enum {string}

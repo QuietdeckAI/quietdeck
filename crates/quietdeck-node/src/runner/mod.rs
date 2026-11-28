@@ -13,6 +13,7 @@ mod config;
 mod deck;
 mod gog;
 mod headless;
+mod intercom;
 mod leases;
 mod mail;
 mod tools;
@@ -234,6 +235,7 @@ fn describe(a: &Action) -> &'static str {
         Action::Archive { .. } => "Archive",
         Action::MarkRead { .. } => "Mark read",
         Action::NotSpam { .. } => "Mark as not spam",
+        Action::CloseConversation { .. } => "Close the conversation",
         Action::Label { .. } => "Label",
         Action::Forward { .. } => "Forward",
         Action::Draft(_) => "Draft",
@@ -845,19 +847,39 @@ impl Runner {
             }
             self.sort_new(&mut state, facts).await;
         }
+        self.check_intercom(&mut state).await;
         self.wake_if_due(&mut state).await;
         state.save(&self.mail_state_path);
         let turns = self.agent.turns();
+        let mail_error = match (&state.error, &state.intercom_error) {
+            (Some(m), Some(i)) => Some(format!("{m}; Intercom: {i}")),
+            (None, Some(i)) => Some(format!("Intercom: {i}")),
+            (m, None) => m.clone(),
+        };
         let health = quietdeck_types::node::RunnerHealth {
             mail_ok_at: state.ok_at,
             mail_checked_at: state.checked_at,
-            mail_error: state.error.clone(),
+            mail_error,
             agent_ok_at: turns.as_ref().and_then(|t| t.ok_at),
             agent_failed_at: turns.as_ref().and_then(|t| t.failed.as_ref().map(|f| f.0)),
             agent_error: turns.and_then(|t| t.failed.map(|f| f.1)),
         };
         drop(state);
         self.deck.health(health).await;
+    }
+
+    /// The support inbox, on its own interval (the mail watch's tick drives it).
+    async fn check_intercom(&self, state: &mut MailState) {
+        let Some(watch) = &self.cfg.intercom_watch else { return };
+        let every = config::parse_duration(&watch.every).unwrap_or(Duration::from_secs(120));
+        let now = jiff::Timestamp::now();
+        if let Some(last) = state.intercom_checked_at
+            && now.duration_since(last).unsigned_abs() < every
+        {
+            return;
+        }
+        state.intercom_checked_at = Some(now);
+        intercom::check(watch, self.tools.as_ref(), state, now).await;
     }
 
     /// Threads the person archived or deleted in Gmail themselves, and threads that came back with new mail: each

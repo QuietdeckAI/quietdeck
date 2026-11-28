@@ -372,8 +372,10 @@ Example: a sales pitch for the archive list, with a one-line unsubscribe reply:
 
 `thread_key` is Gmail's thread ID as it is, with no prefix: the account is its own field. The card's own `to` is
 one address; an action's `to` and `cc` are lists.
-`section`: actions, archive_list, suggestion, later or sent. Action types: archive, mark_read, label, forward,
-draft, reply, story, task, calendar, resume, new_session, lease, watch."#;
+`section`: actions, archive_list, suggestion, later or sent. Action types: archive, mark_read, not_spam,
+close_conversation, label, forward, draft, reply, story, task, calendar, resume, new_session, lease, watch, session.
+A support conversation (Intercom) is a card on its own account (`intercom`), with its conversation ID as
+`thread_key`, and closes with `{"type": "close_conversation", "account": "intercom", "conversation_id": "…"}`."#;
 
 #[derive(Args)]
 struct SessionsArgs {

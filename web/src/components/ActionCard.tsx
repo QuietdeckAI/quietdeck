@@ -94,6 +94,8 @@ function actionShort(a: Action): string {
       return "mark read";
     case "not_spam":
       return "not spam";
+    case "close_conversation":
+      return "close";
     case "label":
       return `label ${[...a.add.map((l) => `+${l}`), ...a.remove.map((l) => `−${l}`)].join(" ")}`;
     case "forward":

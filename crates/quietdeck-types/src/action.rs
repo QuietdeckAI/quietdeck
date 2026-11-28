@@ -152,6 +152,14 @@ pub enum Action {
         #[garde(length(min = 1, max = 200))]
         thread_id: String,
     },
+    /// Close a support conversation (Intercom): its "archive". `account` is the deck's account for the support inbox
+    /// (`intercom`), `conversation_id` the conversation's ID there.
+    CloseConversation {
+        #[garde(length(min = 1, max = 100))]
+        account: String,
+        #[garde(length(min = 1, max = 200))]
+        conversation_id: String,
+    },
     /// Out of spam and back into the inbox: Gmail's "Not spam".
     NotSpam {
         #[garde(length(min = 1, max = 100))]
@@ -291,6 +299,7 @@ pub enum ActionType {
     Archive,
     MarkRead,
     NotSpam,
+    CloseConversation,
     Label,
     Forward,
     Draft,
@@ -306,10 +315,11 @@ pub enum ActionType {
 }
 
 impl ActionType {
-    pub const ALL: [ActionType; 15] = [
+    pub const ALL: [ActionType; 16] = [
         ActionType::Archive,
         ActionType::MarkRead,
         ActionType::NotSpam,
+        ActionType::CloseConversation,
         ActionType::Label,
         ActionType::Forward,
         ActionType::Draft,
@@ -329,6 +339,7 @@ impl ActionType {
             ActionType::Archive => "archive",
             ActionType::MarkRead => "mark_read",
             ActionType::NotSpam => "not_spam",
+            ActionType::CloseConversation => "close_conversation",
             ActionType::Label => "label",
             ActionType::Forward => "forward",
             ActionType::Draft => "draft",
@@ -361,6 +372,7 @@ impl Action {
             Action::Archive { .. } => ActionType::Archive,
             Action::MarkRead { .. } => ActionType::MarkRead,
             Action::NotSpam { .. } => ActionType::NotSpam,
+            Action::CloseConversation { .. } => ActionType::CloseConversation,
             Action::Label { .. } => ActionType::Label,
             Action::Forward { .. } => ActionType::Forward,
             Action::Draft(_) => ActionType::Draft,
@@ -382,6 +394,7 @@ impl Action {
             Action::Archive { account, .. }
             | Action::MarkRead { account, .. }
             | Action::NotSpam { account, .. }
+            | Action::CloseConversation { account, .. }
             | Action::Label { account, .. }
             | Action::Calendar { account, .. }
             | Action::Watch { account, .. } => Some(account),
