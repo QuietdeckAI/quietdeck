@@ -10,6 +10,7 @@ pub mod db;
 pub mod documents;
 pub mod error;
 pub mod events;
+pub mod fleet_sessions;
 pub mod fleetlayer;
 pub mod handoffs;
 pub mod health;

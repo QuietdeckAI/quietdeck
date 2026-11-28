@@ -186,6 +186,12 @@ Set both or neither: with only one, the deck logs a warning and leaves Fleetlaye
 every minute and keeps its place in the feed, so a restart doesn't read everything again. Summaries Fleetlayer
 deletes are deleted in the deck too.
 
+With the same token, the Sessions screen (and `quietdeck sessions`) lists sessions from Fleetlayer's registry
+(`GET /v1/fleet`). It shows every machine in the fleet, including ones that run no Quietdeck node, with Fleetlayer's
+status for each session. Fleetlayer keeps an ended session for an hour, so the deck adds its own rows for older history
+(`--all`, `--since`) and for machines without Fleetlayer. On a machine Fleetlayer knows, a running session Fleetlayer
+doesn't list is left out. When Fleetlayer doesn't answer within 3 seconds, the deck shows its own table.
+
 For "since your last message", the deck asks the session's Quietdeck node first and Fleetlayer when the node can't
 answer.
 

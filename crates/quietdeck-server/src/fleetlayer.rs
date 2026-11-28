@@ -56,6 +56,22 @@ impl Client {
         Ok(res.json().await?)
     }
 
+    /// Every node and session in the fleet (`GET /v1/fleet`), for the Sessions screen.
+    pub async fn fleet(&self) -> anyhow::Result<crate::fleet_sessions::Fleet> {
+        let res = self
+            .http
+            .get(format!("{}/v1/fleet", self.base))
+            .bearer_auth(&self.token)
+            .timeout(Duration::from_secs(3))
+            .send()
+            .await?;
+        let status = res.status();
+        if !status.is_success() {
+            anyhow::bail!("GET /v1/fleet answered {status}: {}", res.text().await.unwrap_or_default());
+        }
+        Ok(res.json().await?)
+    }
+
     /// "Since your last message", written by the session's node through Fleetlayer. Waits while one is written.
     pub async fn catchup(&self, session_id: &str) -> anyhow::Result<Catchup> {
         let res = self

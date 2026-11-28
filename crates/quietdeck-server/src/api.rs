@@ -762,6 +762,14 @@ async fn list_sessions(
     Authed(_): Authed,
     Query(f): Query<sessions::ListFilter>,
 ) -> AppResult<Json<Vec<SessionRow>>> {
+    // Fleetlayer's registry where the deck reads it (every machine in the fleet); the deck's own table otherwise, and
+    // whenever Fleetlayer can't answer.
+    if let Some(fl) = &state.fleetlayer {
+        match fl.fleet().await {
+            Ok(fleet) => return Ok(Json(crate::fleet_sessions::list(&state, fleet, &f).await?)),
+            Err(e) => tracing::warn!(error = %e, "Fleetlayer's fleet: showing the deck's own sessions"),
+        }
+    }
     Ok(Json(sessions::list(&state.db, &state.hub, &f).await?))
 }
 
