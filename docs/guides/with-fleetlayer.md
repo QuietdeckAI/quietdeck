@@ -199,6 +199,23 @@ Turn Quietdeck's own summaries off on a machine where Fleetlayer's plugin writes
 in Quietdeck's `node.yaml`), or both spend tokens summarising the same sessions. A record for the same session and
 period replaces the older one, so nothing shows twice.
 
+## Starting, resuming and closing sessions
+
+When you start, resume or close a session from the deck, the machine's Quietdeck node asks its Fleetlayer node to do it
+(`node/session_open` and `node/session_close` on Fleetlayer's local socket, the calls behind `fleetlayer session
+start|resume|close`). The tab, folder, agent and first prompt pass through unchanged, and Fleetlayer opens the tab without
+taking focus. The agent's flags come from Fleetlayer's node.yaml, not Quietdeck's, so give the agent the same flags there:
+
+```yaml
+harnesses:
+  claude: { args: ["--dangerously-skip-permissions"] }
+```
+
+Fleetlayer's access rules decide it as a call from that machine's own user (`-@<node>`). A refusal comes back to the
+deck as Fleetlayer wrote it, and the node doesn't then try herdr. The node uses herdr with `sessions.claude_args` only
+when no Fleetlayer node answers on the machine, or when the start names a model, an effort or a session name other than
+its tab, which Fleetlayer can't pass.
+
 ## Claude accounts
 
 Claude sign-ins and their usage belong to Fleetlayer's [Claude accounts

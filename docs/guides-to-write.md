@@ -188,6 +188,12 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
 
 ## Setting up a machine
 
+- **Sessions the deck starts, through Fleetlayer.** The node asks its Fleetlayer node (`node/session_open`,
+  `node/session_close`), so the agent's flags come from Fleetlayer's node.yaml (`harnesses:`): a machine whose
+  Fleetlayer config lacks `--dangerously-skip-permissions` starts sessions that stop at every permission prompt, even
+  though Quietdeck's own `sessions.claude_args` has it. Footgun found testing: resuming a session that never had a
+  message fails ("No conversation found" in the tab), and Fleetlayer leaves that tab open. Now: `docs/guides/with-fleetlayer.md`
+  ("Starting, resuming and closing sessions"), `crates/quietdeck-node/src/control.rs`.
 - **The node's sessions from Fleetlayer's registry.** Where a machine runs Fleetlayer, Quietdeck's node lists its
   sessions from Fleetlayer's `node/sessions` (the same session IDs, tabs and addresses herdr reports, checked side by
   side on the agents VM) and still lets herdr open, close and type into them, so no delivery changes path. Sessions

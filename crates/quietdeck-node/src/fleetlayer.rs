@@ -203,6 +203,46 @@ pub async fn call_via(socket: &Path, method: &str, params: Value) -> Option<Resu
     })
 }
 
+/// Ask Fleetlayer's node itself on its local socket (`node/session_open`, `node/session_close`), as the `fleetlayer` CLI
+/// does, in this Unix user's name, not the plugin's. None when no Fleetlayer node answers here.
+pub async fn node_call(
+    socket: &Path,
+    method: &str,
+    params: Value,
+    within: Duration,
+) -> Option<Result<Value, SendError>> {
+    let stream = UnixStream::connect(socket).await.ok()?;
+    let ask = async {
+        let (r, mut w) = stream.into_split();
+        let line = serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).to_string();
+        w.write_all(format!("{line}\n").as_bytes())
+            .await
+            .map_err(|e| SendError { code: None, message: e.to_string() })?;
+        let mut lines = BufReader::new(r).lines();
+        while let Some(line) = lines.next_line().await.map_err(|e| SendError { code: None, message: e.to_string() })? {
+            let Ok(msg) = serde_json::from_str::<Value>(&line) else { continue };
+            if msg.get("id") != Some(&serde_json::json!(1)) || msg.get("method").is_some() {
+                continue;
+            }
+            if let Some(e) = msg.get("error").filter(|e| !e.is_null()) {
+                return Err(SendError {
+                    code: e["code"].as_i64(),
+                    message: e["message"].as_str().unwrap_or("Fleetlayer refused").to_string(),
+                });
+            }
+            return Ok(msg["result"].clone());
+        }
+        Err(SendError { code: None, message: "Fleetlayer's node hung up before answering".into() })
+    };
+    Some(match tokio::time::timeout(within, ask).await {
+        Ok(r) => r,
+        Err(_) => Err(SendError {
+            code: None,
+            message: format!("Fleetlayer's node didn't answer {method} within {} seconds", within.as_secs()),
+        }),
+    })
+}
+
 /// A delivery the deck routed to this node, through Fleetlayer: to the Claude session by its ID (exact), else to its
 /// tab on this machine. None when Fleetlayer doesn't run Quietdeck's plugin here. A session Fleetlayer finds stopped
 /// or unknown fails with the node's offline prefix, so the deck says it's offline as before.

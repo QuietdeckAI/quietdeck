@@ -1,6 +1,14 @@
 //! Sessions the deck starts, resumes and closes on this machine (flow 3.15). The person's click or submitted form
-//! is the approval, and the deck logs it. The node checks the request, then has the orchestrator do it, without taking focus, so
-//! nothing moves on the person's screen. The agents' permission flags come from node.yaml only.
+//! is the approval, and the deck logs it. The node checks the request, then has it done without taking focus, so
+//! nothing moves on the person's screen.
+//!
+//! Where this machine runs a Fleetlayer node, Fleetlayer does it (`node/session_open`, `node/session_close` on its local
+//! socket, as `fleetlayer session start|resume|close` would), and the agents' flags come from Fleetlayer's node.yaml
+//! (`harnesses:`). Without Fleetlayer, or for a start that names a model, an effort or a name other than its tab (which
+//! Fleetlayer can't pass), the orchestrator (herdr) does it with node.yaml's `sessions:` flags.
+
+use std::path::Path;
+use std::time::Duration;
 
 use quietdeck_types::AgentKind;
 use quietdeck_types::directory::{SessionResume, SessionStart, SessionStarted};
@@ -8,6 +16,62 @@ use quietdeck_types::directory::{SessionResume, SessionStart, SessionStarted};
 use crate::Node;
 use crate::config::expand;
 use crate::orchestrator::OpenTab;
+
+/// Fleetlayer waits for the agent to take input before answering a start; the deck gives up after 150 seconds.
+const FLEETLAYER_OPENS_WITHIN: Duration = Duration::from_secs(140);
+/// The deck gives a close 20 seconds.
+const FLEETLAYER_CLOSES_WITHIN: Duration = Duration::from_secs(18);
+
+/// Fleetlayer's answer to `node/session_open`.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FlStarted {
+    node: String,
+    tab: String,
+    address: String,
+    session_id: Option<String>,
+    prompt_error: Option<String>,
+}
+
+fn harness(agent: AgentKind) -> &'static str {
+    match agent {
+        AgentKind::Claude => "claude",
+        AgentKind::Codex => "codex",
+    }
+}
+
+/// Whether Fleetlayer can start this one as asked: it takes no model, effort or name apart from the tab.
+fn fleetlayer_can_start(spec: &SessionStart) -> bool {
+    spec.model.is_none() && spec.effort.is_none() && spec.name.as_deref().is_none_or(|n| n == spec.tab)
+}
+
+fn start_params(spec: &SessionStart, cwd: &str) -> serde_json::Value {
+    serde_json::json!({
+        "tab": spec.tab, "cwd": cwd, "harness": harness(spec.agent), "prompt": spec.prompt,
+        "why": "started from Quietdeck's deck",
+    })
+}
+
+fn resume_params(spec: &SessionResume, cwd: &str) -> serde_json::Value {
+    serde_json::json!({"resume": spec.session_id, "tab": spec.tab, "cwd": cwd, "why": "resumed from Quietdeck's deck"})
+}
+
+/// A start or resume through Fleetlayer's node at `socket`. None when no Fleetlayer node answers there.
+async fn fleetlayer_open(socket: &Path, params: serde_json::Value) -> Option<Result<SessionStarted, String>> {
+    let answer = crate::fleetlayer::node_call(socket, "node/session_open", params, FLEETLAYER_OPENS_WITHIN).await?;
+    Some(match answer {
+        Ok(v) => serde_json::from_value::<FlStarted>(v)
+            .map(|f| SessionStarted {
+                node: f.node,
+                tab: f.tab,
+                address: f.address,
+                session_id: f.session_id,
+                prompt_error: f.prompt_error,
+            })
+            .map_err(|e| format!("Fleetlayer's answer to the start: {e}")),
+        Err(e) => Err(e.message),
+    })
+}
 
 fn program(node: &Node, agent: AgentKind) -> (&str, &[String]) {
     match agent {
@@ -183,16 +247,28 @@ fn resume_args(agent: AgentKind, tab: &str, session_id: &str, agent_args: &[Stri
 }
 
 pub async fn start(node: &Node, spec: SessionStart) -> Result<SessionStarted, String> {
-    let (prog, args) = program(node, spec.agent);
-    if !installed(prog) {
-        return Err(format!("{} isn't installed on this machine ({prog} isn't on PATH)", agent_name(spec.agent)));
-    }
+    start_via(node, &crate::fleetlayer::node_socket(), spec).await
+}
+
+async fn start_via(node: &Node, socket: &Path, spec: SessionStart) -> Result<SessionStarted, String> {
     let cwd = session_dir(directory(&spec.cwd)?, &spec.tab)?;
     if spec.agent == AgentKind::Claude {
         trust_for_claude(&cwd);
     }
     if node.sessions.lock().await.iter().any(|s| s.running && s.tab.as_deref() == Some(spec.tab.as_str())) {
         return Err(format!("a session is already running in a tab named {}", spec.tab));
+    }
+    if fleetlayer_can_start(&spec)
+        && let Some(started) = fleetlayer_open(socket, start_params(&spec, &cwd)).await
+    {
+        if let Ok(s) = &started {
+            tracing::info!(tab = %s.tab, address = %s.address, "started a session for the deck, through Fleetlayer");
+        }
+        return started;
+    }
+    let (prog, args) = program(node, spec.agent);
+    if !installed(prog) {
+        return Err(format!("{} isn't installed on this machine ({prog} isn't on PATH)", agent_name(spec.agent)));
     }
     let name = spec.name.as_deref().unwrap_or(&spec.tab);
     let tab = OpenTab {
@@ -219,16 +295,27 @@ pub async fn start(node: &Node, spec: SessionStart) -> Result<SessionStarted, St
 }
 
 pub async fn resume(node: &Node, spec: SessionResume) -> Result<SessionStarted, String> {
+    resume_via(node, &crate::fleetlayer::node_socket(), spec).await
+}
+
+async fn resume_via(node: &Node, socket: &Path, spec: SessionResume) -> Result<SessionStarted, String> {
     if let Some(s) = node.sessions.lock().await.iter().find(|s| s.session_id == spec.session_id && s.running) {
         return Err(format!("that session is already running, in {}", s.tab.as_deref().unwrap_or("a tab")));
-    }
-    let (prog, args) = program(node, spec.agent);
-    if !installed(prog) {
-        return Err(format!("{} isn't installed on this machine ({prog} isn't on PATH)", agent_name(spec.agent)));
     }
     let cwd = directory(&spec.cwd)?;
     if spec.agent == AgentKind::Claude {
         trust_for_claude(&cwd);
+    }
+    if let Some(resumed) = fleetlayer_open(socket, resume_params(&spec, &cwd)).await {
+        return resumed.map(|mut s| {
+            tracing::info!(tab = %s.tab, address = %s.address, "resumed a session for the deck, through Fleetlayer");
+            s.session_id = s.session_id.or(Some(spec.session_id));
+            s
+        });
+    }
+    let (prog, args) = program(node, spec.agent);
+    if !installed(prog) {
+        return Err(format!("{} isn't installed on this machine ({prog} isn't on PATH)", agent_name(spec.agent)));
     }
     let short: String = spec.session_id.chars().take(8).collect();
     let tab = spec.tab.clone().unwrap_or_else(|| format!("resumed {short}"));
@@ -250,6 +337,18 @@ pub async fn resume(node: &Node, spec: SessionResume) -> Result<SessionStarted, 
 }
 
 pub async fn close(node: &Node, session_id: &str) -> Result<(), String> {
+    close_via(node, &crate::fleetlayer::node_socket(), session_id).await
+}
+
+async fn close_via(node: &Node, socket: &Path, session_id: &str) -> Result<(), String> {
+    let params = serde_json::json!({"to": session_id, "why": "closed from Quietdeck's deck"});
+    if let Some(closed) =
+        crate::fleetlayer::node_call(socket, "node/session_close", params, FLEETLAYER_CLOSES_WITHIN).await
+    {
+        closed.map_err(|e| e.message)?;
+        tracing::info!(%session_id, "closed a session's tab for the deck, through Fleetlayer");
+        return Ok(());
+    }
     node.orchestrator.close(session_id).await?;
     tracing::info!(%session_id, "closed a session's tab for the deck");
     Ok(())
@@ -312,5 +411,108 @@ mod tests {
             resume_args(AgentKind::Codex, "b", "s1", &["--no-daemon".into()]).join(" "),
             "--no-daemon resume s1"
         );
+    }
+
+    /// A pretend Fleetlayer node: answers each request on its socket with `answer(method, params)` and keeps what it
+    /// was asked.
+    fn fake_fleetlayer(
+        dir: &Path,
+        answer: fn(&str, &serde_json::Value) -> serde_json::Value,
+    ) -> (std::path::PathBuf, std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>) {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        let socket = dir.join("node.sock");
+        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+        let kept = asked.clone();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let (r, mut w) = stream.into_split();
+                let mut lines = BufReader::new(r).lines();
+                if let Ok(Some(line)) = lines.next_line().await {
+                    let req: serde_json::Value = serde_json::from_str(&line).unwrap();
+                    kept.lock().unwrap().push(req.clone());
+                    // A notification first, as a real node may send: it must be skipped.
+                    let reply = answer(req["method"].as_str().unwrap(), &req["params"]);
+                    let out = format!(
+                        "{}\n{}\n",
+                        serde_json::json!({"jsonrpc": "2.0", "method": "note", "params": {}}),
+                        serde_json::json!({"jsonrpc": "2.0", "id": req["id"], "result": reply["result"], "error": reply["error"]}),
+                    );
+                    let _ = w.write_all(out.as_bytes()).await;
+                }
+            }
+        });
+        (socket, asked)
+    }
+
+    fn spec(model: Option<&str>, name: Option<&str>) -> SessionStart {
+        serde_json::from_value(serde_json::json!({
+            "on": "agents", "tab": "esign cert", "name": name, "agent": "claude", "model": model,
+            "cwd": "~/code/app", "prompt": "Read the handoff."
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn fleetlayer_starts_what_it_can_pass_and_herdr_keeps_the_rest() {
+        assert!(fleetlayer_can_start(&spec(None, None)));
+        assert!(fleetlayer_can_start(&spec(None, Some("esign cert"))), "a name that is the tab");
+        assert!(!fleetlayer_can_start(&spec(Some("opus"), None)), "a model Fleetlayer can't pass");
+        assert!(!fleetlayer_can_start(&spec(None, Some("other"))), "a name other than the tab");
+    }
+
+    #[tokio::test]
+    async fn a_start_and_a_resume_go_to_fleetlayers_node_and_come_back_as_quietdecks_answer() {
+        let d = tempfile::tempdir().unwrap();
+        let (socket, asked) = fake_fleetlayer(d.path(), |_, p| {
+            serde_json::json!({"result": {"node": "agents", "tab": p["tab"].as_str().unwrap_or("resumed s-1"),
+                "address": "w1:p7", "sessionId": if p.get("resume").is_some() { serde_json::Value::Null } else { "s-new".into() },
+                "promptError": null, "extra": 1}})
+        });
+        let started =
+            fleetlayer_open(&socket, start_params(&spec(None, None), "/home/sam/code/app")).await.unwrap().unwrap();
+        assert_eq!(
+            started,
+            SessionStarted {
+                node: "agents".into(),
+                tab: "esign cert".into(),
+                address: "w1:p7".into(),
+                session_id: Some("s-new".into()),
+                prompt_error: None,
+            }
+        );
+        let resume = SessionResume { session_id: "s-1".into(), agent: AgentKind::Codex, tab: None, cwd: "/srv".into() };
+        let resumed = fleetlayer_open(&socket, resume_params(&resume, "/srv")).await.unwrap().unwrap();
+        assert_eq!(resumed.tab, "resumed s-1");
+        let asked = asked.lock().unwrap().clone();
+        assert_eq!(asked[0]["method"], "node/session_open");
+        assert_eq!(asked[0]["params"]["tab"], "esign cert");
+        assert_eq!(asked[0]["params"]["cwd"], "/home/sam/code/app");
+        assert_eq!(asked[0]["params"]["harness"], "claude");
+        assert_eq!(asked[0]["params"]["prompt"], "Read the handoff.");
+        assert!(asked[0]["params"].get("args").is_none(), "the agent's flags are Fleetlayer's node's to choose");
+        assert_eq!(asked[1]["params"]["resume"], "s-1");
+        assert_eq!(asked[1]["params"]["cwd"], "/srv");
+    }
+
+    #[tokio::test]
+    async fn fleetlayers_refusal_is_the_answer_and_no_fleetlayer_means_herdr() {
+        let d = tempfile::tempdir().unwrap();
+        let (socket, _) = fake_fleetlayer(
+            d.path(),
+            |_, _| serde_json::json!({"error": {"code": -32011, "message": "a session is already running in a tab named esign cert"}}),
+        );
+        let refused = fleetlayer_open(&socket, start_params(&spec(None, None), "/srv")).await.unwrap();
+        assert_eq!(refused.unwrap_err(), "a session is already running in a tab named esign cert");
+        let closed = crate::fleetlayer::node_call(
+            &socket,
+            "node/session_close",
+            serde_json::json!({"to": "s-1"}),
+            FLEETLAYER_CLOSES_WITHIN,
+        )
+        .await
+        .unwrap();
+        assert_eq!(closed.unwrap_err().code, Some(-32011));
+        assert!(fleetlayer_open(&d.path().join("none.sock"), serde_json::json!({})).await.is_none());
     }
 }
