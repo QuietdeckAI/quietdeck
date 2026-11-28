@@ -274,3 +274,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   older one after several rollouts. Fixed in the homeserver repo's Ansible (80aad69d): it restarts a Fleetlayer node
   whose Quietdeck plugin runs anything other than the current version (28 November, homeserver pve and the quietdeck
   tab). Anyone running both: restart the Fleetlayer node after updating Quietdeck, or check the plugin's version.
+- **An Executor app whose slug has a hyphen is reached only in bracket form.** `tools.intercom-api.me` fails with
+  UnknownTool; `tools["intercom-api"].me` works, through MCP `call` as well as in `execute`. A runner tool path in
+  node.yaml must use the bracket form (quote it in YAML). Found setting up Intercom as an inbox (28 November, the
+  executor intercom and quietdeck tabs). Now: deploy/node.example.yaml's intercom tools, and this entry.

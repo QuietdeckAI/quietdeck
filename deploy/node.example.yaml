@@ -125,7 +125,7 @@ runner:
   intercom_watch:
     account: intercom
     conversations:
-      path: tools.intercom_api.conversations.list
+      path: 'tools["intercom-api"].conversations.list'
       input: { updated_since: "${updated_since}", starting_after: "${starting_after}", per_page: 50 }
   boards:                                       # the board names from the deck's config, with the tracker's IDs
     engineering: { workflow_state_id: 500000001 }
@@ -134,7 +134,7 @@ runner:
     archive:   { path: tools.google.gmail.modify, input: { account: "${account.address}", threadIds: ["${action.thread_id}"], archive: true } }
     mark_read: { path: tools.google.gmail.modify, input: { account: "${account.address}", threadIds: ["${action.thread_id}"], read: true } }
     not_spam:  { path: tools.google.gmail.modify, input: { account: "${account.address}", threadIds: ["${action.thread_id}"], addLabels: ["INBOX"], removeLabels: ["SPAM"] } }
-    close_conversation: { path: tools.intercom_api.conversations.close, input: { conversation_id: "${action.conversation_id}" } }
+    close_conversation: { path: 'tools["intercom-api"].conversations.close', input: { conversation_id: "${action.conversation_id}" } }
     label:     { path: tools.google.gmail.modify, input: { account: "${account.address}", threadIds: ["${action.thread_id}"], addLabels: "${action.add}", removeLabels: "${action.remove}" } }
     draft:     { path: tools.google.gmail.draft, input: { account: "${account.address}", from: "${action.from}", to: "${action.to}", cc: "${action.cc}", subject: "${action.subject}", body: "${action.body}", replyToMessageId: "${action.reply_to_message_id}" } }
     calendar:  { path: tools.google.calendar.createEvent, input: { account: "${account.address}", calendarId: "${action.calendar}", summary: "${action.title}", start: "${action.start}", end: "${action.end}", timeZone: "${action.time_zone}", location: "${action.location}", description: "${action.description}" } }
