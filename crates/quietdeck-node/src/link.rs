@@ -244,7 +244,7 @@ async fn answer(node: &Node, request: DeckRequest) -> Reply {
             }
         }
         DeckRequest::SearchTranscripts { query, limit } => {
-            Reply::ok(&crate::transcripts::search(node.home.clone(), query, limit.min(500) as usize).await)
+            Reply::ok(&crate::transcripts::search_here(node.home.clone(), query, limit.min(500) as usize).await)
         }
         DeckRequest::Catchup { session_id } => match &node.summaries {
             Some(s) => match s.catchup(crate::summaries::CatchupRequest { session_id, transcript: None }).await {

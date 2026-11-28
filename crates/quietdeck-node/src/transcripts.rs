@@ -59,6 +59,55 @@ fn codex_session_id(stem: &str) -> Option<String> {
     (id.len() == 36 && id.chars().filter(|c| *c == '-').count() == 4).then(|| id.to_string())
 }
 
+/// How long Fleetlayer's node gets to answer. It searches for up to 25 seconds before answering with what it found, but
+/// the CLI waits 30 for the deck, so a node whose Fleetlayer takes longer than this searches for itself instead.
+const FLEETLAYER_SEARCH_WITHIN: Duration = Duration::from_secs(20);
+
+/// The deck's search on this machine: Fleetlayer's (v0.4.0, `node/transcript_search`: redacted, subagents and ended
+/// sessions included) when its node answers here, else this machine's own [`search`]. An older Fleetlayer, a refusal or
+/// no answer in time falls back to the node's own search.
+pub async fn search_here(home: PathBuf, query: String, limit: usize) -> TranscriptSearch {
+    match via_fleetlayer(&crate::fleetlayer::node_socket(), &query, limit).await {
+        Some(found) => found,
+        None => search(home, query, limit).await,
+    }
+}
+
+async fn via_fleetlayer(socket: &Path, query: &str, limit: usize) -> Option<TranscriptSearch> {
+    if query.trim().is_empty() {
+        return None;
+    }
+    let params =
+        serde_json::json!({"text": query, "limit": limit, "perSession": 1, "why": "who has this, for the deck"});
+    match crate::fleetlayer::node_call(socket, "node/transcript_search", params, FLEETLAYER_SEARCH_WITHIN).await? {
+        Ok(answer) => Some(from_fleetlayer(&answer, limit)),
+        Err(e) => {
+            tracing::debug!(error = %e.message, "Fleetlayer's transcript search didn't answer; searching here");
+            None
+        }
+    }
+}
+
+/// Fleetlayer's hits as the deck's: one per session (a subagent's hit counts for its session), with its newest
+/// mention. A search that ran out of time is marked as searched back to its oldest hit.
+fn from_fleetlayer(answer: &serde_json::Value, limit: usize) -> TranscriptSearch {
+    let mut hits: Vec<TranscriptHit> = Vec::new();
+    for h in answer["hits"].as_array().into_iter().flatten() {
+        let Some(session_id) = h["sessionId"].as_str() else { continue };
+        let at = h["timestamp"].as_str().and_then(|t| t.parse::<Timestamp>().ok());
+        match hits.iter_mut().find(|x| x.session_id == session_id) {
+            Some(x) if at > x.last_mentioned_at => x.last_mentioned_at = at,
+            Some(_) => {}
+            None => hits.push(TranscriptHit { session_id: session_id.to_string(), last_mentioned_at: at }),
+        }
+    }
+    hits.sort_by_key(|h| std::cmp::Reverse(h.last_mentioned_at));
+    hits.truncate(limit);
+    let searched_back_to = (answer["partial"].as_bool() == Some(true))
+        .then(|| hits.iter().filter_map(|h| h.last_mentioned_at).min().unwrap_or_else(Timestamp::now));
+    TranscriptSearch { hits, searched_back_to }
+}
+
 /// How long one search may take on this machine. The deck waits a little longer than this.
 pub const SEARCH_BUDGET: Duration = Duration::from_secs(6);
 
@@ -210,6 +259,30 @@ fn timestamp_around(f: &mut File, pos: u64) -> Option<Timestamp> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fleetlayers_hits_become_one_per_session_newest_first() {
+        let answer = serde_json::json!({"node": "agents", "searched": 40, "hits": [
+            {"sessionId": "s1", "offset": 10, "timestamp": "2026-11-23T10:00:00Z", "excerpt": "sc-1234"},
+            {"sessionId": "s2", "agentId": "a1", "offset": 5, "timestamp": "2026-11-23T12:00:00Z", "excerpt": "sc-1234"},
+            {"sessionId": "s1", "offset": 90, "timestamp": "2026-11-23T11:00:00Z", "excerpt": "sc-1234"},
+            {"sessionId": "s3", "offset": 1, "excerpt": "no time"}
+        ]});
+        let found = from_fleetlayer(&answer, 50);
+        let ids: Vec<_> = found.hits.iter().map(|h| h.session_id.as_str()).collect();
+        assert_eq!(ids, ["s2", "s1", "s3"]);
+        assert_eq!(found.hits[1].last_mentioned_at, Some("2026-11-23T11:00:00Z".parse().unwrap()));
+        assert!(found.searched_back_to.is_none());
+
+        let partial = from_fleetlayer(&serde_json::json!({"hits": answer["hits"], "partial": true}), 50);
+        assert_eq!(partial.searched_back_to, Some("2026-11-23T11:00:00Z".parse().unwrap()));
+    }
+
+    #[tokio::test]
+    async fn without_a_fleetlayer_node_the_search_runs_here() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(via_fleetlayer(&d.path().join("none.sock"), "sc-1", 5).await.is_none());
+    }
 
     #[test]
     fn finds_the_newest_mention_per_session() {

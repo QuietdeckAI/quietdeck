@@ -227,6 +227,10 @@ pub async fn comment_add(state: &AppState, c: CommentAdd) -> AppResult<Comment> 
     Ok(comment)
 }
 
+/// How long the deck waits for each node's transcript search: a node gives Fleetlayer's search 20 seconds, then
+/// searches for 6 more itself when it hasn't answered. The CLI waits 30 for the deck.
+const WHO_HAS_WAITS: Duration = Duration::from_secs(28);
+
 /// "Who has this ID?": the summaries on the deck, and the raw transcripts on every connected node.
 pub async fn who_has(state: &AppState, query: &str) -> AppResult<WhoHas> {
     let query = query.trim();
@@ -246,8 +250,7 @@ pub async fn who_has(state: &AppState, query: &str) -> AppResult<WhoHas> {
         let hub = state.hub.clone();
         let q = query.to_string();
         async move {
-            let r =
-                hub.request(node, DeckRequest::SearchTranscripts { query: q, limit: 50 }, Duration::from_secs(9)).await;
+            let r = hub.request(node, DeckRequest::SearchTranscripts { query: q, limit: 50 }, WHO_HAS_WAITS).await;
             (node.clone(), r.ok().and_then(|reply| reply.into_result::<TranscriptSearch>().ok()))
         }
     });

@@ -226,6 +226,14 @@ session. A handoff whose new session is still starting is read again on the next
 answers 404, and the deck asks again every minute without complaining. `quietdeck handoff add` keeps working for
 machines without Fleetlayer.
 
+## Who has this ID?
+
+`quietdeck who-has` asks each machine's node to search its transcripts. Where Fleetlayer v0.4.0 or later runs, the
+node asks Fleetlayer's node (`node/transcript_search`, the call behind `fleetlayer transcript-search`), which also
+searches subagents' and ended sessions' transcripts and redacts what it finds. The node keeps only which sessions
+mention the text and when, as before. When Fleetlayer's node is older, refuses, or hasn't answered within 20 seconds,
+the node searches the transcripts itself.
+
 ## Sign in through Fleetlayer
 
 If Fleetlayer's [sign-in service](https://fleetlayer.ai/docs/guides/sign-in/) already signs you in to your other
