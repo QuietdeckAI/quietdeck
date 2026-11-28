@@ -48,6 +48,9 @@ pub struct MailState {
     /// Items the deck let through while the person reads the Inbox, each with why, not yet told to the agent.
     #[serde(default)]
     pub urgent: Vec<String>,
+    /// Messages in a `wake_overnight` room that arrived while the person sleeps, not yet told to the agent.
+    #[serde(default)]
+    pub overnight: Vec<String>,
     /// Items delivered straight to the session that owns them since the last wake-up (a webhook's alerts), per
     /// "source\troom\towner": counted for the report's summary, never a wake-up of their own.
     #[serde(default)]
@@ -132,7 +135,7 @@ impl MailState {
 
     /// New messages arrived on the deck (from [`quietdeck_types::node::DeckRequest::MessagesArrived`]).
     pub fn add_messages(&mut self, channels: &[quietdeck_types::message::ChannelCount]) {
-        for c in channels {
+        for c in channels.iter().filter(|c| c.count > 0) {
             if let Some(owner) = &c.handled_by {
                 *self.handled.entry(format!("{}\t{}\t{owner}", c.source, c.channel_name)).or_default() +=
                     u64::from(c.count);
@@ -162,6 +165,17 @@ impl MailState {
     }
 
     /// The wake-up while the person reads the Inbox: only what the deck let through, and what else waits.
+    /// The overnight wake-up: only the alerts rooms' messages, the rest waits for the morning.
+    pub fn overnight_text(&self) -> Option<String> {
+        if self.overnight.is_empty() {
+            return None;
+        }
+        Some(format!(
+            "The person is asleep, so only these get through now: {}. Handle just those (`quietdeck messages --new`),              forwarding an alert to the agent that owns the service as usual. Everything else new waits for the              morning's catch-up: leave it alone for now.",
+            self.overnight.join("; ")
+        ))
+    }
+
     pub fn urgent_text(&self, cfg: &RunnerConfig) -> Option<String> {
         if self.urgent.is_empty() {
             return None;

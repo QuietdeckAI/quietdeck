@@ -1231,8 +1231,21 @@ impl Runner {
     pub async fn messages_arrived(&self, channels: &[quietdeck_types::message::ChannelCount]) {
         let mut state = self.mail.lock().await;
         let reading = self.reading.load(std::sync::atomic::Ordering::SeqCst);
+        let quiet = self.quiet_now();
         let mut held = channels.to_vec();
         for c in &mut held {
+            // Overnight, an alerts room still wakes the agent, for its messages alone.
+            if quiet && c.handled_by.is_none() && c.count > 0 && self.cfg.wakes_overnight(&c.channel_name) {
+                state.overnight.push(format!(
+                    "{} new message{} in {} ({})",
+                    c.count,
+                    if c.count == 1 { "" } else { "s" },
+                    clean_line(&c.channel_name),
+                    clean_line(&c.source)
+                ));
+                c.count = 0;
+                continue;
+            }
             if reading && !c.let_through.is_empty() {
                 for why in &c.let_through {
                     state.urgent.push(format!(
@@ -1273,8 +1286,19 @@ impl Runner {
         // Overnight nothing wakes the agent: it all waits, and the first check after the person wakes (or after quiet
         // hours) sends one wake-up.
         if self.quiet_now() {
+            let Some(text) = state.overnight_text() else { return };
+            match self.agent.tell(DeliveryKind::Wakeup, text).await {
+                Ok(()) => {
+                    tracing::info!(items = state.overnight.len(), "woke the triage agent overnight for an alerts room");
+                    state.overnight.clear();
+                }
+                Err(e) => tracing::info!(error = %e, "the triage agent isn't reachable for its overnight wake-up"),
+            }
             return;
         }
+        // An overnight wake-up that never reached the agent goes with the next one.
+        let missed = std::mem::take(&mut state.overnight);
+        state.urgent.extend(missed);
         // No waiting for `round done`: an agent that's busy reads the wake-up on its next turn, so every check with
         // something new wakes it (Nathan, 25 November: "why would anything block a wake up ever? just send the
         // message!"). Only the person reading the Inbox holds new items back, and only from the Inbox.

@@ -988,7 +988,7 @@ async fn while_the_person_is_asleep_nothing_wakes_the_agent_and_waking_sends_the
     let dir = tempfile::tempdir().unwrap();
     let agent = Arc::new(FakeAgent::default());
     let deck = Arc::new(FakeDeck::default());
-    let mut cfg = config(&url, "");
+    let mut cfg = config(&url, "wake_overnight: [infrastructure-alerts]");
     // Quiet hours that cover every moment: presence overrides them while it's known.
     let hhmm = |t: jiff::Timestamp| t.to_zoned_datetime(jiff::tz::TimeZone::UTC).strftime("%H:%M").to_string();
     let now = jiff::Timestamp::now();
@@ -1005,13 +1005,35 @@ async fn while_the_person_is_asleep_nothing_wakes_the_agent_and_waking_sends_the
     added.lock().unwrap().push((101, "a", "INBOX"));
     *head.lock().unwrap() = 101;
     runner.check_mail().await;
+    let chat = |name: &str, count: u32| quietdeck_types::message::ChannelCount {
+        source: "matrix".into(),
+        channel_name: name.into(),
+        count,
+        let_through: vec![],
+        handled_by: None,
+    };
+    runner.messages_arrived(&[chat("Family", 2)]).await;
     assert!(agent.told.lock().unwrap().is_empty(), "held while the person sleeps");
+
+    // The alerts room still wakes the agent, for its messages alone.
+    runner.messages_arrived(&[chat("Infrastructure Alerts", 1)]).await;
+    let told = agent.told.lock().unwrap().clone();
+    assert_eq!(told.len(), 1);
+    assert!(
+        told[0].1.starts_with(
+            "The person is asleep, so only these get through now: 1 new message in Infrastructure Alerts (matrix)."
+        ),
+        "{}",
+        told[0].1
+    );
+    assert!(!told[0].1.contains("Family"), "{}", told[0].1);
 
     // Waking sends one catch-up at once, though the fixed quiet hours would still hold it.
     runner.set_asleep(Some(false)).await;
     let told = agent.told.lock().unwrap().clone();
-    assert_eq!(told.len(), 1);
-    assert!(told[0].1.starts_with("New mail: 1 Personal."), "{}", told[0].1);
+    assert_eq!(told.len(), 2);
+    assert!(told[1].1.starts_with("New mail: 1 Personal."), "{}", told[1].1);
+    assert!(told[1].1.contains("Family") && !told[1].1.contains("Infrastructure"), "{}", told[1].1);
 
     // Unknown presence falls back to the quiet hours.
     runner.round_done().await;
@@ -1019,7 +1041,7 @@ async fn while_the_person_is_asleep_nothing_wakes_the_agent_and_waking_sends_the
     added.lock().unwrap().push((102, "b", "INBOX"));
     *head.lock().unwrap() = 102;
     runner.check_mail().await;
-    assert_eq!(agent.told.lock().unwrap().len(), 1, "inside quiet hours");
+    assert_eq!(agent.told.lock().unwrap().len(), 2, "inside quiet hours");
 }
 
 #[tokio::test]

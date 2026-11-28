@@ -38,6 +38,11 @@ pub struct RunnerConfig {
     /// is around (Nathan, 28 Nov 2026: pause overnight, catch up at 08:00).
     #[serde(default)]
     pub quiet_hours: Option<QuietHours>,
+    /// Chat channels whose new messages wake the agent even while the person is asleep (or in quiet hours), such as
+    /// an alerts room the owning agents fix without waiting for the person: `[infrastructure-alerts]`. Matched to the
+    /// room's name ignoring case, `#`, spaces, hyphens and underscores ("Infrastructure Alerts").
+    #[serde(default)]
+    pub wake_overnight: Vec<String>,
     /// Lists the addresses an account can send as (Gmail's `users.settings.sendAs.list` shape). Read hourly.
     #[serde(default)]
     pub send_as: Option<ToolSpec>,
@@ -165,6 +170,18 @@ pub struct QuietHours {
     /// The time zone (`Pacific/Auckland`). The machine's own when unset.
     #[serde(default)]
     pub tz: Option<String>,
+}
+
+/// A channel name as `wake_overnight` compares it: lower case, letters and digits only.
+pub fn channel_key(name: &str) -> String {
+    name.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+}
+
+impl RunnerConfig {
+    pub fn wakes_overnight(&self, channel_name: &str) -> bool {
+        let key = channel_key(channel_name);
+        !key.is_empty() && self.wake_overnight.iter().any(|w| channel_key(w) == key)
+    }
 }
 
 impl QuietHours {
