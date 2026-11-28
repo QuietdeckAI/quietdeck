@@ -424,7 +424,14 @@ mod tests {
         let page = String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap();
         assert!(page.contains("url=/work"), "moves on to where the person was going: {page}");
         let who = signed_in(&state, &cookie).await.expect("signed in");
-        assert_eq!(who, crate::passkeys::SignedIn { passkey_id: None, device: "sam (Fleetlayer sign-in)".into() });
+        assert_eq!(
+            who,
+            crate::passkeys::SignedIn {
+                passkey_id: None,
+                device: "sam (Fleetlayer sign-in)".into(),
+                person: Some("p_sam".into())
+            }
+        );
 
         let logout = |token: String| {
             Request::post("/auth/backchannel-logout")

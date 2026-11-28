@@ -456,10 +456,10 @@ async fn report_snapshot(
 
 async fn report_answer(
     State(state): State<AppState>,
-    _owner: Owner,
+    owner: Owner,
     Json(a): Json<quietdeck_types::report::ReportAnswerAdd>,
 ) -> AppResult<Json<quietdeck_types::report::Report>> {
-    Ok(Json(crate::reports::answer(&state, a).await?))
+    Ok(Json(crate::reports::answer(&state, a, owner.person.as_deref()).await?))
 }
 
 async fn report_answers_take(

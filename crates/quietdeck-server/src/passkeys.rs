@@ -112,6 +112,8 @@ pub struct SignedIn {
     pub passkey_id: Option<i64>,
     /// How the Caller is described: `<device> (passkey <id>)`, or `<handle> (Fleetlayer sign-in)`.
     pub device: String,
+    /// The person's ID at Fleetlayer's sign-in (`sub`), for a session from it.
+    pub person: Option<String>,
 }
 
 /// A browser session's row: last seen, its passkey and that passkey's name, or the sign-in's person and handle.
@@ -145,13 +147,15 @@ pub async fn owner_from_cookie(state: &AppState, parts: &Parts) -> Result<Option
         Some(id) => SignedIn {
             passkey_id: Some(id),
             device: format!("{} (passkey {id})", device_name.as_deref().unwrap_or("passkey")),
+            person: None,
         },
         None => SignedIn {
             passkey_id: None,
             device: format!(
                 "{} (Fleetlayer sign-in)",
-                signin_handle.or(signin_sub).unwrap_or_else(|| "the owner".into())
+                signin_handle.or(signin_sub.clone()).unwrap_or_else(|| "the owner".into())
             ),
+            person: signin_sub,
         },
     };
     if now - last_seen > IDLE_MS {

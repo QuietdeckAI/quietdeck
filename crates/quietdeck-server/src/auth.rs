@@ -213,6 +213,8 @@ pub struct Owner {
     /// The passkey this browser signed in with (none through Fleetlayer's sign-in, and in development, with
     /// QUIETDECK_DEV_TRUST_LOCAL).
     pub passkey_id: Option<i64>,
+    /// The person's ID at Fleetlayer's sign-in, when signed in through it.
+    pub person: Option<String>,
 }
 
 impl FromRequestParts<AppState> for Owner {
@@ -223,10 +225,10 @@ impl FromRequestParts<AppState> for Owner {
         }
         if let Some(signed_in) = crate::passkeys::owner_from_cookie(state, parts).await? {
             same_origin(state, parts)?;
-            return Ok(Owner { passkey_id: signed_in.passkey_id });
+            return Ok(Owner { passkey_id: signed_in.passkey_id, person: signed_in.person });
         }
         if state.dev_trust_local {
-            return Ok(Owner { passkey_id: None });
+            return Ok(Owner { passkey_id: None, person: None });
         }
         Err(AppError::Unauthorized("sign in with your passkey, or through Fleetlayer's sign-in".into()))
     }

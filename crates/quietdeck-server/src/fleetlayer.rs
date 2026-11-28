@@ -215,6 +215,51 @@ impl Sender {
     }
 }
 
+/// The deck's delegate client: the signed-in person's own words into a session (`POST /v1/sessions/say`).
+pub static SAYER: std::sync::OnceLock<Sayer> = std::sync::OnceLock::new();
+
+pub struct Sayer {
+    http: reqwest::Client,
+    base: String,
+    token: String,
+}
+
+impl Sayer {
+    pub fn new(base: &str, token: &str) -> anyhow::Result<Sayer> {
+        let http = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(3))
+            .timeout(Duration::from_secs(SEND_WITHIN_SECS))
+            .build()?;
+        Ok(Sayer { http, base: base.trim_end_matches('/').to_string(), token: token.to_string() })
+    }
+
+    /// Type one line of the person's into an idle session with an empty input line, as them; it arrives as "From the
+    /// Work tab: <text>". Fleetlayer's message on any refusal (busy, not allowed, offline, too old a Fleetlayer).
+    pub async fn say(&self, person: &str, to: &str, text: &str) -> Result<(), String> {
+        let res = self
+            .http
+            .post(format!("{}/v1/sessions/say", self.base))
+            .bearer_auth(&self.token)
+            .header("Fleetlayer-Person", person)
+            .json(&serde_json::json!({"to": to, "text": text, "from": "the Work tab"}))
+            .send()
+            .await
+            .map_err(|e| format!("Fleetlayer didn't answer: {e}"))?;
+        let status = res.status().as_u16();
+        if status == 200 {
+            return Ok(());
+        }
+        let body: serde_json::Value = res.json().await.unwrap_or_default();
+        Err(format!("{status}: {}", body["message"].as_str().unwrap_or("refused")))
+    }
+}
+
+/// One line the person typed or picked, as `say` takes it: on one line, and never a slash command or shell escape.
+pub fn say_line(value: &str) -> Option<String> {
+    let line = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!line.is_empty() && !line.starts_with('/') && !line.starts_with('!')).then_some(line)
+}
+
 /// The relay waits 4 seconds for a node; Fleetlayer's own delivery is cut off at 5, and a cross-node one at 12.
 const SEND_WITHIN_SECS: u64 = 13;
 
@@ -408,6 +453,15 @@ pub async fn ticker(state: AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_the_person_says_is_one_plain_line() {
+        assert_eq!(say_line("Publish it").as_deref(), Some("Publish it"));
+        assert_eq!(say_line("  Use FCM\nbut not\tyet ").as_deref(), Some("Use FCM but not yet"));
+        assert_eq!(say_line("/clear"), None);
+        assert_eq!(say_line("!rm -rf"), None);
+        assert_eq!(say_line("   "), None);
+    }
 
     /// A fake control plane: answers POST /v1/messages by the `to` it gets, and keeps what it got.
     async fn control_plane() -> (String, std::sync::Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>) {

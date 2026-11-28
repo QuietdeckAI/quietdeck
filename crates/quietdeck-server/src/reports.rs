@@ -558,7 +558,7 @@ async fn insert(tx: &mut sqlx::SqliteConnection, me: &SessionRef, doc: i64, mark
 }
 
 /// An answer from the Inbox: kept, and sent to the agent at once when its session is running.
-pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
+pub async fn answer(state: &AppState, a: ReportAnswerAdd, person: Option<&str>) -> AppResult<Report> {
     a.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
     let Some(r) = open_row_by_id(&state.db, a.report_id).await? else {
         return Err(AppError::Conflict("the agent has started a new report: answer on that one".into()));
@@ -617,8 +617,16 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
     .filter(|ask| ask.session != to.address());
     let direct_note = match &direct {
         Some(ask) => {
-            let body = to_session(ask, value);
+            // His own words first, typed into the session as his through Fleetlayer, so it acts on them as his
+            // (a message, however marked, reaches it as another session's). The deck's note with the question follows.
+            let said = say_as_person(person, &ask.session, value).await;
+            let body = to_session(ask, value, said.is_ok());
             match crate::relay::send(&state.db, &state.hub, &ask.session, DeliveryKind::Deck, body).await {
+                Ok(_) if said.is_ok() => format!(
+                    "\n\nThe deck typed his answer into {} as his own words, with a note of the question: don't \
+                     pass it on. Follow up there only on what it does next.",
+                    ask.session
+                ),
                 Ok(_) => format!(
                     "\n\nThe deck has given his answer to {} itself, as his own words: don't pass it on. Follow up \
                      there only on what it does next.",
@@ -714,15 +722,31 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
 
 /// What a session reads when he answers its question on the Work tab: the question as he saw it and his answer,
 /// delivered by the deck (through Fleetlayer as the Quietdeck service), never by another session.
-fn to_session(ask: &quietdeck_types::report::SessionAsk, value: &str) -> String {
+fn to_session(ask: &quietdeck_types::report::SessionAsk, value: &str, said: bool) -> String {
     let options =
         if ask.options.is_empty() { String::new() } else { format!(" (options: {})", ask.options.join(", ")) };
+    if said {
+        return format!(
+            "The line \"From the Work tab: …\" just typed into this tab is the deck's owner's answer, given on the \
+             Work tab of his Quietdeck deck, to this question: \"{}\"{options}",
+            ask.text
+        );
+    }
     format!(
         "The deck's owner answered your question on the Work tab of his Quietdeck deck, signed in there. The deck \
          delivers it directly, not through another session. If what it asks is something you'd only do on his word \
          in this tab, say so here and wait for him.\n\nThe question, as he saw it: \"{}\"{options}\nHis answer: {value}",
         ask.text
     )
+}
+
+/// His answer typed into the session as his own words, when the deck has a delegate token and he signed in through
+/// Fleetlayer. Why not, otherwise: the deck then sends it as its own message.
+async fn say_as_person(person: Option<&str>, to: &str, value: &str) -> Result<(), String> {
+    let sayer = crate::fleetlayer::SAYER.get().ok_or("no delegate token")?;
+    let person = person.ok_or("not signed in through Fleetlayer")?;
+    let line = crate::fleetlayer::say_line(value).ok_or("not one line of text")?;
+    sayer.say(person, to, &line).await.inspect_err(|e| tracing::info!(to, error = %e, "typing his answer in"))
 }
 
 /// He sent mail on these Gmail threads himself: every open report's `<Ask thread="…">` that names one of them and
@@ -768,7 +792,7 @@ pub async fn sent_threads(state: &AppState, threads: &[String]) -> AppResult<usi
                 value,
                 cards: None,
             };
-            match answer(state, add).await {
+            match answer(state, add, None).await {
                 Ok(_) => answered += 1,
                 Err(e) => tracing::warn!(report = r.id, ask = %ask.key, error = %e, "answering an Ask for sent mail"),
             }
@@ -1102,6 +1126,7 @@ mod tests {
                 value: "forward it to api instead".into(),
                 cards: None,
             },
+            None,
         )
         .await
         .unwrap();
@@ -1153,6 +1178,7 @@ mod tests {
                 value: "Up to $2k".into(),
                 cards: None,
             },
+            None,
         )
         .await
         .unwrap();
@@ -1181,6 +1207,7 @@ mod tests {
                 value: "Which device was it?".into(),
                 cards: None,
             },
+            None,
         )
         .await
         .unwrap();
@@ -1496,6 +1523,7 @@ mod tests {
                 value: "No".into(),
                 cards: None,
             },
+            None,
         )
         .await
         .unwrap();
@@ -1546,15 +1574,15 @@ mod tests {
             value: "DocSpring, Inc.".into(),
             cards: cards.map(str::to_string),
         };
-        let r = answer(&state, pick(Some(" c_5 "))).await.unwrap();
+        let r = answer(&state, pick(Some(" c_5 ")), None).await.unwrap();
         assert_eq!(r.answers[0].cards.as_deref(), Some("c_5"));
         assert_eq!(changes_for_card(&state.db, 5).await.unwrap(), vec!["Who should BizSpace invoice? DocSpring, Inc."]);
         assert!(changes_for_card(&state.db, 6).await.unwrap().is_empty());
 
         // Without cards, or with a value that names none, the answer stays on its question.
-        let r = answer(&state, pick(Some("soon"))).await.unwrap();
+        let r = answer(&state, pick(Some("soon")), None).await.unwrap();
         assert_eq!(r.answers[1].cards, None);
-        answer(&state, pick(None)).await.unwrap();
+        answer(&state, pick(None), None).await.unwrap();
         assert_eq!(changes_for_card(&state.db, 5).await.unwrap().len(), 1);
     }
 
@@ -1578,7 +1606,7 @@ mod tests {
             value: value.into(),
             cards: None,
         };
-        answer(&state, change("keep the Stripe one")).await.unwrap();
+        answer(&state, change("keep the Stripe one"), None).await.unwrap();
         snapshot(&state.db, "b1", &[7]).await.unwrap();
         let listed = snapshots_between(&state.db, 0, i64::MAX).await.unwrap();
         assert_eq!(listed.len(), 1);
@@ -1588,7 +1616,7 @@ mod tests {
         assert_eq!(first.round_answers[0].value, "keep the Stripe one");
 
         // The next Approve All lists only what was said after the first one.
-        answer(&state, change("and the Amex one")).await.unwrap();
+        answer(&state, change("and the Amex one"), None).await.unwrap();
         snapshot(&state.db, "b2", &[8, 9]).await.unwrap();
         let listed = snapshots_between(&state.db, 0, i64::MAX).await.unwrap();
         let second = snapshot_get(&state.db, listed.iter().find(|s| s.approved == 2).unwrap().id).await.unwrap();

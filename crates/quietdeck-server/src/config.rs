@@ -27,6 +27,11 @@ pub struct Env {
     /// the session's node only where Fleetlayer doesn't know the session.
     #[arg(long, env = "QUIETDECK_FLEETLAYER_SEND_TOKEN", hide_env_values = true)]
     pub fleetlayer_send_token: Option<String>,
+    /// A delegate-scoped Fleetlayer token (`fleetlayer-control token add quietdeck-delegate --scope delegate`): the
+    /// person's answers on the Work tab are typed into the session they're about as the person's own words (`POST
+    /// /v1/sessions/say` with the signed-in person's ID), so a session acts on them as his. Keep it with the deck only.
+    #[arg(long, env = "QUIETDECK_FLEETLAYER_DELEGATE_TOKEN", hide_env_values = true)]
+    pub fleetlayer_delegate_token: Option<String>,
     /// An approve-scoped Fleetlayer token (`fleetlayer-control token add quietdeck-approve --scope approve --owner
     /// <person>`): Fleetlayer's access requests and admin windows show on the Work tab, decided there as that person.
     /// Keep it with the deck only, where no agent can read it: whoever reads it can approve any request but a window.

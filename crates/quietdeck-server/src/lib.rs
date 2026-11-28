@@ -163,6 +163,14 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
         ),
         _ => {}
     }
+    match (&env.fleetlayer_url, &env.fleetlayer_delegate_token) {
+        (Some(url), Some(token)) => {
+            let _ = fleetlayer::SAYER.set(fleetlayer::Sayer::new(url, token)?);
+            tracing::info!("the person's Work answers are typed into sessions as theirs, through Fleetlayer");
+        }
+        (None, Some(_)) => tracing::warn!("QUIETDECK_FLEETLAYER_DELEGATE_TOKEN needs QUIETDECK_FLEETLAYER_URL"),
+        _ => {}
+    }
     ready.store(true, Ordering::SeqCst);
 
     let health = {
