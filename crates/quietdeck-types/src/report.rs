@@ -377,6 +377,52 @@ pub fn ask_keys(markdown: &str) -> Vec<(String, bool)> {
     out
 }
 
+/// An `<Ask>` that waits for an email the person sends himself (`thread="<Gmail thread ID>"`, several separated by
+/// spaces): its key, its text, its options and the threads. When one of those threads gets a message he sent, the deck
+/// answers it for him.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SentAsk {
+    pub key: String,
+    pub text: String,
+    pub options: Vec<String>,
+    pub threads: Vec<String>,
+}
+
+/// The `<Ask>`s that name a Gmail thread, in the order they're written.
+pub fn sent_asks(markdown: &str) -> Vec<SentAsk> {
+    let mut out = vec![];
+    let mut rest = markdown;
+    while let Some(at) = rest.find("<Ask") {
+        rest = &rest[at + "<Ask".len()..];
+        if !rest.starts_with(|c: char| c.is_whitespace() || c == '>') {
+            continue;
+        }
+        let Some(end) = rest.find('>') else { break };
+        let attrs = &rest[..end];
+        let body = &rest[end + 1..];
+        let text = body.find("</Ask>").map(|c| body[..c].trim()).unwrap_or_default();
+        if let Some(threads) = attr(attrs, "thread") {
+            let threads: Vec<String> = threads.split_whitespace().map(str::to_string).collect();
+            if !threads.is_empty() {
+                out.push(SentAsk {
+                    key: attr(attrs, "id").map(str::to_string).unwrap_or_else(|| text.to_string()),
+                    text: text.to_string(),
+                    options: attr(attrs, "options")
+                        .unwrap_or_default()
+                        .split('|')
+                        .map(str::trim)
+                        .filter(|o| !o.is_empty())
+                        .map(str::to_string)
+                        .collect(),
+                    threads,
+                });
+            }
+        }
+        rest = &rest[end..];
+    }
+    out
+}
+
 /// A `<Default>` written flush left right after a numbered item (with or without a blank line between) belongs to
 /// that item: it's indented to the item's text, with no blank line, so the Inbox draws it inside the item. Written the
 /// other way it renders as a group's Default, flush left with a gap above (the triage agent did that on 27 Nov 2026,
@@ -438,6 +484,19 @@ fn attr<'a>(attrs: &'a str, name: &str) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn asks_waiting_for_sent_mail_name_their_threads() {
+        let md = "- <Ask id=\"patronus\" options=\"Done\" thread=\"19a1 19a2\" session=\"x@y\">Done when you've sent the \
+                  Patronus reply</Ask>\n- <Ask id=\"other\" options=\"Yes|No\">No thread</Ask>\n\
+                  - <Ask thread=\"19b\">How much?</Ask>";
+        let asks = sent_asks(md);
+        assert_eq!(asks.len(), 2);
+        assert_eq!(asks[0].key, "patronus");
+        assert_eq!(asks[0].threads, ["19a1", "19a2"]);
+        assert_eq!(asks[0].options, ["Done"]);
+        assert_eq!((asks[1].key.as_str(), asks[1].options.len()), ("How much?", 0));
+    }
 
     #[test]
     fn a_flush_default_after_a_numbered_item_moves_inside_it() {

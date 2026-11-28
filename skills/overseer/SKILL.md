@@ -79,6 +79,10 @@ list by itself.
   - `<Ask id="x" options="A|B" other session="…">Question?</Ask>`: a multiple-choice question.
   - `<Ask id="x" options="Done" session="…">What to do</Ask>`: something only the person can do. Take it out once
     it's done (check where you can).
+  - `<Ask id="x" options="Done" thread="<Gmail thread ID>" session="…">Done when you've sent the reply</Ask>`:
+    **an email the person sends himself** (a draft he edits and sends in Gmail). Put the draft's Gmail thread ID in
+    `thread` (several separated by spaces). When the runner sees him send on that thread, the deck presses Done for
+    him, and you get the answer as if he'd clicked it: check the sent copy, then take the entry out.
   - `<Ask id="x" options="Go ahead" session="…">What will pop up</Ask>`: a fingerprint or security-key touch the
     session needs. Pressing Go ahead means the person is ready now: tell the session to start at once, so the prompt
     appears while they're there.

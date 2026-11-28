@@ -591,6 +591,58 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
     current(&state.db, doc).await?.ok_or_else(|| AppError::Unavailable("the report vanished".into()))
 }
 
+/// He sent mail on these Gmail threads himself: every open report's `<Ask thread="…">` that names one of them and
+/// has no answer yet is answered for him, as if he'd pressed its button ("Done" when the question offers it), so the
+/// agent that wrote it takes the entry off (Nathan, 28 Nov: "if i send it myself in Gmail … mark this off the list
+/// automatically"). Returns how many were answered.
+pub async fn sent_threads(state: &AppState, threads: &[String]) -> AppResult<usize> {
+    if threads.is_empty() {
+        return Ok(0);
+    }
+    let rows: Vec<ReportRow> =
+        sqlx::query_as(sqlx::AssertSqlSafe(format!("{ROW} WHERE closed_at IS NULL ORDER BY id")))
+            .fetch_all(&state.db)
+            .await?;
+    let mut answered = 0;
+    for r in rows {
+        for ask in quietdeck_types::report::sent_asks(&r.markdown) {
+            if !ask.threads.iter().any(|t| threads.contains(t)) {
+                continue;
+            }
+            let (already,): (i64,) = sqlx::query_as(
+                "SELECT COUNT(*) FROM report_answers WHERE report_id = ? AND control = ? AND kind = 'choice'",
+            )
+            .bind(r.id)
+            .bind(&ask.key)
+            .fetch_one(&state.db)
+            .await?;
+            if already > 0 {
+                continue;
+            }
+            let value = ask
+                .options
+                .iter()
+                .find(|o| o.eq_ignore_ascii_case("done"))
+                .cloned()
+                .unwrap_or_else(|| "Sent: he sent it in Gmail".to_string());
+            let add = ReportAnswerAdd {
+                report_id: r.id,
+                report_version: r.version,
+                control: ask.key.clone(),
+                kind: AnswerKind::Choice,
+                about: ask.text.clone(),
+                value,
+                cards: None,
+            };
+            match answer(state, add).await {
+                Ok(_) => answered += 1,
+                Err(e) => tracing::warn!(report = r.id, ask = %ask.key, error = %e, "answering an Ask for sent mail"),
+            }
+        }
+    }
+    Ok(answered)
+}
+
 /// `quietdeck report answers`: what the agent hasn't had yet, each once.
 pub async fn take_answers(state: &AppState, doc: &Document) -> AppResult<Vec<ReportAnswer>> {
     let rows: Vec<AnswerRow> = sqlx::query_as(
@@ -1008,6 +1060,28 @@ mod tests {
             quietdeck_types::decision::ApproveReport { report_id: r.id, report_version: r.version, timeline: vec![] };
         let a = crate::ops::approve_report(&state, req).await.unwrap();
         assert_eq!(a.cards, vec![card.id], "the default's card, and nothing for either question");
+    }
+
+    #[tokio::test]
+    async fn mail_he_sends_himself_answers_the_question_waiting_for_it_once() {
+        let state = AppState::for_tests().await;
+        let md = "- <Ask id=\"patronus\" options=\"Done\" thread=\"t1\">Done when you've sent the Patronus reply</Ask>\n\
+                  - <Ask id=\"fp\" thread=\"t2\">Send the FinancePals reply?</Ask>\n\
+                  - <Ask id=\"other\" options=\"Done\">Done when the key is in</Ask>\n";
+        let r = super::set(
+            &state,
+            &me(),
+            &inbox(&state.db).await.unwrap(),
+            ReportSet { markdown: md.into(), base: None, new: true, change: None },
+        )
+        .await
+        .unwrap();
+        assert_eq!(sent_threads(&state, &["t9".into()]).await.unwrap(), 0, "another thread answers nothing");
+        assert_eq!(sent_threads(&state, &["t1".into(), "t2".into()]).await.unwrap(), 2);
+        assert_eq!(sent_threads(&state, &["t1".into()]).await.unwrap(), 0, "answered once");
+        let r = current(&state.db, r.document_id).await.unwrap().unwrap();
+        let got: Vec<(&str, &str)> = r.answers.iter().map(|a| (a.control.as_str(), a.value.as_str())).collect();
+        assert_eq!(got, [("patronus", "Done"), ("fp", "Sent: he sent it in Gmail")]);
     }
 
     #[tokio::test]

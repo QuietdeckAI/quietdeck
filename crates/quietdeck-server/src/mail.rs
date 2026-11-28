@@ -103,6 +103,12 @@ pub async fn sent(state: &AppState, items: &[MailItem]) -> AppResult<()> {
     if changed {
         state.changed(Changed::Mail);
     }
+    // A Work entry waiting for him to send this himself is answered for him.
+    let threads: Vec<String> =
+        items.iter().filter(|i| i.kind == MailKind::Sent).filter_map(|i| i.thread_id.clone()).collect();
+    if let Err(e) = crate::reports::sent_threads(state, &threads).await {
+        tracing::warn!(error = %e, "matching sent mail to the reports' questions");
+    }
     Ok(())
 }
 
