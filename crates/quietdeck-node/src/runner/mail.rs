@@ -74,6 +74,16 @@ pub struct MailState {
     /// What went wrong listing the support inbox, when something did.
     #[serde(default)]
     pub intercom_error: Option<String>,
+    /// The Gmail filters the runner made for Fleetlayer's leases (`gmail_filters.fleetlayer`): the only filters it
+    /// ever removes.
+    #[serde(default)]
+    pub lease_filters: Vec<super::leases::LeaseFilter>,
+    /// When the leases were last listed, for their own interval.
+    #[serde(default)]
+    pub lease_checked_at: Option<Timestamp>,
+    /// What went wrong making the filters match the leases, when something did.
+    #[serde(default)]
+    pub lease_error: Option<String>,
     /// The new mail itself, one block per message, for an agent with no mail tools (`mail_watch.message_text`), until
     /// the next wake-up carries it.
     #[serde(default)]

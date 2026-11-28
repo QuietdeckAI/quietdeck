@@ -183,6 +183,7 @@ the lease's values ([Leases](leases.md#the-runners-filter-tools)).
 | `runner.gmail_filters.create_label` | tool | required | Creates the lease's label the first time. Returns `{id}`. |
 | `runner.gmail_filters.inbox` | tool | | Finds matching threads already in the inbox. Set it together with `move`. |
 | `runner.gmail_filters.move` | tool | | Moves those threads out of the inbox, read, with the lease's label. |
+| `runner.gmail_filters.fleetlayer` | map | | Take the filters from Fleetlayer's leases instead of the deck's. Every `every` (default `1m`) the runner runs `<command> lease list --json` (default `fleetlayer`) and makes its filters match the held leases of `kind` (default `gmail-filter`), whose payload is `{"account": "<runner account>", "query": "from:…"}`: it creates what's missing, labelled `Quietdeck/Lease/<first holder's tab>`, and removes the filters it made that no held lease covers. It never touches a filter it didn't make. A failure shows on the runner's health. |
 
 ### matrix
 

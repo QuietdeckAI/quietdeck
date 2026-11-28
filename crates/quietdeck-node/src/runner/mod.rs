@@ -848,14 +848,18 @@ impl Runner {
             self.sort_new(&mut state, facts).await;
         }
         self.check_intercom(&mut state).await;
+        self.check_lease_filters(&mut state).await;
         self.wake_if_due(&mut state).await;
         state.save(&self.mail_state_path);
         let turns = self.agent.turns();
-        let mail_error = match (&state.error, &state.intercom_error) {
-            (Some(m), Some(i)) => Some(format!("{m}; Intercom: {i}")),
-            (None, Some(i)) => Some(format!("Intercom: {i}")),
-            (m, None) => m.clone(),
-        };
+        let mail_error = [
+            state.error.clone(),
+            state.intercom_error.as_ref().map(|i| format!("Intercom: {i}")),
+            state.lease_error.as_ref().map(|l| format!("Lease filters: {l}")),
+        ]
+        .into_iter()
+        .flatten()
+        .reduce(|a, b| format!("{a}; {b}"));
         let health = quietdeck_types::node::RunnerHealth {
             mail_ok_at: state.ok_at,
             mail_checked_at: state.checked_at,
@@ -880,6 +884,23 @@ impl Runner {
         }
         state.intercom_checked_at = Some(now);
         intercom::check(watch, self.tools.as_ref(), state, now).await;
+    }
+
+    /// The Gmail filters for Fleetlayer's leases, on their own interval (the mail watch's tick drives it).
+    async fn check_lease_filters(&self, state: &mut MailState) {
+        let Some(fl) = self.cfg.gmail_filters.as_ref().and_then(|g| g.fleetlayer.as_ref()) else { return };
+        let every = config::parse_duration(&fl.every).unwrap_or(Duration::from_secs(60));
+        let now = jiff::Timestamp::now();
+        if let Some(last) = state.lease_checked_at
+            && now.duration_since(last).unsigned_abs() < every
+        {
+            return;
+        }
+        state.lease_checked_at = Some(now);
+        state.lease_error = leases::reconcile(self, fl, &mut state.lease_filters).await.err();
+        if let Some(e) = &state.lease_error {
+            tracing::warn!(error = %e, "runner: making the Gmail filters match Fleetlayer's leases");
+        }
     }
 
     /// Threads the person archived or deleted in Gmail themselves, and threads that came back with new mail: each

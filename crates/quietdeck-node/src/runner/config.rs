@@ -256,6 +256,36 @@ pub struct GmailFiltersConfig {
     /// Takes `${thread_ids}` out of the inbox, marked read, with the lease's label. Optional, with `inbox`.
     #[serde(default, rename = "move")]
     pub move_threads: Option<ToolSpec>,
+    /// Take the filters from Fleetlayer's leases instead of the deck's: every `every`, the runner lists the held
+    /// leases of `kind` (`fleetlayer lease list --json`) and makes its filters match their payloads
+    /// (`{"account": "<runner account>", "query": "from:…"}`): it creates what's missing and removes what no held
+    /// lease covers any more. Reconciling needs no events and catches up after downtime by itself.
+    #[serde(default)]
+    pub fleetlayer: Option<FleetlayerLeasesConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FleetlayerLeasesConfig {
+    #[serde(default = "default_lease_every")]
+    pub every: String,
+    /// The Fleetlayer CLI.
+    #[serde(default = "default_fleetlayer")]
+    pub command: String,
+    #[serde(default = "default_lease_kind")]
+    pub kind: String,
+}
+
+fn default_lease_every() -> String {
+    "1m".into()
+}
+
+fn default_fleetlayer() -> String {
+    "fleetlayer".into()
+}
+
+fn default_lease_kind() -> String {
+    "gmail-filter".into()
 }
 
 impl ToolSpec {
