@@ -22,6 +22,9 @@ pub enum AppError {
     Offline(String),
     #[error("{0}")]
     Unavailable(String),
+    /// A retired route (410): what replaced it is in the message.
+    #[error("{0}")]
+    Gone(String),
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -43,6 +46,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Conflict(_) | AppError::Offline(_) => StatusCode::CONFLICT,
             AppError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            AppError::Gone(_) => StatusCode::GONE,
             AppError::Internal(e) => {
                 tracing::error!(error = %e, "internal error");
                 StatusCode::INTERNAL_SERVER_ERROR

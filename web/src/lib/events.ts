@@ -10,7 +10,6 @@ const STALE: Record<Changed, string[][]> = {
   settings: [["settings"], ["info"]],
   nodes: [["nodes"], ["hooks"]],
   rules: [["rules"], ["reading-rules"], ["inbox"]],
-  leases: [["leases"]],
   pings: [["pings"], ["watches"]],
   push: [["push"]],
   mail: [["mail"], ["mail-badges"]],

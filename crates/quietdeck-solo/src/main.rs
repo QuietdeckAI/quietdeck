@@ -229,7 +229,7 @@ pub fn node_config(c: &SoloConfig, token_file: &Path) -> anyhow::Result<quietdec
         "agent": {"tab": c.agent.name, "headless": headless},
         "mail": "gog",
         "accounts": accounts,
-        // What solo carries out: the Inbox's mail actions. Forwards, sessions, stories and leases need other
+        // What solo carries out: the Inbox's mail actions. Forwards, sessions and stories need other
         // machines or services.
         "eligible": c.actions,
     });

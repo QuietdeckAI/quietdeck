@@ -75,7 +75,6 @@ pub async fn add_card(state: &AppState, me: &SessionRef, input: CardInput) -> Ap
             account: Some(card.input.account.clone()),
             refs: vec![format!("c_{}", card.id), format!("g_{grant_id}")],
             text: format!("{}: {} (rule {grant_id})", card.input.subject, describe_actions(&card.input.actions)),
-            lease_id: None,
         };
         timeline::add(&state.db, EntrySource::Deck, Some(me), &entry).await?;
         state.changed(Changed::Timeline);
@@ -177,7 +176,6 @@ pub async fn rules_match(state: &AppState, req: MatchRequest) -> AppResult<Match
 /// A session closed: archive the grants tied to it, each with an entry he sees.
 pub async fn session_closed(state: &AppState, node: &str, session_id: &str) -> AppResult<()> {
     let tab = sessions::tab_of(&state.db, node, session_id).await?;
-    crate::leases::session_closed(state, node, session_id, tab.as_deref()).await?;
     let archived = rules::archive_for_session(&state.db, node, session_id, tab.as_deref()).await?;
     for r in &archived {
         let entry = TimelineAdd {
@@ -189,7 +187,6 @@ pub async fn session_closed(state: &AppState, node: &str, session_id: &str) -> A
                 r.id,
                 r.archived_reason.as_deref().unwrap_or("its session closed")
             ),
-            lease_id: None,
         };
         timeline::add(&state.db, EntrySource::Deck, None, &entry).await?;
     }
@@ -204,11 +201,8 @@ pub async fn session_closed(state: &AppState, node: &str, session_id: &str) -> A
 /// the deck's own entries) as a message, and waits in that session's `history` if the message can't be delivered.
 pub async fn comment_add(state: &AppState, c: CommentAdd) -> AppResult<Comment> {
     garde::Validate::validate(&c).map_err(bad)?;
-    let fallback = state.config.leases.fallback.as_ref().map(|f| SessionRef {
-        node: f.node.clone(),
-        tab: f.tab.clone(),
-        session_id: None,
-    });
+    let fallback =
+        state.config.triage_tab().map(|f| SessionRef { node: f.node.clone(), tab: f.tab.clone(), session_id: None });
     let mut comment = comments::add(&state.db, c.target, &c.text, fallback.as_ref()).await?;
     if let Some(to) = &comment.to {
         let body = format!(
@@ -696,9 +690,7 @@ pub async fn releaser(state: AppState) {
             Ok(waiting) => {
                 state.changed(Changed::Cards);
                 state.changed(Changed::Timeline);
-                state.changed(Changed::Leases);
                 announce(&state, &waiting).await;
-                crate::leases::dispatch_creates(&state).await;
             }
             Err(e) => {
                 tracing::error!(error = %e, "releaser: releasing");

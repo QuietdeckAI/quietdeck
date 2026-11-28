@@ -321,45 +321,6 @@ pub fn receipts(r: &[quietdeck_types::decision::ReportReceipt]) -> String {
         .join("\n")
 }
 
-pub fn lease_line(l: &quietdeck_types::lease::Lease) -> String {
-    let what = match l.params.get("query").and_then(|q| q.as_str()) {
-        Some(q) => format!("{} on {}: {q}", l.kind, l.resource),
-        None => format!("{} on {}", l.kind, l.resource),
-    };
-    let mut line =
-        format!("lease {} {:<17} {what} (held by {}@{})", l.id, snake(&l.state), l.holder.tab, l.holder.node);
-    if let Some(p) = l.queue_position {
-        line.push_str(&format!(" [queue position {p}]"));
-    }
-    if let Some(c) = l.card_id
-        && l.state == quietdeck_types::lease::LeaseState::Proposed
-    {
-        line.push_str(&format!(" [card c_{c}]"));
-    }
-    if let Some(r) = &l.end_reason {
-        line.push_str(&format!(" [{r}]"));
-    }
-    line
-}
-
-pub fn leases(v: &quietdeck_types::lease::LeasesView) -> String {
-    let mut out: Vec<String> = v.leases.iter().map(lease_line).collect();
-    if out.is_empty() {
-        out.push("No leases.".into());
-    }
-    let approved: Vec<String> = v
-        .patterns
-        .iter()
-        .filter(|p| p.revoked_at.is_none())
-        .map(|p| format!("  {} on {}: {}", p.kind, p.resource, p.pattern))
-        .collect();
-    if !approved.is_empty() {
-        out.push("Approved filters (any session may re-create them):".into());
-        out.extend(approved);
-    }
-    out.join("\n")
-}
-
 pub fn ping_feedback(r: &[quietdeck_types::timeline::Ping]) -> String {
     if r.is_empty() {
         return "No new feedback on your pings.".into();

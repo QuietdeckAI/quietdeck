@@ -36,7 +36,7 @@ use crate::{api, passkeys};
 
 /// `info.version`: the minor version goes up with each additive change, the patch version with fixes to the
 /// description alone. A breaking change is a new `/api/v2`, never a new major version of v1.
-pub const API_VERSION: &str = "1.9.0";
+pub const API_VERSION: &str = "1.10.0";
 
 /// The versioned prefix the spec describes.
 pub const V1: &str = "/api/v1";
@@ -157,8 +157,8 @@ pub const TAGS: &[(&str, &str)] = &[
     ),
     (
         "leases",
-        "Leases are things agents ask for and give back: a Gmail filter while they watch something themselves \
-         (proposed, then approved by the owner) or a heavy-build slot on a machine (acquired, queued if busy).",
+        "Retired: leases moved to Fleetlayer (`fleetlayer lease`, its leases plugin). These routes stay within v1 \
+         and answer 410 Gone with an `ApiError` saying so.",
     ),
     (
         "hooks",
@@ -262,14 +262,14 @@ pub const OPERATIONS: &[Doc] = &[
     op("put", "/reading-rules/{id}", "reading_rule_update", "rules", "Change a reading rule"),
     op("delete", "/reading-rules/{id}", "reading_rule_delete", "rules", "Delete a reading rule"),
     op("post", "/reading-rules/{id}/enabled", "reading_rule_enabled", "rules", "Turn a reading rule on or off"),
-    op("get", "/leases", "leases_view", "leases", "What's held, queued, waiting or overdue, and the approved filters"),
-    op("post", "/leases/propose", "lease_propose", "leases", "Propose a lease (a Gmail filter) for the owner to approve"),
-    op("post", "/leases/acquire", "lease_acquire", "leases", "Acquire a lease (a heavy-build slot), optionally waiting"),
-    op("get", "/leases/{id}", "lease_get", "leases", "One lease"),
-    op("post", "/leases/{id}/register", "lease_register", "leases", "Register what a lease made (the filter's ID)"),
-    op("post", "/leases/{id}/release", "lease_release", "leases", "Release a lease"),
-    op("post", "/leases/{id}/cleaned", "lease_cleaned", "leases", "Confirm a released lease's filter is gone"),
-    op("post", "/lease-patterns/{id}/revoke", "lease_pattern_revoke", "leases", "Revoke an approved lease pattern"),
+    op("get", "/leases", "leases_view", "leases", "Retired: answers 410 Gone (leases moved to Fleetlayer)"),
+    op("post", "/leases/propose", "lease_propose", "leases", "Retired: answers 410 Gone (leases moved to Fleetlayer)"),
+    op("post", "/leases/acquire", "lease_acquire", "leases", "Retired: answers 410 Gone (leases moved to Fleetlayer)"),
+    op("get", "/leases/{id}", "lease_get", "leases", "Retired: answers 410 Gone (leases moved to Fleetlayer)"),
+    op("post", "/leases/{id}/register", "lease_register", "leases", "Retired: answers 410 Gone (leases moved to Fleetlayer)"),
+    op("post", "/leases/{id}/release", "lease_release", "leases", "Retired: answers 410 Gone (leases moved to Fleetlayer)"),
+    op("post", "/leases/{id}/cleaned", "lease_cleaned", "leases", "Retired: answers 410 Gone (leases moved to Fleetlayer)"),
+    op("post", "/lease-patterns/{id}/revoke", "lease_pattern_revoke", "leases", "Retired: answers 410 Gone (leases moved to Fleetlayer)"),
     op("get", "/hooks", "hooks_list", "hooks", "Webhook endpoints"),
     op("post", "/hooks", "hooks_create", "hooks", "Propose a webhook endpoint; it receives nothing until approved"),
     op("post", "/hooks/{id}/approve", "hooks_approve", "hooks", "Approve a webhook endpoint"),
@@ -415,7 +415,7 @@ fn describe(spec: &mut Value, card_input: Value, changed: Value) {
     spec["info"] = json!({
         "title": "Quietdeck API",
         "version": API_VERSION,
-        "summary": "Quietdeck's core: cards, decisions, actions, rules, leases, sessions and the timeline.",
+        "summary": "Quietdeck's core: cards, decisions, actions, rules, sessions and the timeline.",
         "description": "Build your own frontend for a Quietdeck deck. Every route is under `/api/v1`. Within v1, \
             changes are additive only: new routes, new optional fields in requests, new fields in responses (ignore \
             the ones you don't know) and new enum values (handle the ones you don't know). Anything that would break \
@@ -508,6 +508,9 @@ fn describe(spec: &mut Value, card_input: Value, changed: Value) {
         operation["summary"] = json!(doc.summary);
         if let Some(ui) = doc.ui {
             operation[UI_EXTENSION] = json!(ui);
+        }
+        if doc.tag == "leases" {
+            operation["deprecated"] = json!(true);
         }
     }
 }
@@ -810,6 +813,30 @@ mod tests {
     }
 
     /// With the report off, its routes answer 404 at both prefixes, and the core forgets a report kept from before.
+    #[tokio::test]
+    async fn the_retired_lease_routes_answer_gone() {
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+
+        let state = crate::state::AppState::for_tests().await;
+        let code = crate::store::nodes::create_enrolment_code(&state.db).await.unwrap();
+        let node = crate::store::nodes::enrol(&state.db, &code.code, "laptop").await.unwrap();
+        let (router, _) = routes(state.clone());
+        let app = router.with_state(state);
+        let get = |uri: &str| axum::http::Request::get(uri).body(axum::body::Body::empty()).unwrap();
+        assert_eq!(app.clone().oneshot(get("/api/v1/leases")).await.unwrap().status(), 401, "still signed in first");
+        for uri in ["/api/v1/leases", "/api/leases/3"] {
+            let req = axum::http::Request::get(uri)
+                .header("authorization", format!("Bearer {}", node.token))
+                .body(axum::body::Body::empty())
+                .unwrap();
+            let res = app.clone().oneshot(req).await.unwrap();
+            assert_eq!(res.status(), 410, "{uri}");
+            let body: Value = serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+            assert!(body["error"].as_str().unwrap().contains("fleetlayer lease acquire gmail-filter"), "{body}");
+        }
+    }
+
     #[tokio::test]
     async fn the_report_can_be_off() {
         use http_body_util::BodyExt;

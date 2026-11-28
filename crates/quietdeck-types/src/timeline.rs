@@ -14,6 +14,8 @@ use crate::action::SessionRef;
 pub enum TimelineKind {
     AutoAction,
     SentForwarded,
+    /// The four lease kinds are retired with the deck's leases (they're Fleetlayer's now): kept for entries stored
+    /// before.
     LeaseStarted,
     LeaseAbsorbed,
     LeaseExpired,
@@ -53,7 +55,7 @@ pub struct TimelineEntry {
     pub read_at: Option<Timestamp>,
 }
 
-/// `quietdeck timeline add`: agents post automatic actions they carried out and mail a lease absorbed.
+/// `quietdeck timeline add`: agents post automatic actions they carried out.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, JsonSchema, Validate)]
 #[ts(export)]
 pub struct TimelineAdd {
@@ -67,9 +69,6 @@ pub struct TimelineAdd {
     pub refs: Vec<String>,
     #[garde(length(min = 1, max = 2000))]
     pub text: String,
-    #[serde(default)]
-    #[garde(skip)]
-    pub lease_id: Option<i64>,
 }
 
 /// `quietdeck history --since`: what happened since the calling session last looked.

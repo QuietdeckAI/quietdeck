@@ -1,6 +1,6 @@
 # Quietdeck API
 
-`openapi.json` is the OpenAPI 3.1 description of a Quietdeck deck's API: cards, decisions, actions, rules, leases,
+`openapi.json` is the OpenAPI 3.1 description of a Quietdeck deck's API: cards, decisions, actions, rules,
 sessions, the timeline, webhooks and sign-in. Every route is under `/api/v1`. Use it to build your own frontend, a
 client library or a tool that works with a deck.
 

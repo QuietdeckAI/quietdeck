@@ -51,15 +51,15 @@ It shows in Settings → Webhooks with its label, where its events go and which 
 A session watching CI asks for a filter that keeps the failure emails out of your inbox while it works:
 
 ```sh
-quietdeck lease propose gmail-filter --account work \
-  --query 'from:notifications@github.com subject:("Run failed")' \
+fleetlayer lease acquire gmail-filter \
+  --payload '{"account": "work", "query": "from:notifications@github.com subject:failed"}' \
   --reason "I'm fixing the build and watching CI myself" --wait
 ```
 
-The request is a row on the Threads screen. Approving it approves that query on that account for every session, so
-the next session that asks for the same filter gets it at once. Settings → Leases lists the filters you've approved;
-revoke one there to need a card again. Every filter lease ends by itself when its session goes idle or closes. The
-setting **Require a proposal for every new filter** is on by default. [Leases](../leases.md) has the details.
+Leases are Fleetlayer's ([its leases plugin](https://fleetlayer.ai/docs/plugins/leases/)): it asks you to approve a
+new filter once, and the same filter for any later session starts at once. Every lease ends by itself when its session
+goes idle or closes. Quietdeck's runner makes the Gmail filters match the held leases, and removes each one when its
+last lease ends.
 
 ### A watched thread
 
@@ -153,8 +153,8 @@ planned, not built.
 
 - Webhook endpoints and their approval:
   [crates/quietdeck-server/src/hooks.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/hooks.rs)
-- Leases, approved filters and the proposal setting:
-  [crates/quietdeck-server/src/leases.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/leases.rs)
+- The Gmail filters for Fleetlayer's leases:
+  [crates/quietdeck-node/src/runner/leases.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-node/src/runner/leases.rs)
 - Rules, policies and the daily cap on automatic sessions:
   [crates/quietdeck-server/src/rules.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/rules.rs)
 - Pings, their feedback and thread watches:
@@ -164,7 +164,7 @@ planned, not built.
 - Which routes only the person can call:
   [crates/quietdeck-server/src/api.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/api.rs)
   and [crates/quietdeck-server/src/auth.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/auth.rs)
-- The card actions (`watch`, `new_session`, `resume`, `lease`):
+- The card actions (`watch`, `new_session`, `resume`):
   [crates/quietdeck-types/src/action.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-types/src/action.rs)
 - The commands agents use:
   [crates/quietdeck-cli/src/main.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-cli/src/main.rs)

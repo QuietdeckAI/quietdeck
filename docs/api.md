@@ -1,6 +1,6 @@
 # The Quietdeck API
 
-Every deck has an HTTP API under `/api/v1`: cards, decisions, actions, rules, leases, sessions, the timeline, webhooks
+Every deck has an HTTP API under `/api/v1`: cards, decisions, actions, rules, sessions, the timeline, webhooks
 and sign-in. Quietdeck's own web app is one client of it. Use it to build your own frontend, a client library, or a
 tool that works with a deck.
 

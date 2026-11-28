@@ -643,6 +643,7 @@
           },
           {
             "additionalProperties": false,
+            "description": "Retired: leases moved to Fleetlayer (`fleetlayer lease`). Kept so cards stored before still read; the deck\nrefuses a new card or edit that carries one ([`LEASES_RETIRED`]), and the runner never carries one out.",
             "properties": {
               "holder": {
                 "$ref": "#/components/schemas/SessionRef"
@@ -895,25 +896,33 @@
       },
       "ActionType": {
         "description": "An action's type alone: the `type` tag, the names `runner.eligible` and project policies use.",
-        "enum": [
-          "archive",
-          "mark_read",
-          "not_spam",
-          "close_conversation",
-          "label",
-          "forward",
-          "draft",
-          "reply",
-          "story",
-          "task",
-          "calendar",
-          "resume",
-          "new_session",
-          "lease",
-          "watch",
-          "session"
-        ],
-        "type": "string"
+        "oneOf": [
+          {
+            "enum": [
+              "archive",
+              "mark_read",
+              "not_spam",
+              "close_conversation",
+              "label",
+              "forward",
+              "draft",
+              "reply",
+              "story",
+              "task",
+              "calendar",
+              "resume",
+              "new_session",
+              "watch",
+              "session"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "lease",
+            "description": "Retired: see [`Action::Lease`].",
+            "type": "string"
+          }
+        ]
       },
       "AgentKind": {
         "description": "Which harness runs the session.",
@@ -1884,8 +1893,7 @@
               "sessions",
               "settings",
               "nodes",
-              "rules",
-              "leases"
+              "rules"
             ],
             "type": "string"
           },
@@ -1982,14 +1990,6 @@
           "text"
         ],
         "type": "object"
-      },
-      "CleanupBy": {
-        "enum": [
-          "runner",
-          "holder",
-          "fallback"
-        ],
-        "type": "string"
       },
       "Comment": {
         "properties": {
@@ -3071,321 +3071,6 @@
           "timeline",
           "has_later",
           "running"
-        ],
-        "type": "object"
-      },
-      "Lease": {
-        "properties": {
-          "activated_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "card_id": {
-            "description": "The card that proposes it, while it's proposed.",
-            "format": "int64",
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "cleanup_by": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CleanupBy"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "cleanup_requested_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "created_at": {
-            "type": "string"
-          },
-          "end_reason": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "ended_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "expires_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "holder": {
-            "$ref": "#/components/schemas/SessionRef"
-          },
-          "id": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "idle_minutes": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "kind_state": {
-            "description": "What the kind's create step left behind, such as the Gmail filter's ID."
-          },
-          "last_renewed_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "params": {},
-          "pattern_id": {
-            "format": "int64",
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "queue_position": {
-            "description": "Its place in the queue, for an exclusive kind.",
-            "format": "int64",
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "reason": {
-            "type": "string"
-          },
-          "resource": {
-            "type": "string"
-          },
-          "state": {
-            "$ref": "#/components/schemas/LeaseState"
-          },
-          "ttl_seconds": {
-            "format": "int64",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "resource",
-          "params",
-          "holder",
-          "reason",
-          "state",
-          "ttl_seconds",
-          "idle_minutes",
-          "created_at"
-        ],
-        "type": "object"
-      },
-      "LeaseAnswer": {
-        "description": "What `lease propose` and `lease acquire` answer.",
-        "properties": {
-          "lease": {
-            "$ref": "#/components/schemas/Lease"
-          },
-          "message": {
-            "description": "What happened, in a sentence: approved at once, waiting on a card, queued.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "lease",
-          "message"
-        ],
-        "type": "object"
-      },
-      "LeaseKindInfo": {
-        "description": "What a lease kind says about itself, for the CLI's help and the Settings screen.",
-        "properties": {
-          "describe": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "needs_approval": {
-            "type": "boolean"
-          },
-          "slots": {
-            "description": "Slots per resource with a queue, or none for a kind any number of sessions can hold at once.",
-            "format": "int64",
-            "type": [
-              "integer",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "kind",
-          "needs_approval",
-          "describe"
-        ],
-        "type": "object"
-      },
-      "LeasePattern": {
-        "description": "A Gmail filter the person approved: the same filter on the same account needs no new proposal.",
-        "properties": {
-          "confirmed_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "confirmed_by_card_id": {
-            "description": "The card that approved it; none when an agent made it with proposals switched off.",
-            "format": "int64",
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "id": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "pattern": {
-            "description": "For a gmail-filter: the query.",
-            "type": "string"
-          },
-          "resource": {
-            "description": "For a gmail-filter: the account.",
-            "type": "string"
-          },
-          "revoked_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "resource",
-          "pattern"
-        ],
-        "type": "object"
-      },
-      "LeaseRegister": {
-        "description": "The kind's create step is done: `quietdeck lease register <id>` with what it left behind.",
-        "properties": {
-          "kind_state": {}
-        },
-        "required": [
-          "kind_state"
-        ],
-        "type": "object"
-      },
-      "LeaseRequest": {
-        "description": "`quietdeck lease propose|acquire <kind>`.",
-        "properties": {
-          "idle_minutes": {
-            "default": null,
-            "description": "Ends once the holder has been idle or offline this long. Default 30 minutes.",
-            "format": "int64",
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "kind": {
-            "maxLength": 50,
-            "minLength": 1,
-            "type": "string"
-          },
-          "params": {
-            "default": null,
-            "description": "Kind-specific: a gmail-filter's `{query}`."
-          },
-          "reason": {
-            "maxLength": 2000,
-            "minLength": 1,
-            "type": "string"
-          },
-          "resource": {
-            "default": null,
-            "description": "What's leased. For a gmail-filter, the account; for a heavy-build slot, the machine (default: the holder's).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "ttl_seconds": {
-            "default": null,
-            "description": "A hard limit. Default 24 hours.",
-            "format": "int64",
-            "type": [
-              "integer",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "kind",
-          "reason"
-        ],
-        "type": "object"
-      },
-      "LeaseState": {
-        "enum": [
-          "proposed",
-          "queued",
-          "approved",
-          "active",
-          "expiring",
-          "cleanup_requested",
-          "released",
-          "overdue",
-          "rejected"
-        ],
-        "type": "string"
-      },
-      "LeasesView": {
-        "description": "The leases list: what's held, queued, waiting or overdue, recent ones, and the approved filters.",
-        "properties": {
-          "kinds": {
-            "items": {
-              "$ref": "#/components/schemas/LeaseKindInfo"
-            },
-            "type": "array"
-          },
-          "leases": {
-            "items": {
-              "$ref": "#/components/schemas/Lease"
-            },
-            "type": "array"
-          },
-          "patterns": {
-            "items": {
-              "$ref": "#/components/schemas/LeasePattern"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "leases",
-          "patterns",
-          "kinds"
         ],
         "type": "object"
       },
@@ -5925,7 +5610,7 @@
             "type": "boolean"
           },
           "require_filter_proposal": {
-            "description": "\"Require a proposal for every new filter\". A hard rule in code while on.",
+            "description": "Retired with the deck's leases (Fleetlayer's leases plugin approves filters now): kept within v1, and has no\neffect.",
             "type": "boolean"
           },
           "show_pending_count": {
@@ -6188,7 +5873,7 @@
         "type": "object"
       },
       "TimelineAdd": {
-        "description": "`quietdeck timeline add`: agents post automatic actions they carried out and mail a lease absorbed.",
+        "description": "`quietdeck timeline add`: agents post automatic actions they carried out.",
         "properties": {
           "account": {
             "default": null,
@@ -6199,14 +5884,6 @@
           },
           "kind": {
             "$ref": "#/components/schemas/TimelineKind"
-          },
-          "lease_id": {
-            "default": null,
-            "format": "int64",
-            "type": [
-              "integer",
-              "null"
-            ]
           },
           "refs": {
             "default": [],
@@ -6283,21 +5960,29 @@
         "type": "object"
       },
       "TimelineKind": {
-        "enum": [
-          "auto_action",
-          "sent_forwarded",
-          "lease_started",
-          "lease_absorbed",
-          "lease_expired",
-          "lease_cleanup_overdue",
-          "filter_without_proposal",
-          "session_started",
-          "session_resumed",
-          "session_closed",
-          "webhook_delivered",
-          "grant_archived"
-        ],
-        "type": "string"
+        "oneOf": [
+          {
+            "enum": [
+              "auto_action",
+              "sent_forwarded",
+              "lease_absorbed",
+              "lease_expired",
+              "lease_cleanup_overdue",
+              "filter_without_proposal",
+              "session_started",
+              "session_resumed",
+              "session_closed",
+              "webhook_delivered",
+              "grant_archived"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "lease_started",
+            "description": "The four lease kinds are retired with the deck's leases (they're Fleetlayer's now): kept for entries stored\nbefore.",
+            "type": "string"
+          }
+        ]
       },
       "TranscriptItem": {
         "description": "One thing in a transcript.",
@@ -6751,9 +6436,9 @@
       "identifier": "Apache-2.0",
       "name": "Apache-2.0"
     },
-    "summary": "Quietdeck's core: cards, decisions, actions, rules, leases, sessions and the timeline.",
+    "summary": "Quietdeck's core: cards, decisions, actions, rules, sessions and the timeline.",
     "title": "Quietdeck API",
-    "version": "1.9.0"
+    "version": "1.10.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -8667,6 +8352,7 @@
     },
     "/api/v1/lease-patterns/{id}/revoke": {
       "post": {
+        "deprecated": true,
         "operationId": "lease_pattern_revoke",
         "parameters": [
           {
@@ -8681,16 +8367,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LeasesView"
-                }
-              }
-            },
-            "description": "The leases list: what's held, queued, waiting or overdue, recent ones, and the approved filters."
-          },
           "default": {
             "content": {
               "application/json": {
@@ -8707,7 +8383,7 @@
             "owner": []
           }
         ],
-        "summary": "Revoke an approved lease pattern",
+        "summary": "Retired: answers 410 Gone (leases moved to Fleetlayer)",
         "tags": [
           "leases"
         ]
@@ -8715,18 +8391,9 @@
     },
     "/api/v1/leases": {
       "get": {
+        "deprecated": true,
         "operationId": "leases_view",
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LeasesView"
-                }
-              }
-            },
-            "description": "The leases list: what's held, queued, waiting or overdue, recent ones, and the approved filters."
-          },
           "default": {
             "content": {
               "application/json": {
@@ -8749,7 +8416,7 @@
             "node": []
           }
         ],
-        "summary": "What's held, queued, waiting or overdue, and the approved filters",
+        "summary": "Retired: answers 410 Gone (leases moved to Fleetlayer)",
         "tags": [
           "leases"
         ]
@@ -8757,29 +8424,9 @@
     },
     "/api/v1/leases/acquire": {
       "post": {
+        "deprecated": true,
         "operationId": "lease_acquire",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LeaseRequest"
-              }
-            }
-          },
-          "description": "`quietdeck lease propose|acquire <kind>`.",
-          "required": true
-        },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LeaseAnswer"
-                }
-              }
-            },
-            "description": "What `lease propose` and `lease acquire` answer."
-          },
           "default": {
             "content": {
               "application/json": {
@@ -8796,7 +8443,7 @@
             "session": []
           }
         ],
-        "summary": "Acquire a lease (a heavy-build slot), optionally waiting",
+        "summary": "Retired: answers 410 Gone (leases moved to Fleetlayer)",
         "tags": [
           "leases"
         ]
@@ -8804,29 +8451,9 @@
     },
     "/api/v1/leases/propose": {
       "post": {
+        "deprecated": true,
         "operationId": "lease_propose",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LeaseRequest"
-              }
-            }
-          },
-          "description": "`quietdeck lease propose|acquire <kind>`.",
-          "required": true
-        },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LeaseAnswer"
-                }
-              }
-            },
-            "description": "What `lease propose` and `lease acquire` answer."
-          },
           "default": {
             "content": {
               "application/json": {
@@ -8843,7 +8470,7 @@
             "session": []
           }
         ],
-        "summary": "Propose a lease (a Gmail filter) for the owner to approve",
+        "summary": "Retired: answers 410 Gone (leases moved to Fleetlayer)",
         "tags": [
           "leases"
         ]
@@ -8851,6 +8478,7 @@
     },
     "/api/v1/leases/{id}": {
       "get": {
+        "deprecated": true,
         "operationId": "lease_get",
         "parameters": [
           {
@@ -8865,16 +8493,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Lease"
-                }
-              }
-            },
-            "description": ""
-          },
           "default": {
             "content": {
               "application/json": {
@@ -8897,7 +8515,7 @@
             "node": []
           }
         ],
-        "summary": "One lease",
+        "summary": "Retired: answers 410 Gone (leases moved to Fleetlayer)",
         "tags": [
           "leases"
         ]
@@ -8905,6 +8523,7 @@
     },
     "/api/v1/leases/{id}/cleaned": {
       "post": {
+        "deprecated": true,
         "operationId": "lease_cleaned",
         "parameters": [
           {
@@ -8919,16 +8538,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Lease"
-                }
-              }
-            },
-            "description": ""
-          },
           "default": {
             "content": {
               "application/json": {
@@ -8951,7 +8560,7 @@
             "node": []
           }
         ],
-        "summary": "Confirm a released lease's filter is gone",
+        "summary": "Retired: answers 410 Gone (leases moved to Fleetlayer)",
         "tags": [
           "leases"
         ]
@@ -8959,6 +8568,7 @@
     },
     "/api/v1/leases/{id}/register": {
       "post": {
+        "deprecated": true,
         "operationId": "lease_register",
         "parameters": [
           {
@@ -8972,28 +8582,7 @@
             "style": "simple"
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LeaseRegister"
-              }
-            }
-          },
-          "description": "The kind's create step is done: `quietdeck lease register <id>` with what it left behind.",
-          "required": true
-        },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Lease"
-                }
-              }
-            },
-            "description": ""
-          },
           "default": {
             "content": {
               "application/json": {
@@ -9010,7 +8599,7 @@
             "session": []
           }
         ],
-        "summary": "Register what a lease made (the filter's ID)",
+        "summary": "Retired: answers 410 Gone (leases moved to Fleetlayer)",
         "tags": [
           "leases"
         ]
@@ -9018,6 +8607,7 @@
     },
     "/api/v1/leases/{id}/release": {
       "post": {
+        "deprecated": true,
         "operationId": "lease_release",
         "parameters": [
           {
@@ -9032,16 +8622,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Lease"
-                }
-              }
-            },
-            "description": ""
-          },
           "default": {
             "content": {
               "application/json": {
@@ -9064,7 +8644,7 @@
             "node": []
           }
         ],
-        "summary": "Release a lease",
+        "summary": "Retired: answers 410 Gone (leases moved to Fleetlayer)",
         "tags": [
           "leases"
         ]
@@ -12031,7 +11611,7 @@
               }
             }
           },
-          "description": "`quietdeck timeline add`: agents post automatic actions they carried out and mail a lease absorbed.",
+          "description": "`quietdeck timeline add`: agents post automatic actions they carried out.",
           "required": true
         },
         "responses": {
@@ -12343,7 +11923,7 @@
       "name": "rules"
     },
     {
-      "description": "Leases are things agents ask for and give back: a Gmail filter while they watch something themselves (proposed, then approved by the owner) or a heavy-build slot on a machine (acquired, queued if busy).",
+      "description": "Retired: leases moved to Fleetlayer (`fleetlayer lease`, its leases plugin). These routes stay within v1 and answer 410 Gone with an `ApiError` saying so.",
       "name": "leases"
     },
     {

@@ -53,7 +53,7 @@ Mounted at `/data`, ReadWriteOnce, owned by gid 65532 (`fsGroup: 65532`).
 | Path | What |
 |---|---|
 | `/data/quietdeck.db` | SQLite, in WAL mode (`journal_mode=WAL`, `synchronous=NORMAL`), with `quietdeck.db-wal` and `quietdeck.db-shm` beside it. Migrations run at start-up |
-| `/data/deck.yaml` | The deck's config: accounts, boards, projects, tasks, ping budget, lease fallback and heavy-build slots. Read at start-up; an example is in `deploy/deck.example.yaml`. Missing means defaults |
+| `/data/deck.yaml` | The deck's config: accounts, boards, projects, tasks, ping budget and triage tab. Read at start-up; an example is in `deploy/deck.example.yaml`. Missing means defaults |
 
 **Backups** need no deck code. Take an online copy of the live database with `sqlite3 /data/quietdeck.db ".backup
 '<target>'"` or `VACUUM INTO '<target>'`, never a file copy, and copy `deck.yaml` alongside. Because the database is in

@@ -135,6 +135,10 @@ impl SessionOp {
     }
 }
 
+/// Why a lease action is refused: leases are Fleetlayer's now.
+pub const LEASES_RETIRED: &str = "leases moved to Fleetlayer: `fleetlayer lease acquire gmail-filter --payload \
+    '{\"account\":…,\"query\":…}'`";
+
 /// What a wrap-up action asks, when it doesn't say.
 pub const WRAP_UP_TEXT: &str = "Approved on the deck's Work tab: run your wrap-up now (the `wrap-up-session` skill, or \
                                 your own end-of-session sweep for loose ends) and leave its result in this session.";
@@ -262,6 +266,8 @@ pub enum Action {
         #[garde(length(min = 1, max = 100_000))]
         prompt: String,
     },
+    /// Retired: leases moved to Fleetlayer (`fleetlayer lease`). Kept so cards stored before still read; the deck
+    /// refuses a new card or edit that carries one ([`LEASES_RETIRED`]), and the runner never carries one out.
     Lease {
         #[garde(length(min = 1, max = 50))]
         kind: String,
@@ -313,6 +319,7 @@ pub enum ActionType {
     Calendar,
     Resume,
     NewSession,
+    /// Retired: see [`Action::Lease`].
     Lease,
     Watch,
     Session,
@@ -424,6 +431,7 @@ impl Action {
             Action::Session { op: SessionOp::Message, text: None, .. } => {
                 Err("session: a message needs its text".into())
             }
+            Action::Lease { .. } => Err(LEASES_RETIRED.into()),
             _ => Ok(()),
         }
     }
@@ -441,6 +449,15 @@ mod tests {
         assert_eq!(a.action_type(), ActionType::Archive);
         assert_eq!(serde_json::to_value(&a).unwrap()["type"], "archive");
         a.check().unwrap();
+    }
+
+    #[test]
+    fn a_lease_still_reads_but_is_refused() {
+        let a: Action = serde_json::from_value(json!({"type": "lease", "kind": "gmail-filter", "resource": "personal",
+            "params": {"query": "from:ci@example.com"}, "holder": {"node": "n", "tab": "t"}, "reason": "CI"}))
+        .unwrap();
+        assert_eq!(a.action_type(), ActionType::Lease);
+        assert!(a.check().unwrap_err().contains("fleetlayer lease acquire gmail-filter"));
     }
 
     #[test]

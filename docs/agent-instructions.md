@@ -23,10 +23,10 @@ machine, as `<tab>@<machine>`.
   ID and what happened, so it can archive the thread or draft the reply. `SendMessage` on the same machine,
   `quietdeck msg send` across machines.
 - **Leases.** To keep notification emails out of my inbox while you watch something yourself (CI runs you're
-  fixing), ask with `quietdeck lease propose gmail-filter --account <id> --query 'from:<sender> …' --reason "…"`. I
-  approve new filters; one I approved before starts at once. Never create a Gmail filter any other way. Before a big
-  build or a full test run, take a slot with `quietdeck lease acquire heavy-build --reason "…" --wait`, and
-  `quietdeck lease release <id>` when it's done.
+  fixing), ask Fleetlayer with `fleetlayer lease acquire gmail-filter --payload '{"account": "<id>", "query":
+  "from:<sender> …"}' --reason "…"`. I approve new filters; one I approved before starts at once. Never create a Gmail
+  filter any other way. Before a big build or a full test run, take a build slot from Fleetlayer's leases too
+  (`fleetlayer lease`), and release it when it's done.
 - **Pings.** Ping my phone only when I need to know right now and it can't wait a few hours. Use
   `quietdeck ping --title "…" --body "…" --reason "<why it can't wait>" [--link <url>] [--thread <id>]`. Before you
   ping, pick up my feedback on your earlier pings with `quietdeck pings feedback` and follow it.

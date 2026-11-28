@@ -203,7 +203,7 @@ mod tests {
         projects:\n  app: { dirs: [~/code/app], automatic: [forward, archive] }\n\
         \x20 personal: { accounts: [personal], automatic: [archive] }\n\
         \x20 ops: { dirs: [~/code/ops], automatic: [forward, resume, new_session] }\n\
-        leases:\n  fallback: { node: server, tab: email triage }\n";
+        triage: { node: server, tab: email triage }\n";
 
     async fn deck() -> AppState {
         let mut state = AppState::for_tests().await;

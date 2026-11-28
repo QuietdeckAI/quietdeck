@@ -39,7 +39,6 @@ export const pages = [
   { file: "guides/overseer", group: "Guides", label: "Set up an overseer" },
   { file: "api", group: "Reference", label: "API" },
   { file: "configuration", group: "Reference", label: "Configuration" },
-  { file: "leases", group: "Reference", label: "Leases" },
   { file: "orchestrators", group: "Reference", label: "Orchestrators" },
   { file: "claude-code-messaging", group: "Reference", label: "Claude Code messaging" },
   { file: "summaries-interface", group: "Advanced", label: "Summaries interface" },

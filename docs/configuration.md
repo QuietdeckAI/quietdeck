@@ -97,14 +97,14 @@ with gog](guides/mail-through-gog.md)). The node checks this section when it sta
 | `runner.intercom_watch` | map | | Watch a support inbox (Intercom) like a mailbox. Keys in [runner.intercom_watch](#runnerintercom_watch). |
 | `runner.thread` | tool | | Reads a thread's message IDs, labels and dates (never its content), for the freshness check before an action. |
 | `runner.send_as` | tool | | Lists the addresses an account can send as, read hourly. A draft from any other address goes to the agent. |
-| `runner.labels` | tool | | Lists an account's labels, so a label that doesn't exist yet goes to the agent, and a lease finds its label. |
+| `runner.labels` | tool | | Lists an account's labels, so a label that doesn't exist yet goes to the agent, and a gmail-filter lease's filter finds its label. |
 | `runner.boards.<name>` | map | | The IDs your story tool needs for each board named in `deck.yaml`, as `${board.<field>}` (a workflow state, a team, a list). |
-| `runner.gmail_filters` | map | | The tools behind gmail-filter leases. Keys below. Without it, each holder makes its own filters ([Leases](leases.md#the-runners-filter-tools)). |
+| `runner.gmail_filters` | map | | The tools behind Fleetlayer's gmail-filter leases ([Fleetlayer's leases plugin](https://fleetlayer.ai/docs/plugins/leases/)). Keys below. The runner makes filters only with `fleetlayer` set. |
 | `runner.eligible` | list of action types | every type except `reply` | The action types the runner takes on. A type left out always goes to the agent. `reply` is refused: a reply always goes through the agent. |
-| `runner.tools.<name>` | tool | | The tool that carries out each action. Names: `archive`, `mark_read`, `not_spam`, `close_conversation`, `label`, `draft`, `calendar`, `story.create`, `story.comment`, `task.create`, `task.update`, `task.done`. Any other name is refused. Forwards, resumes, new sessions, leases and watches need no tool. An action with no tool goes to the agent. |
+| `runner.tools.<name>` | tool | | The tool that carries out each action. Names: `archive`, `mark_read`, `not_spam`, `close_conversation`, `label`, `draft`, `calendar`, `story.create`, `story.comment`, `task.create`, `task.update`, `task.done`. Any other name is refused. Forwards, resumes, new sessions and watches need no tool. An action with no tool goes to the agent. |
 
-The default `eligible` list is `archive`, `mark_read`, `label`, `draft`, `forward`, `watch`, `lease`, `story`, `task`,
-`calendar`, `resume` and `new_session`.
+The default `eligible` list is `archive`, `mark_read`, `label`, `draft`, `forward`, `watch`, `story`, `task`, `calendar`,
+`resume` and `new_session`.
 
 #### A tool
 
@@ -115,7 +115,7 @@ Every key above marked "tool" takes the same shape. Set exactly one of `path`, `
 | `path` | string | An Executor app tool, such as `tools.google.gmail.modify`. Needs `runner.executor`. |
 | `command` | list of strings | A program and its arguments. It gets the input as JSON on stdin and prints JSON. |
 | `gog` | string | A gog operation: `profile`, `history`, `message`, `message_text`, `recent`, `drafts`, `inbox`, `thread`, `send_as`, `labels`, `archive`, `mark_read`, `label` or `draft`. |
-| `input` | any | What the tool gets. In it, `${...}` names a value: `account.address`, `account.<var>`, `action.<field>`, `card.<field>`, `board.<field>`; for the mail watch `history_id`, `page_token` and `message_id`; for leases `lease.*` and `thread_ids`. A string that is only a placeholder keeps the value's type, and a placeholder with no value leaves its key out. The full list is in [Add the runner to node.yaml](executor.md#3-add-the-runner-to-nodeyaml). |
+| `input` | any | What the tool gets. In it, `${...}` names a value: `account.address`, `account.<var>`, `action.<field>`, `card.<field>`, `board.<field>`; for the mail watch `history_id`, `page_token` and `message_id`; for `gmail_filters` `lease.*` and `thread_ids`. A string that is only a placeholder keeps the value's type, and a placeholder with no value leaves its key out. The full list is in [Add the runner to node.yaml](executor.md#3-add-the-runner-to-nodeyaml). |
 
 #### runner.executor
 
@@ -173,8 +173,10 @@ conversation (`close_conversation`) and archives the emails.
 
 #### runner.gmail_filters
 
-In each input, `${lease.query}`, `${lease.label}`, `${lease.label_id}`, `${lease.filter_id}` and `${thread_ids}` name
-the lease's values ([Leases](leases.md#the-runners-filter-tools)).
+Leases are Fleetlayer's ([its leases plugin](https://fleetlayer.ai/docs/plugins/leases/)): a session asks with
+`fleetlayer lease acquire gmail-filter --payload '{"account": "work", "query": "from:…"}'`, the person approves the
+filter once, and the runner makes the Gmail filters match the held leases. In each input, `${lease.query}`,
+`${lease.label}`, `${lease.label_id}`, `${lease.filter_id}` and `${thread_ids}` name the lease's values.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
@@ -183,7 +185,7 @@ the lease's values ([Leases](leases.md#the-runners-filter-tools)).
 | `runner.gmail_filters.create_label` | tool | required | Creates the lease's label the first time. Returns `{id}`. |
 | `runner.gmail_filters.inbox` | tool | | Finds matching threads already in the inbox. Set it together with `move`. |
 | `runner.gmail_filters.move` | tool | | Moves those threads out of the inbox, read, with the lease's label. |
-| `runner.gmail_filters.fleetlayer` | map | | Take the filters from Fleetlayer's leases instead of the deck's. Every `every` (default `1m`) the runner runs `<command> lease list --json` (default `fleetlayer`) and makes its filters match the held leases of `kind` (default `gmail-filter`), whose payload is `{"account": "<runner account>", "query": "from:…"}`: it creates what's missing, labelled `Quietdeck/Lease/<first holder's tab>`, and removes the filters it made that no held lease covers. It never touches a filter it didn't make. A failure shows on the runner's health. |
+| `runner.gmail_filters.fleetlayer` | map | | Take the filters from Fleetlayer's leases. Every `every` (default `1m`) the runner runs `<command> lease list --json` (default `fleetlayer`) and makes its filters match the held leases of `kind` (default `gmail-filter`), whose payload is `{"account": "<runner account>", "query": "from:…"}`: it creates what's missing, labelled `Quietdeck/Lease/<first holder's tab>`, and removes the filters it made that no held lease covers. It never touches a filter it didn't make. A failure shows on the runner's health. |
 
 ### matrix
 
@@ -214,15 +216,16 @@ The deck reads it when it starts. A missing file means every default. An example
 | `boards` | list of strings | `[]` | The board names stories can go to. The runner's `boards` maps each to your tracker's IDs. |
 | `tasks.label` | string | | Your own task board's label. |
 | `pings.weekly_budget` | number | `10` | How many pings a week before the Rules screen shows you're over. Nothing is ever held back ([Pings on your phone](getting-started.md#pings-on-your-phone)). |
-| `leases.fallback.node` | string | | With `tab`: who cleans up a lease when no runner is connected and the holder doesn't answer, and who gets your comments on the deck's own timeline entries. Usually your triage tab. |
-| `leases.fallback.tab` | string | | That session's tab. |
-| `leases.heavy_build_slots.<node>` | number | `2` | Heavy builds at once on that machine. At least 1. A machine not listed gets 2 ([Leases](leases.md#heavy-builds)). |
+| `triage.node` | string | | With `tab`: who gets your comments on the deck's own timeline entries. Usually your triage tab. |
+| `triage.tab` | string | | That session's tab. |
+| `leases` | map | | Retired: leases moved to Fleetlayer. Still read, with a warning in the log: `leases.fallback` counts as `triage` when that isn't set, and `heavy_build_slots` is ignored. |
 | `projects.<name>.dirs` | list of paths | `[]` | The working directories in this project. `~` works. A session belongs to the project with the longest matching directory. |
 | `projects.<name>.accounts` | list of strings | `[]` | Accounts in this project, for actions on no session. |
 | `projects.<name>.automatic` | list of action types | `[]` | The action types the project's policy lets run automatically, under a rule you granted. Adding `reply` works but logs a warning ([Automatic actions](getting-started.md#automatic-actions-rules-and-policies)). |
 
 Action types are `archive`, `mark_read`, `not_spam`, `close_conversation`, `label`, `forward`, `draft`, `reply`,
-`story`, `task`, `calendar`, `resume`, `new_session`, `lease`, `watch` and `session`.
+`story`, `task`, `calendar`, `resume`, `new_session`, `watch` and `session`. (`lease` is retired: a card carrying
+one is refused.)
 
 ## Environment variables
 
@@ -305,7 +308,7 @@ runner:
     personal: { address: you@example.com, label: Personal }
 ```
 
-For the same runner through Executor, with stories and leases, copy the `runner:` section of
+For the same runner through Executor, with stories and Gmail filters for Fleetlayer's leases, copy the `runner:` section of
 [`deploy/node.example.yaml`](https://github.com/QuietdeckAI/quietdeck/blob/main/deploy/node.example.yaml).
 
 ### deck.yaml
@@ -315,8 +318,7 @@ accounts:
   - { id: personal, label: Personal, address: you@example.com }
 boards: [engineering]
 pings: { weekly_budget: 10 }
-leases:
-  fallback: { node: server, tab: email triage }
+triage: { node: server, tab: email triage }
 projects:
   app:      { dirs: [~/code/app], automatic: [forward, archive, story, task] }
   personal: { accounts: [personal], automatic: [forward, archive] }

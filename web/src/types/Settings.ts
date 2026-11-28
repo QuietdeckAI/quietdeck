@@ -9,7 +9,8 @@ export type Settings = {
  */
 undo_seconds: number, 
 /**
- * "Require a proposal for every new filter". A hard rule in code while on.
+ * Retired with the deck's leases (Fleetlayer's leases plugin approves filters now): kept within v1, and has no
+ * effect.
  */
 require_filter_proposal: boolean, 
 /**

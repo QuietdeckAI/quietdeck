@@ -16,7 +16,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
 - ~~**Moving a session to another machine.**~~ Written: `docs/guides/move-a-session.md`. Handoffs, the access manifest, `handoff claim`, closing the old session.
   Now: `skills/move-session/SKILL.md`, and the quietdeck move (h_2, 24 November).
 - **Agents addressed by role, not tab name.** Why a role setting beats a tab name hard-coded across runner configs,
-  lease fallbacks, instructions and skills; lightweight agents any session can take on. Now: build plan "Agents are
+  triage tabs, instructions and skills; lightweight agents any session can take on. Now: build plan "Agents are
   addressed by role, not tab name (25 November)". Not built yet.
 - **Monitoring the sessions that must stay up.** Long-running agents with responsibilities (triage, infrastructure,
   a queue worker) are marked monitored, and the node pings a heartbeat URL while each runs, so Gatus, Healthchecks or
@@ -46,7 +46,7 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
 - **Two scratchpads per agent.** A wiped one (`/tmp`, the session scratchpad) and a kept, synced one in the notes
   vault, named after the role. Now: Nathan's global instructions, "Agents' scratchpads: one wiped, one kept".
 - ~~**Builds off the laptop.**~~ On Fleetlayer: https://fleetlayer.ai/docs/guides/agents-building-software/. Heavy Rust builds and tests on a build server (`scripts/on-dev`), heavy-build leases, why
-  a laptop's disk fills. Now: `AGENTS.md`, `docs/leases.md`.
+  a laptop's disk fills. Now: `AGENTS.md`, and Fleetlayer's `docs/plugins/leases.md` (`fleetlayer-dev-slot`).
 
 - **Continuous deployment without races.** CI builds the image and commits its digest to the infra repo with a
   deploy key; production only moves forward (an ancestry check before each push), main's runs queue, migrations may
@@ -291,3 +291,11 @@ Guides about running agents in general belong on Fleetlayer's site (fleetlayer.a
   and asks from just before it next time. Found switching handoffs to Fleetlayer (29 November, the quietdeck cutover
   tab). Now: crates/quietdeck-server/src/fleetlayer_handoffs.rs, and the "Moving a session" section of
   docs/guides/with-fleetlayer.md.
+- **Leases moved to Fleetlayer.** Leases (a temporary Gmail filter while an agent watches CI, a build slot on a busy
+  machine) are a generic primitive, so they belong in Fleetlayer, not in an inbox (Nathan, 28 November: "zero leases
+  stay in quietdeck"). The deck's leases, their routes, MCP tools, Settings section and `quietdeck lease` are gone;
+  the old routes answer 410 Gone within v1, a new card with a `lease` action is refused, and `deck.yaml`'s `leases`
+  section is still read (its `fallback` is now `triage`). Agents ask with `fleetlayer lease acquire gmail-filter
+  --payload '{"account": …, "query": …}'`, and the runner makes the Gmail filters match the held leases. Now: the
+  fleetlayer repo's `docs/plugins/leases.md`, and `crates/quietdeck-node/src/runner/leases.rs` (`reconcile`) with
+  `runner.gmail_filters.fleetlayer` in `docs/configuration.md` (28 November, the quietdeck tab).

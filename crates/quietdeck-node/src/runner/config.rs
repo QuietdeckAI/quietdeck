@@ -53,15 +53,15 @@ pub struct RunnerConfig {
     /// `${board.<name>}` (a Shortcut workflow state and team, a Linear team, a Trello list).
     #[serde(default)]
     pub boards: BTreeMap<String, BTreeMap<String, serde_json::Value>>,
-    /// The tools behind gmail-filter leases: create and delete a filter, make the lease's label, and move mail
-    /// already in the inbox. Without it, the holder creates and removes its own filters.
+    /// The tools behind Fleetlayer's gmail-filter leases: create and delete a filter, make the lease's label, and
+    /// move mail already in the inbox. The runner makes filters only with its `fleetlayer` section set.
     #[serde(default)]
     pub gmail_filters: Option<GmailFiltersConfig>,
     #[serde(default = "default_eligible")]
     pub eligible: Vec<ActionType>,
     /// The tool that carries out each action type, by its name in `eligible`. Stories and tasks have a tool per op
     /// (`story.create`, `story.comment`, `task.create`, `task.update`, `task.done`), so an update never runs a create.
-    /// Forwards, resumes, new sessions, leases and watches need no entry.
+    /// Forwards, resumes, new sessions and watches need no entry.
     #[serde(default)]
     pub tools: BTreeMap<String, ToolSpec>,
 }
@@ -256,10 +256,9 @@ pub struct GmailFiltersConfig {
     /// Takes `${thread_ids}` out of the inbox, marked read, with the lease's label. Optional, with `inbox`.
     #[serde(default, rename = "move")]
     pub move_threads: Option<ToolSpec>,
-    /// Take the filters from Fleetlayer's leases instead of the deck's: every `every`, the runner lists the held
-    /// leases of `kind` (`fleetlayer lease list --json`) and makes its filters match their payloads
-    /// (`{"account": "<runner account>", "query": "from:…"}`): it creates what's missing and removes what no held
-    /// lease covers any more. Reconciling needs no events and catches up after downtime by itself.
+    /// Take the filters from Fleetlayer's leases: every `every`, the runner lists the held leases of `kind`
+    /// (`fleetlayer lease list --json`) and makes its filters match their payloads (`{"account": "<runner account>",
+    /// "query": "from:…"}`): it creates what's missing and removes what no held lease covers any more. Reconciling needs no events and catches up after downtime by itself.
     #[serde(default)]
     pub fleetlayer: Option<FleetlayerLeasesConfig>,
 }
@@ -320,11 +319,11 @@ fn default_inbox_every() -> String {
     "5m".into()
 }
 
-/// Every type the runner has a handler for, or will: watches arrive with thread watches and leases with the lease
-/// kinds. Until then those go to the agent as having no handler.
+/// Every type the runner has a handler for, or will: watches arrive with thread watches. Until then they go to the
+/// agent as having no handler. (Leases are retired: Fleetlayer's now.)
 pub fn default_eligible() -> Vec<ActionType> {
     use ActionType::*;
-    vec![Archive, MarkRead, NotSpam, Label, Draft, Forward, Watch, Lease, Story, Task, Calendar, Resume, NewSession]
+    vec![Archive, MarkRead, NotSpam, Label, Draft, Forward, Watch, Story, Task, Calendar, Resume, NewSession]
 }
 
 /// `30s`, `2m`, `1h`, or plain seconds.

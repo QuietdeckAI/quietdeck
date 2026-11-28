@@ -1061,7 +1061,7 @@ async fn a_story_for_a_board_the_runner_doesnt_know_goes_to_the_agent() {
     assert!(h.paths().is_empty());
 }
 
-// --- Lease steps ----------------------------------------------------------------------------------------------------
+// --- Gmail filters for Fleetlayer's leases ---------------------------------------------------------------------------
 
 const FILTERS: &str = r#"
 labels: { path: gm.labels.list, input: { accountId: "${account.executor_account}" } }
@@ -1073,19 +1073,22 @@ gmail_filters:
   move: { path: tools.google.gmail.modify, input: { account: "${account.address}", threadIds: "${thread_ids}", addLabels: ["${lease.label}"], archive: true, read: true } }
 "#;
 
-fn filter_lease(kind_state: Option<Value>) -> quietdeck_types::lease::Lease {
-    serde_json::from_value(json!({
-        "id": 9, "kind": "gmail-filter", "resource": "personal", "params": {"query": "from:ci.example.com"},
-        "holder": {"node": "laptop", "tab": "api", "session_id": null}, "reason": "watching CI", "state": "approved",
-        "ttl_seconds": 86400, "idle_minutes": 30, "created_at": "2026-11-23T08:00:00Z", "activated_at": null,
-        "last_renewed_at": null, "expires_at": null, "cleanup_requested_at": null, "cleanup_by": null, "ended_at": null,
-        "end_reason": null, "pattern_id": 1, "kind_state": kind_state, "card_id": null, "queue_position": null
-    }))
-    .unwrap()
+/// A stand-in for the Fleetlayer CLI: `lease list --json` prints `list.json` from its folder.
+fn fake_fleetlayer(dir: &std::path::Path, list: &Value) -> super::config::FleetlayerLeasesConfig {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(dir.join("list.json"), list.to_string()).unwrap();
+    let script = dir.join("fleetlayer");
+    std::fs::write(&script, format!("#!/bin/sh\ncat '{}'\n", dir.join("list.json").display())).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    super::config::FleetlayerLeasesConfig {
+        every: "1m".into(),
+        command: script.display().to_string(),
+        kind: "gmail-filter".into(),
+    }
 }
 
 #[tokio::test]
-async fn a_filter_lease_is_created_with_its_label_moves_inbox_mail_and_is_removed() {
+async fn a_held_lease_gets_a_filter_with_its_label_moves_inbox_mail_and_loses_it_when_released() {
     let script: Script = Arc::new(|path: &str, _input: &Value| match path {
         "gm.labels.list" => Ok(json!({"labels": [{"id": "INBOX", "name": "INBOX"}]})),
         "gm.labels.create" => Ok(json!({"id": "Label_7"})),
@@ -1105,10 +1108,14 @@ async fn a_filter_lease_is_created_with_its_label_moves_inbox_mail_and_is_remove
         Arc::new(FakeAgent::default()),
         dir.path().into(),
     );
+    let held = json!({"kinds": [{"name": "gmail-filter", "held": [{"id": 3, "holder": "api@laptop",
+        "payloadKey": "k1", "payload": {"account": "personal", "query": "from:ci.example.com"}}]}]});
+    let fl = fake_fleetlayer(dir.path(), &held);
+    let mut made = vec![];
 
-    let state = runner.lease_step(&filter_lease(None), quietdeck_types::lease::LeaseStep::Create).await.unwrap();
-    assert_eq!(state["filter_id"], "filter_1");
-    assert_eq!(state["moved"], 2);
+    super::leases::reconcile(&runner, &fl, &mut made).await.unwrap();
+    assert_eq!(made.len(), 1);
+    assert_eq!(made[0].filter_id, "filter_1");
     let log = calls.lock().unwrap().clone();
     let paths: Vec<&str> = log.iter().map(|(p, _)| p.as_str()).collect();
     assert_eq!(
@@ -1121,12 +1128,15 @@ async fn a_filter_lease_is_created_with_its_label_moves_inbox_mail_and_is_remove
     assert_eq!(log[3].1["q"], "from:ci.example.com in:inbox");
     assert_eq!(log[4].1["threadIds"], json!(["t1", "t2"]));
 
-    // Deleted by hand already: removal still counts as done.
-    let removed = runner
-        .lease_step(&filter_lease(Some(json!({"filter_id": "filter_1"}))), quietdeck_types::lease::LeaseStep::Remove)
-        .await
+    // Still held: nothing changes.
+    super::leases::reconcile(&runner, &fl, &mut made).await.unwrap();
+    assert_eq!(calls.lock().unwrap().len(), 5);
+
+    // Released, and the filter was deleted by hand already: removal still counts as done.
+    std::fs::write(dir.path().join("list.json"), json!({"kinds": [{"name": "gmail-filter", "held": []}]}).to_string())
         .unwrap();
-    assert_eq!(removed["already_gone"], true);
+    super::leases::reconcile(&runner, &fl, &mut made).await.unwrap();
+    assert!(made.is_empty());
     assert_eq!(calls.lock().unwrap().last().unwrap().1["id"], "filter_1");
 }
 

@@ -110,7 +110,11 @@ pub struct DeckConfig {
     pub boards: Vec<String>,
     pub tasks: Option<TasksConfig>,
     pub pings: PingsConfig,
-    pub leases: LeasesConfig,
+    /// Your triage tab: it gets your comments on the deck's own timeline entries.
+    pub triage: Option<FallbackHolder>,
+    /// Retired: leases moved to Fleetlayer. Still read so a deck.yaml from before starts; only `fallback` is used,
+    /// as `triage` when that isn't set.
+    pub leases: RetiredLeasesConfig,
     pub projects: BTreeMap<String, ProjectConfig>,
 }
 
@@ -132,22 +136,16 @@ impl Default for PingsConfig {
     }
 }
 
+/// The `leases:` section from before leases moved to Fleetlayer (`fleetlayer lease`).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct LeasesConfig {
-    /// Who cleans up a lease when there's no runner and the holder doesn't answer.
+pub struct RetiredLeasesConfig {
     pub fallback: Option<FallbackHolder>,
-    /// heavy-build slots per machine, by node name. A machine not listed has 2.
+    /// Ignored: build slots are Fleetlayer's heavy-build leases.
     pub heavy_build_slots: BTreeMap<String, i64>,
 }
 
-impl LeasesConfig {
-    pub fn heavy_build_slots(&self, node: &str) -> i64 {
-        self.heavy_build_slots.get(node).copied().unwrap_or(2).max(1)
-    }
-}
-
-/// Also where comments on the deck's own timeline entries go.
+/// A session by node and tab.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FallbackHolder {
@@ -192,7 +190,18 @@ impl DeckConfig {
                 tracing::warn!(project = %name, "deck.yaml: replies are automatic in this project");
             }
         }
+        if self.leases.fallback.is_some() || !self.leases.heavy_build_slots.is_empty() {
+            tracing::warn!(
+                "deck.yaml: `leases` is retired (leases moved to Fleetlayer); move `leases.fallback` to `triage` \
+                 and drop the section"
+            );
+        }
         Ok(())
+    }
+
+    /// Who gets the person's comments on the deck's own entries: `triage`, or the retired `leases.fallback`.
+    pub fn triage_tab(&self) -> Option<&FallbackHolder> {
+        self.triage.as_ref().or(self.leases.fallback.as_ref())
     }
 
     /// Whether `account` is one of the configured labels, or a chat source the deck reads (`matrix`: a card about a
@@ -250,6 +259,20 @@ mod tests {
         assert_eq!(c.project_for_dir("/home/sam/code/app/src", Some("/home/sam")).as_deref(), Some("app"));
         assert_eq!(c.project_for_dir("/home/sam/code/app/infra/x", Some("/home/sam")).as_deref(), Some("infra"));
         assert_eq!(c.project_for_dir("/home/sam/code/apples", Some("/home/sam")), None);
+    }
+
+    #[test]
+    fn the_retired_leases_section_still_parses_and_names_the_triage_tab() {
+        let c: DeckConfig = yaml_serde::from_str(
+            "leases:\n  fallback: { node: server, tab: email triage }\n  heavy_build_slots: { server: 2 }\n",
+        )
+        .unwrap();
+        assert_eq!(c.triage_tab().map(|t| t.tab.as_str()), Some("email triage"));
+        let c: DeckConfig = yaml_serde::from_str(
+            "triage: { node: server, tab: triage }\nleases:\n  fallback: { node: server, tab: email triage }\n",
+        )
+        .unwrap();
+        assert_eq!(c.triage_tab().map(|t| t.tab.as_str()), Some("triage"), "triage wins");
     }
 
     #[test]

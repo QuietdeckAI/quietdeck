@@ -1,46 +1,14 @@
-//! A gmail-filter lease's side effects: create the filter (with the lease's label, out of the inbox and unread) and
-//! move matching inbox mail; later delete the filter. Carried out for the deck's leases, or, with
-//! `gmail_filters.fleetlayer`, by making the filters match Fleetlayer's held leases ([`reconcile`]). heavy-build slots
-//! have no steps.
+//! Gmail filters for Fleetlayer's gmail-filter leases (`gmail_filters.fleetlayer`): every interval the runner lists
+//! the held leases and makes its filters match their payloads ([`reconcile`]), creating each filter (with the
+//! holder's label, out of the inbox and unread, matching inbox mail moved under it) and deleting the ones no held
+//! lease covers. Leases themselves are Fleetlayer's (its leases plugin); the deck has none.
 
-use quietdeck_types::lease::{KIND_GMAIL_FILTER, Lease, LeaseStep};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::Runner;
 use super::config::{FleetlayerLeasesConfig, GmailFiltersConfig};
 use super::tools;
-
-/// The label a lease's filter puts on what it catches, so the triage agent can report it.
-pub fn lease_label(lease: &Lease) -> String {
-    format!("Quietdeck/Lease/{}", lease.holder.tab)
-}
-
-pub async fn step(r: &Runner, lease: &Lease, step: LeaseStep) -> Result<Value, String> {
-    if lease.kind != KIND_GMAIL_FILTER {
-        return Err(format!("a {} lease has no steps for the runner", lease.kind));
-    }
-    let cfg = r.cfg.gmail_filters.as_ref().ok_or("runner.gmail_filters isn't set in node.yaml")?;
-    let acct = r
-        .account_ctx(&lease.resource)
-        .ok_or_else(|| format!("account {} isn't in the runner's config", lease.resource))?;
-    let query = lease.params.get("query").and_then(Value::as_str).ok_or("the lease has no query")?;
-    let label = lease_label(lease);
-    let id = Value::from(lease.id);
-    match step {
-        LeaseStep::Create => {
-            let (filter_id, label_id, moved) = create_filter(r, cfg, &acct, &id, query, &label).await?;
-            Ok(json!({"filter_id": filter_id, "label": label, "label_id": label_id, "moved": moved}))
-        }
-        LeaseStep::Remove => {
-            let Some(filter_id) = lease.kind_state.as_ref().and_then(|s| s.get("filter_id")).and_then(Value::as_str)
-            else {
-                return Ok(json!({"removed": false, "reason": "no filter was created"}));
-            };
-            delete_filter(r, cfg, &acct, &id, query, &label, filter_id).await
-        }
-    }
-}
 
 /// Make the filter (with its label, out of the inbox and unread) and move matching inbox mail under it: the filter's
 /// ID, the label's ID and how many threads moved.

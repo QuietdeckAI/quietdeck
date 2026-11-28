@@ -48,7 +48,8 @@ pub struct Settings {
     /// Approve All's undo window in seconds: 0 (off) or 1 to 60.
     #[garde(range(min = 0, max = 60))]
     pub undo_seconds: u32,
-    /// "Require a proposal for every new filter". A hard rule in code while on.
+    /// Retired with the deck's leases (Fleetlayer's leases plugin approves filters now): kept within v1, and has no
+    /// effect.
     #[garde(skip)]
     pub require_filter_proposal: bool,
     /// "Show the pending count on the tab icon": the number of cards in the Inbox on the deck's favicon and in its
@@ -237,7 +238,6 @@ pub enum Changed {
     Settings,
     Nodes,
     Rules,
-    Leases,
     /// Pings, their feedback and thread watches.
     Pings,
     /// Devices that take pushes.

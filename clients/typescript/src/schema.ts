@@ -631,7 +631,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Revoke an approved lease pattern */
+        /**
+         * Retired: answers 410 Gone (leases moved to Fleetlayer)
+         * @deprecated
+         */
         post: operations["lease_pattern_revoke"];
         delete?: never;
         options?: never;
@@ -646,7 +649,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** What's held, queued, waiting or overdue, and the approved filters */
+        /**
+         * Retired: answers 410 Gone (leases moved to Fleetlayer)
+         * @deprecated
+         */
         get: operations["leases_view"];
         put?: never;
         post?: never;
@@ -665,7 +671,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Acquire a lease (a heavy-build slot), optionally waiting */
+        /**
+         * Retired: answers 410 Gone (leases moved to Fleetlayer)
+         * @deprecated
+         */
         post: operations["lease_acquire"];
         delete?: never;
         options?: never;
@@ -682,7 +691,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Propose a lease (a Gmail filter) for the owner to approve */
+        /**
+         * Retired: answers 410 Gone (leases moved to Fleetlayer)
+         * @deprecated
+         */
         post: operations["lease_propose"];
         delete?: never;
         options?: never;
@@ -697,7 +709,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** One lease */
+        /**
+         * Retired: answers 410 Gone (leases moved to Fleetlayer)
+         * @deprecated
+         */
         get: operations["lease_get"];
         put?: never;
         post?: never;
@@ -716,7 +731,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Confirm a released lease's filter is gone */
+        /**
+         * Retired: answers 410 Gone (leases moved to Fleetlayer)
+         * @deprecated
+         */
         post: operations["lease_cleaned"];
         delete?: never;
         options?: never;
@@ -733,7 +751,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Register what a lease made (the filter's ID) */
+        /**
+         * Retired: answers 410 Gone (leases moved to Fleetlayer)
+         * @deprecated
+         */
         post: operations["lease_register"];
         delete?: never;
         options?: never;
@@ -750,7 +771,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Release a lease */
+        /**
+         * Retired: answers 410 Gone (leases moved to Fleetlayer)
+         * @deprecated
+         */
         post: operations["lease_release"];
         delete?: never;
         options?: never;
@@ -1922,11 +1946,8 @@ export interface components {
             target?: components["schemas"]["SessionRef"] | null;
             types: components["schemas"]["ActionType"][];
         };
-        /**
-         * @description An action's type alone: the `type` tag, the names `runner.eligible` and project policies use.
-         * @enum {string}
-         */
-        ActionType: "archive" | "mark_read" | "not_spam" | "close_conversation" | "label" | "forward" | "draft" | "reply" | "story" | "task" | "calendar" | "resume" | "new_session" | "lease" | "watch" | "session";
+        /** @description An action's type alone: the `type` tag, the names `runner.eligible` and project policies use. */
+        ActionType: ("archive" | "mark_read" | "not_spam" | "close_conversation" | "label" | "forward" | "draft" | "reply" | "story" | "task" | "calendar" | "resume" | "new_session" | "watch" | "session") | "lease";
         /**
          * @description Which harness runs the session.
          * @enum {string}
@@ -2355,7 +2376,7 @@ export interface components {
          * @description One message on the event stream (`GET /api/v1/events`): what changed, so it refetches that. Never the data
          *     itself.
          */
-        Changed: ("cards" | "timeline" | "sessions" | "settings" | "nodes" | "rules" | "leases") | "pings" | "push" | "mail" | "documents" | "session_marks" | "all";
+        Changed: ("cards" | "timeline" | "sessions" | "settings" | "nodes" | "rules") | "pings" | "push" | "mail" | "documents" | "session_marks" | "all";
         /** @description A message the deck keeps. */
         ChannelMessage: {
             body: string;
@@ -2375,8 +2396,6 @@ export interface components {
         ChatReply: {
             text: string;
         };
-        /** @enum {string} */
-        CleanupBy: "runner" | "holder" | "fallback";
         Comment: {
             created_at: string;
             /** Format: int64 */
@@ -2753,115 +2772,6 @@ export interface components {
             suggestions: components["schemas"]["Card"][];
             /** @description Unread automatic actions. */
             timeline: components["schemas"]["TimelineEntry"][];
-        };
-        Lease: {
-            activated_at?: string | null;
-            /**
-             * Format: int64
-             * @description The card that proposes it, while it's proposed.
-             */
-            card_id?: number | null;
-            cleanup_by?: components["schemas"]["CleanupBy"] | null;
-            cleanup_requested_at?: string | null;
-            created_at: string;
-            end_reason?: string | null;
-            ended_at?: string | null;
-            expires_at?: string | null;
-            holder: components["schemas"]["SessionRef"];
-            /** Format: int64 */
-            id: number;
-            /** Format: int64 */
-            idle_minutes: number;
-            kind: string;
-            /** @description What the kind's create step left behind, such as the Gmail filter's ID. */
-            kind_state?: unknown;
-            last_renewed_at?: string | null;
-            params: unknown;
-            /** Format: int64 */
-            pattern_id?: number | null;
-            /**
-             * Format: int64
-             * @description Its place in the queue, for an exclusive kind.
-             */
-            queue_position?: number | null;
-            reason: string;
-            resource: string;
-            state: components["schemas"]["LeaseState"];
-            /** Format: int64 */
-            ttl_seconds: number;
-        };
-        /** @description What `lease propose` and `lease acquire` answer. */
-        LeaseAnswer: {
-            lease: components["schemas"]["Lease"];
-            /** @description What happened, in a sentence: approved at once, waiting on a card, queued. */
-            message: string;
-        };
-        /** @description What a lease kind says about itself, for the CLI's help and the Settings screen. */
-        LeaseKindInfo: {
-            describe: string;
-            kind: string;
-            needs_approval: boolean;
-            /**
-             * Format: int64
-             * @description Slots per resource with a queue, or none for a kind any number of sessions can hold at once.
-             */
-            slots?: number | null;
-        };
-        /** @description A Gmail filter the person approved: the same filter on the same account needs no new proposal. */
-        LeasePattern: {
-            confirmed_at?: string | null;
-            /**
-             * Format: int64
-             * @description The card that approved it; none when an agent made it with proposals switched off.
-             */
-            confirmed_by_card_id?: number | null;
-            /** Format: int64 */
-            id: number;
-            kind: string;
-            /** @description For a gmail-filter: the query. */
-            pattern: string;
-            /** @description For a gmail-filter: the account. */
-            resource: string;
-            revoked_at?: string | null;
-        };
-        /** @description The kind's create step is done: `quietdeck lease register <id>` with what it left behind. */
-        LeaseRegister: {
-            kind_state: unknown;
-        };
-        /** @description `quietdeck lease propose|acquire <kind>`. */
-        LeaseRequest: {
-            /**
-             * Format: int64
-             * @description Ends once the holder has been idle or offline this long. Default 30 minutes.
-             * @default null
-             */
-            idle_minutes?: number | null;
-            kind: string;
-            /**
-             * @description Kind-specific: a gmail-filter's `{query}`.
-             * @default null
-             */
-            params?: unknown;
-            reason: string;
-            /**
-             * @description What's leased. For a gmail-filter, the account; for a heavy-build slot, the machine (default: the holder's).
-             * @default null
-             */
-            resource?: string | null;
-            /**
-             * Format: int64
-             * @description A hard limit. Default 24 hours.
-             * @default null
-             */
-            ttl_seconds?: number | null;
-        };
-        /** @enum {string} */
-        LeaseState: "proposed" | "queued" | "approved" | "active" | "expiring" | "cleanup_requested" | "released" | "overdue" | "rejected";
-        /** @description The leases list: what's held, queued, waiting or overdue, recent ones, and the approved filters. */
-        LeasesView: {
-            kinds: components["schemas"]["LeaseKindInfo"][];
-            leases: components["schemas"]["Lease"][];
-            patterns: components["schemas"]["LeasePattern"][];
         };
         /** @enum {string} */
         LinkKind: "github_pr" | "shortcut_story" | "linear_issue" | "link";
@@ -3752,7 +3662,10 @@ export interface components {
              * @default true
              */
             report?: boolean;
-            /** @description "Require a proposal for every new filter". A hard rule in code while on. */
+            /**
+             * @description Retired with the deck's leases (Fleetlayer's leases plugin approves filters now): kept within v1, and has no
+             *     effect.
+             */
             require_filter_proposal: boolean;
             /**
              * @description "Show the pending count on the tab icon": the number of cards in the Inbox on the deck's favicon and in its
@@ -3857,16 +3770,11 @@ export interface components {
             subject?: string | null;
             thread_key: string;
         };
-        /** @description `quietdeck timeline add`: agents post automatic actions they carried out and mail a lease absorbed. */
+        /** @description `quietdeck timeline add`: agents post automatic actions they carried out. */
         TimelineAdd: {
             /** @default null */
             account?: string | null;
             kind: components["schemas"]["TimelineKind"];
-            /**
-             * Format: int64
-             * @default null
-             */
-            lease_id?: number | null;
             /** @default [] */
             refs?: string[];
             text: string;
@@ -3884,8 +3792,7 @@ export interface components {
             source: components["schemas"]["EntrySource"];
             text: string;
         };
-        /** @enum {string} */
-        TimelineKind: "auto_action" | "sent_forwarded" | "lease_started" | "lease_absorbed" | "lease_expired" | "lease_cleanup_overdue" | "filter_without_proposal" | "session_started" | "session_resumed" | "session_closed" | "webhook_delivered" | "grant_archived";
+        TimelineKind: ("auto_action" | "sent_forwarded" | "lease_absorbed" | "lease_expired" | "lease_cleanup_overdue" | "filter_without_proposal" | "session_started" | "session_resumed" | "session_closed" | "webhook_delivered" | "grant_archived") | "lease_started";
         /** @description One thing in a transcript. */
         TranscriptItem: {
             at?: string | null;
@@ -5326,15 +5233,6 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The leases list: what's held, queued, waiting or overdue, recent ones, and the approved filters. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LeasesView"];
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -5355,15 +5253,6 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The leases list: what's held, queued, waiting or overdue, recent ones, and the approved filters. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LeasesView"];
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -5382,22 +5271,8 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        /** @description `quietdeck lease propose|acquire <kind>`. */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LeaseRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description What `lease propose` and `lease acquire` answer. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LeaseAnswer"];
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -5416,22 +5291,8 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        /** @description `quietdeck lease propose|acquire <kind>`. */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LeaseRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description What `lease propose` and `lease acquire` answer. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LeaseAnswer"];
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -5454,14 +5315,6 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Lease"];
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -5484,14 +5337,6 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Lease"];
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -5512,21 +5357,8 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description The kind's create step is done: `quietdeck lease register <id>` with what it left behind. */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LeaseRegister"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Lease"];
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -5549,14 +5381,6 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Lease"];
-                };
-            };
             /** @description An error, with its message. */
             default: {
                 headers: {
@@ -7509,7 +7333,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        /** @description `quietdeck timeline add`: agents post automatic actions they carried out and mail a lease absorbed. */
+        /** @description `quietdeck timeline add`: agents post automatic actions they carried out. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TimelineAdd"];

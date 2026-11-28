@@ -17,11 +17,9 @@ tasks: { label: "My Tasks" }
 # Pings a week before the Rules screen shows you're over. Nothing is ever suppressed.
 pings: { weekly_budget: 10 }
 
-# Who cleans up a lease when no runner is connected and the holder doesn't answer, and who gets your comments on
-# the deck's own timeline entries: your triage tab.
-leases:
-  fallback: { node: server, tab: email triage }
-  heavy_build_slots: { server: 2 }   # big builds at once per machine; 2 for any machine not listed (docs/leases.md)
+# Who gets your comments on the deck's own timeline entries: your triage tab. (Leases are Fleetlayer's now:
+# `fleetlayer lease`.)
+triage: { node: server, tab: email triage }
 
 # Autonomy policies: which action types may run automatically (under a rule you granted) per project.
 # A project is a set of working directories, or of accounts for actions with no session.

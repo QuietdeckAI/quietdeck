@@ -44,15 +44,14 @@ pub async fn add(
     e: &TimelineAdd,
 ) -> anyhow::Result<TimelineEntry> {
     let id = sqlx::query(
-        "INSERT INTO timeline_entries (account, kind, source, refs, text, lease_id, posted_node, posted_tab, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO timeline_entries (account, kind, source, refs, text, posted_node, posted_tab, created_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&e.account)
     .bind(enum_str(&e.kind))
     .bind(enum_str(&source))
     .bind(json(&e.refs))
     .bind(&e.text)
-    .bind(e.lease_id)
     .bind(posted_by.map(|p| p.node.clone()))
     .bind(posted_by.map(|p| p.tab.clone()))
     .bind(now_ms())

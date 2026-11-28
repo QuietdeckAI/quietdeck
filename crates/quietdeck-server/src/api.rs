@@ -85,6 +85,7 @@ pub fn router() -> ApiRouter<AppState> {
         .api_route("/rules/match", post(rules_match))
         .api_route("/rules/{id}", put(rule_update))
         .api_route("/rules/{id}/status", post(rule_status))
+        // Retired: leases moved to Fleetlayer. Kept within v1, answering 410 Gone (api/README.md).
         .api_route("/leases", get(leases_view))
         .api_route("/leases/propose", post(lease_propose))
         .api_route("/leases/acquire", post(lease_acquire))
@@ -605,80 +606,41 @@ async fn rule_status(
     Ok(Json(ops::rule_status(&state, id, change).await?))
 }
 
-async fn leases_view(
-    State(state): State<AppState>,
-    Authed(_): Authed,
-) -> AppResult<Json<quietdeck_types::lease::LeasesView>> {
-    Ok(Json(crate::leases::view(&state.db).await?))
+/// What every retired lease route answers.
+fn leases_gone() -> AppError {
+    AppError::Gone(quietdeck_types::action::LEASES_RETIRED.to_string())
 }
 
-async fn lease_propose(
-    State(state): State<AppState>,
-    Agent(me): Agent,
-    Json(req): Json<quietdeck_types::lease::LeaseRequest>,
-) -> AppResult<Json<quietdeck_types::lease::LeaseAnswer>> {
-    Ok(Json(crate::leases::propose(&state, &me, req).await?))
+async fn leases_view(Authed(_): Authed) -> AppError {
+    leases_gone()
 }
 
-async fn lease_acquire(
-    State(state): State<AppState>,
-    Agent(me): Agent,
-    Json(req): Json<quietdeck_types::lease::LeaseRequest>,
-) -> AppResult<Json<quietdeck_types::lease::LeaseAnswer>> {
-    Ok(Json(crate::leases::acquire(&state, &me, req).await?))
+async fn lease_propose(Agent(_): Agent) -> AppError {
+    leases_gone()
 }
 
-async fn lease_get(
-    State(state): State<AppState>,
-    Authed(_): Authed,
-    Path(Id { id }): Path<Id>,
-) -> AppResult<Json<quietdeck_types::lease::Lease>> {
-    Ok(Json(crate::leases::get(&state.db, id).await?))
+async fn lease_acquire(Agent(_): Agent) -> AppError {
+    leases_gone()
 }
 
-/// The holder created the filter itself (no runner): the lease becomes active.
-async fn lease_register(
-    State(state): State<AppState>,
-    Agent(_): Agent,
-    Path(Id { id }): Path<Id>,
-    Json(r): Json<quietdeck_types::lease::LeaseRegister>,
-) -> AppResult<Json<quietdeck_types::lease::Lease>> {
-    Ok(Json(crate::leases::activate(&state, id, r.kind_state).await?))
+async fn lease_get(Authed(_): Authed, Path(Id { id: _ }): Path<Id>) -> AppError {
+    leases_gone()
 }
 
-async fn lease_release(
-    State(state): State<AppState>,
-    Authed(caller): Authed,
-    Path(Id { id }): Path<Id>,
-) -> AppResult<Json<quietdeck_types::lease::Lease>> {
-    Ok(Json(crate::leases::release(&state, &caller, id).await?))
+async fn lease_register(Agent(_): Agent, Path(Id { id: _ }): Path<Id>) -> AppError {
+    leases_gone()
 }
 
-/// Whoever removed the filter (the holder, the fallback tab, the person) confirms it.
-async fn lease_cleaned(
-    State(state): State<AppState>,
-    Authed(caller): Authed,
-    Path(Id { id }): Path<Id>,
-) -> AppResult<Json<quietdeck_types::lease::Lease>> {
-    let lease = crate::leases::get(&state.db, id).await?;
-    let by = match &caller {
-        quietdeck_types::api::Caller::Session { session }
-            if session.node == lease.holder.node && session.tab == lease.holder.tab =>
-        {
-            quietdeck_types::lease::CleanupBy::Holder
-        }
-        quietdeck_types::api::Caller::Node { .. } => quietdeck_types::lease::CleanupBy::Runner,
-        _ => quietdeck_types::lease::CleanupBy::Fallback,
-    };
-    Ok(Json(crate::leases::cleaned(&state, id, by).await?))
+async fn lease_release(Authed(_): Authed, Path(Id { id: _ }): Path<Id>) -> AppError {
+    leases_gone()
 }
 
-async fn lease_pattern_revoke(
-    State(state): State<AppState>,
-    _owner: Owner,
-    Path(Id { id }): Path<Id>,
-) -> AppResult<Json<quietdeck_types::lease::LeasesView>> {
-    Ok(Json(crate::leases::revoke_pattern(&state, id).await?))
+async fn lease_cleaned(Authed(_): Authed, Path(Id { id: _ }): Path<Id>) -> AppError {
+    leases_gone()
+}
+
+async fn lease_pattern_revoke(_owner: Owner, Path(Id { id: _ }): Path<Id>) -> AppError {
+    leases_gone()
 }
 
 async fn rules_match(

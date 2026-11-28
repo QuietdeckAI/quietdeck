@@ -88,8 +88,9 @@ every card waits for you.
 ## Leases
 
 An agent sometimes needs something for a while and no longer: a Gmail filter that keeps CI emails out of your inbox
-while it fixes a build, or a turn on a busy machine for a big build. That's a **lease**. You approve a new kind once;
-it ends by itself when the agent goes idle or closes. [Leases](leases.md) explains them.
+while it fixes a build, or a turn on a busy machine for a big build. That's a **lease**, and Fleetlayer keeps them
+([its leases plugin](https://fleetlayer.ai/docs/plugins/leases/)): you approve a new filter once, and a lease ends by
+itself when the agent goes idle or closes. The runner makes the Gmail filters match the held leases.
 
 ## Mail is data
 

@@ -17,7 +17,6 @@ pub mod handoffs;
 pub mod health;
 pub mod hooks;
 pub mod hub;
-pub mod leases;
 pub mod mail;
 pub mod mcp;
 pub mod messages;
@@ -130,7 +129,6 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
     }
     tokio::spawn(ops::releaser(state.clone()));
     tokio::spawn(ops::stuck_watch(state.clone()));
-    tokio::spawn(leases::ticker(state.clone()));
     tokio::spawn(reading::ticker(state.clone()));
     tokio::spawn(fleetlayer::ticker(state.clone()));
     tokio::spawn(fleetlayer_handoffs::ticker(state.clone()));

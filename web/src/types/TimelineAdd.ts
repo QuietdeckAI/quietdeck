@@ -2,6 +2,6 @@
 import type { TimelineKind } from "./TimelineKind";
 
 /**
- * `quietdeck timeline add`: agents post automatic actions they carried out and mail a lease absorbed.
+ * `quietdeck timeline add`: agents post automatic actions they carried out.
  */
-export type TimelineAdd = { kind: TimelineKind, account: string | null, refs: Array<string>, text: string, lease_id: number | null, };
+export type TimelineAdd = { kind: TimelineKind, account: string | null, refs: Array<string>, text: string, };

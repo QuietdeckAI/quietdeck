@@ -51,7 +51,7 @@ pub enum DeliveryKind {
     RunnerReport,
     /// A webhook, passed through.
     Webhook { source: String, endpoint: String, summary: String },
-    /// Something from the deck itself (a lease's cleanup request, a recheck request).
+    /// Something from the deck itself (a recheck request, a comment from the person).
     Deck,
 }
 

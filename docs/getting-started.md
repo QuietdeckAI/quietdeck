@@ -369,14 +369,17 @@ restarts or a machine sleeps). The timeline says so. When a later card forwards 
 offers to move those rules there. Archived rules can also be restored from the Rules screen.
 
 Every timeline entry and History row takes a **Comment**. It goes to the session behind it (the agent that posted the
-card, or the fallback tab in `deck.yaml` for the deck's own entries) as a message. A session that isn't running gets
+card, or the triage tab in `deck.yaml` for the deck's own entries) as a message. A session that isn't running gets
 it from `quietdeck history --since last` on its next round, and anything it proposes comes back as a card.
 
-## Leases: temporary filters and build slots
+## Temporary filters and build slots
 
 A session watching CI can ask for a temporary Gmail filter that keeps those emails out of your inbox while it works,
-and sessions on one machine take turns for big builds. Both end on their own when the session goes idle or closes.
-How they work, what you approve, and the runner's filter tools: [Leases](leases.md).
+and sessions on one machine take turns for big builds. Both are leases, which Fleetlayer keeps
+([its leases plugin](https://fleetlayer.ai/docs/plugins/leases/)):
+`fleetlayer lease acquire gmail-filter --payload '{"account": "work", "query": "from:…"}'`. The runner makes the
+Gmail filters match the held leases
+([`runner.gmail_filters`](configuration.md#runnergmail_filters)).
 
 ## Session summaries
 

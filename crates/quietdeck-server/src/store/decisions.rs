@@ -331,11 +331,20 @@ async fn release_one(
     .bind(version)
     .execute(&mut *tx)
     .await?;
-    // Lease actions are the deck's own to carry out: approving one approves its lease.
-    let leases = crate::leases::approve_released(&mut *tx, card_id, version, now).await?;
+    // A lease proposal from before leases moved to Fleetlayer: nothing carries it out any more.
+    let leases = sqlx::query(
+        "UPDATE actions SET status = 'done', outcome = ? \
+         WHERE card_id = ? AND card_version = ? AND type = 'lease' AND status = 'released'",
+    )
+    .bind(json(&serde_json::json!({ "approved": false, "reason": quietdeck_types::action::LEASES_RETIRED })))
+    .bind(card_id)
+    .bind(version)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
     let watches = crate::pings::apply_released(&mut *tx, card_id, version).await?;
     if released.rows_affected() == leases + watches {
-        // Nothing left to run (a sent row he only looked at, a lease proposal, a watch): done.
+        // Nothing left to run (a sent row he only looked at, a retired lease proposal, a watch): done.
         sqlx::query("UPDATE cards SET state = 'done', updated_at = ? WHERE id = ?")
             .bind(now)
             .bind(card_id)
@@ -1357,7 +1366,6 @@ mod tests {
                 account: Some("personal".into()),
                 refs: vec![],
                 text: "archived a receipt".into(),
-                lease_id: None,
             },
         )
         .await

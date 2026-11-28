@@ -111,7 +111,7 @@ runner:
   labels:                                       # lists an account's labels; a label that doesn't exist yet goes to the agent
     path: tools.google.api.gmail.users.gmailUsersLabelsList
     input: { accountId: "${account.executor_account}", input: { path: { userId: me }, query: { fields: "labels(id,name)" } } }
-  gmail_filters:                                # gmail-filter leases; without this, each holder makes its own filter
+  gmail_filters:                                # Gmail filters for Fleetlayer's gmail-filter leases
     create_label: { path: tools.google.api.gmail.users.gmailUsersLabelsCreate, input: { accountId: "${account.executor_account}", input: { path: { userId: me }, body: { name: "${lease.label}" } } } }
     create:
       path: tools.google.api.gmail.users.gmailUsersSettingsFiltersCreate
@@ -131,7 +131,7 @@ runner:
       input: { updated_since: "${updated_since}", starting_after: "${starting_after}", per_page: 50 }
   boards:                                       # the board names from the deck's config, with the tracker's IDs
     engineering: { workflow_state_id: 500000001 }
-  eligible: [archive, mark_read, not_spam, close_conversation, label, draft, forward, watch, lease, story, task, calendar, resume, new_session]
+  eligible: [archive, mark_read, not_spam, close_conversation, label, draft, forward, watch, story, task, calendar, resume, new_session]
   tools:
     archive:   { path: tools.google.gmail.modify, input: { account: "${account.address}", threadIds: ["${action.thread_id}"], archive: true } }
     mark_read: { path: tools.google.gmail.modify, input: { account: "${account.address}", threadIds: ["${action.thread_id}"], read: true } }

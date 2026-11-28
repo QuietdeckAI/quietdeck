@@ -77,7 +77,7 @@ https://quietdeck.ai/solo-security.md
   come in too. It's designed to run on Fleetlayer (https://fleetlayer.ai), but works without it.
   https://quietdeck.ai/getting-started.md
 
-How the parts fit together (cards, the report and its defaults, Approve All and undo, rules, leases):
+How the parts fit together (cards, the report and its defaults, Approve All and undo, rules):
 https://quietdeck.ai/concepts.md
 
 ## Start on your own computer

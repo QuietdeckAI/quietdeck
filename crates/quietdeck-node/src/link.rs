@@ -299,13 +299,6 @@ async fn answer(node: &Node, request: DeckRequest) -> Reply {
             }
             None => Reply::Err { error: "this node's runner is off".into() },
         },
-        DeckRequest::LeaseStep { lease, step } => match node.runner.get() {
-            Some(r) => match r.runner.lease_step(&lease, step).await {
-                Ok(state) => Reply::ok(&state),
-                Err(error) => Reply::Err { error },
-            },
-            None => Reply::Err { error: "this node's runner is off".into() },
-        },
         DeckRequest::RoundDone => match node.runner.get() {
             Some(r) => {
                 r.signal(crate::runner::Signal::RoundDone);
