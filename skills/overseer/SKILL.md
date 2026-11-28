@@ -40,6 +40,10 @@ Read as little as you can:
    wait and will wake itself. Fleetlayer's session `meta.background` lists what's running.
 2. **The summary first**: `quietdeck sessions show '<tab>@<node>' --timeline`.
 3. **Only the new part of the transcript**, when you need detail, from where you last read. Never the whole thing.
+   Read it on **every machine**, not only your own: a session on this machine from its JSONL, one on another machine
+   through Fleetlayer's transcript read (grant `transcript.read` for the overseer). A summary alone is never enough to
+   write or keep an entry: summaries lag, and the person often answers a session in its own tab. If the read fails,
+   ask the session itself whether its question is still open before putting it on Work.
 4. **At most once per session every few minutes.**
 
 ## The Work document
