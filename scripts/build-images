@@ -10,11 +10,19 @@
 #
 #   scripts/build-images [<commit>]     defaults to HEAD; the commit must be pushed
 #   scripts/build-images --wait [<commit>]   and wait until it's done (up to 30 minutes)
+# Where Fleetlayer's leases are set up (fleetlayer-dev-slot), it takes a heavy build slot on docspring-dev first and
+# always waits, holding the slot until the images are pushed.
 set -euo pipefail
 host=docspring-dev.hs
 wait=
 if [ "${1:-}" = --wait ]; then wait=1; shift; fi
 sha=$(git rev-parse --short=7 "${1:-HEAD}")
+if command -v fleetlayer-dev-slot >/dev/null; then
+  export FLEETLAYER_LEASE_PID=$$ FLEETLAYER_DEV_SLOT_CLASS=heavy
+  slot=$(fleetlayer-dev-slot acquire "quietdeck images $sha")
+  trap 'fleetlayer-dev-slot release "$slot" >/dev/null 2>&1 || true' EXIT
+  wait=1
+fi
 git archive "$sha" |
   ssh "$host" 'cd /opt/code/quietdeck/src && find . -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} + && tar -x -m -C .' 2>&1 |
   grep -v setlocale || true

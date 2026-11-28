@@ -9,6 +9,7 @@
 #       the TypeScript ts-rs writes (web/src/types) and the OpenAPI spec (api/openapi.json), as a local `cargo test`
 #       would.
 #   scripts/on-dev sync     only copy the checkout there
+#   Each build command first takes a build slot (fleetlayer-dev-slot, where Fleetlayer's leases are set up).
 #   scripts/on-dev clean    delete this checkout's copy and target/ there
 #
 # The checkout is the one the current directory is in (the main one or a worktree); its name there is its directory's.
@@ -22,7 +23,7 @@ name=$(basename "$dir")
 remote=$remote_root/$name
 
 die() { echo "scripts/on-dev: $*" >&2; exit 1; }
-usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 [ $# -gt 0 ] || usage
 cmd=$1; shift
 
@@ -43,6 +44,22 @@ run() {
   set -e
   return "$status"
 }
+
+# A build slot on docspring-dev from Fleetlayer's leases (fleetlayer-dev-slot, where it's installed), so builds from
+# every machine take turns: light for what doesn't link (fmt, check, clippy), heavy for test and build. Released when
+# this script exits, and by Fleetlayer if it dies first (the lease follows this process).
+slot() {
+  command -v fleetlayer-dev-slot >/dev/null || return 0
+  export FLEETLAYER_LEASE_PID=$$ FLEETLAYER_DEV_SLOT_CLASS=$1
+  local id
+  id=$(fleetlayer-dev-slot acquire "quietdeck on-dev $cmd ($name)") || die "couldn't take a $1 build slot"
+  trap 'fleetlayer-dev-slot release "'"$id"'" >/dev/null 2>&1 || true' EXIT
+}
+
+case $cmd in
+  fmt | check | clippy) slot light ;;
+  build | test) slot heavy ;;
+esac
 
 case $cmd in
   sync) sync ;;
