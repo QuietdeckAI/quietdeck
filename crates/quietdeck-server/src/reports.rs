@@ -536,6 +536,32 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
     .fetch_one(&state.db)
     .await?;
     let to = SessionRef { node: r.posted_node, tab: r.posted_tab, session_id: None };
+    // His answer to a question about one session goes to that session itself, from the deck, so it counts as his
+    // own: relayed by the writer, a session rightly refuses to act as him on it (the overseer, 28 Nov 2026: a PR
+    // comment he approved with "Post it" wasn't posted). The writer still hears of it, to update the report.
+    let direct = match a.kind {
+        AnswerKind::Choice => quietdeck_types::report::session_ask(&r.markdown, &a.control),
+        _ => None,
+    }
+    .filter(|ask| ask.session != to.address());
+    let direct_note = match &direct {
+        Some(ask) => {
+            let body = to_session(ask, value);
+            match crate::relay::send(&state.db, &state.hub, &ask.session, DeliveryKind::Deck, body).await {
+                Ok(_) => format!(
+                    "\n\nThe deck has given his answer to {} itself, as his own words: don't pass it on. Follow up \
+                     there only on what it does next.",
+                    ask.session
+                ),
+                Err(e) => format!(
+                    "\n\nThe deck couldn't give his answer to {} itself ({e}): pass it on when the session is back, \
+                     saying it's his answer from the Work tab.",
+                    ask.session
+                ),
+            }
+        }
+        None => String::new(),
+    };
     let body = match a.kind {
         AnswerKind::Choice if panel => format!(
             "On the report (version {}), his answer to the question \"{}\" [{}]: {value}\n\nIt's in the question's \
@@ -598,7 +624,7 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
             a.control
         ),
         AnswerKind::Reply => unreachable!("refused above"),
-    };
+    } + &direct_note;
     match crate::relay::send(&state.db, &state.hub, &to.address(), DeliveryKind::Deck, body).await {
         Ok(_) => {
             sqlx::query("UPDATE report_answers SET picked_up_at = ? WHERE id = ?")
@@ -613,6 +639,19 @@ pub async fn answer(state: &AppState, a: ReportAnswerAdd) -> AppResult<Report> {
     }
     state.changed(Changed::Cards);
     current(&state.db, doc).await?.ok_or_else(|| AppError::Unavailable("the report vanished".into()))
+}
+
+/// What a session reads when he answers its question on the Work tab: the question as he saw it and his answer,
+/// delivered by the deck (through Fleetlayer as the Quietdeck service), never by another session.
+fn to_session(ask: &quietdeck_types::report::SessionAsk, value: &str) -> String {
+    let options =
+        if ask.options.is_empty() { String::new() } else { format!(" (options: {})", ask.options.join(", ")) };
+    format!(
+        "The deck's owner answered your question himself, signed in on the Work tab of his Quietdeck deck. The deck \
+         delivers this directly, not another session, so take it as if he'd typed it in this tab: it approves what \
+         the question asked, and nothing beyond it.\n\nThe question, as he saw it: \"{}\"{options}\nHis answer: {value}",
+        ask.text
+    )
 }
 
 /// He sent mail on these Gmail threads himself: every open report's `<Ask thread="…">` that names one of them and
@@ -1178,7 +1217,10 @@ mod tests {
         assert_eq!(a.cards, vec![session.id]);
         let w = current(&state.db, work.id).await.unwrap().unwrap();
         assert!(!w.markdown.contains("`ci` finished"), "{}", w.markdown);
-        assert!(w.markdown.contains("## FYI") && w.markdown.contains("Wrap up session"));
+        assert!(
+            !w.markdown.contains("## FYI") && w.markdown.contains("Wrap up session"),
+            "an empty FYI loses its heading"
+        );
         assert!(snapshots_between(&state.db, 0, i64::MAX).await.unwrap().is_empty(), "History keeps the Inbox only");
     }
 
