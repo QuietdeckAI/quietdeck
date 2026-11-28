@@ -80,6 +80,32 @@ impl Client {
         Ok(Some(res.json().await?))
     }
 
+    /// Events after `after` (an event ID, or `latest` to start from now) on `channels` (comma-separated), oldest
+    /// first, waiting up to `wait` seconds for one (`GET /v1/events`). `None` when the control plane answers 404.
+    pub async fn events_after(
+        &self,
+        after: &str,
+        channels: &str,
+        wait: u64,
+    ) -> anyhow::Result<Option<crate::fleetlayer_events::Feed>> {
+        let res = self
+            .http
+            .get(format!("{}/v1/events", self.base))
+            .query(&[("after", after), ("channel", channels), ("wait", &wait.to_string())])
+            .bearer_auth(&self.token)
+            .timeout(Duration::from_secs(wait + 15))
+            .send()
+            .await?;
+        let status = res.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !status.is_success() {
+            anyhow::bail!("GET /v1/events answered {status}: {}", res.text().await.unwrap_or_default());
+        }
+        Ok(Some(res.json().await?))
+    }
+
     /// Every node and session in the fleet (`GET /v1/fleet`), for the Sessions screen.
     pub async fn fleet(&self) -> anyhow::Result<crate::fleet_sessions::Fleet> {
         let res = self

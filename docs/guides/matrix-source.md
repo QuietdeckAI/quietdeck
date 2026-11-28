@@ -13,6 +13,10 @@ This guide assumes a deck, a node on each machine and the runner waking a triage
 [node services guide](https://fleetlayer.ai/docs/guides/node-services/). The examples use a homeserver at
 `matrix.example.org`, a user `@quietdeck:example.org` and a node called `build-server`.
 
+If you run Fleetlayer, its Matrix plugin can read the rooms instead of a node, and the deck takes their messages
+from Fleetlayer's event log: see [Read Matrix rooms through Fleetlayer](with-fleetlayer.md#read-matrix-rooms-through-fleetlayer).
+Everything from step 2 below works the same.
+
 ## How it works
 
 1. One node signs in as the Matrix user and syncs the rooms its `node.yaml` names.

@@ -12,6 +12,7 @@ pub mod error;
 pub mod events;
 pub mod fleet_sessions;
 pub mod fleetlayer;
+pub mod fleetlayer_events;
 pub mod fleetlayer_handoffs;
 pub mod handoffs;
 pub mod health;
@@ -132,6 +133,7 @@ pub async fn serve(env: Env) -> anyhow::Result<()> {
     tokio::spawn(reading::ticker(state.clone()));
     tokio::spawn(fleetlayer::ticker(state.clone()));
     tokio::spawn(fleetlayer_handoffs::ticker(state.clone()));
+    tokio::spawn(fleetlayer_events::ticker(state.clone(), env.fleetlayer_room_channels.clone()));
     tokio::spawn(overseer::ticker(state.clone()));
     match (&env.fleetlayer_url, &env.fleetlayer_approve_token) {
         (Some(url), Some(token)) => {

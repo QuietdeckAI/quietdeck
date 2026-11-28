@@ -234,6 +234,22 @@ searches subagents' and ended sessions' transcripts and redacts what it finds. T
 mention the text and when, as before. When Fleetlayer's node is older, refuses, or hasn't answered within 20 seconds,
 the node searches the transcripts itself.
 
+## Read Matrix rooms through Fleetlayer
+
+Fleetlayer's [Matrix plugin](https://fleetlayer.ai/docs/plugins/matrix/) reads rooms as its bot and puts each message on
+the room's channel. The deck can read those channels from the control plane's event log instead of a node's `matrix:`
+section: list them in `QUIETDECK_FLEETLAYER_ROOM_CHANNELS` (comma-separated), next to the read token.
+
+```sh
+QUIETDECK_FLEETLAYER_ROOM_CHANNELS=infrastructure-alerts
+```
+
+The deck asks for new events with a long poll (`GET /v1/events?after=<id>&channel=…&wait=30`) and stores each room
+message as the node's reader did, by room ID and event ID: triage's wake-ups, the hold while you read the Inbox and
+`quietdeck messages` work the same. A message read both ways while you switch is kept once, so turn the node's `matrix:`
+section off after the deck logs "room messages from Fleetlayer". The feed's position survives restarts; the first read
+starts from now. A control plane without the event feed is asked again every minute.
+
 ## Sign in through Fleetlayer
 
 If Fleetlayer's [sign-in service](https://fleetlayer.ai/docs/guides/sign-in/) already signs you in to your other
@@ -300,6 +316,8 @@ stays with Quietdeck's node.
   [crates/quietdeck-node/src/link.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-node/src/link.rs)
 - The deck pulling summaries and asking for catch-ups:
   [crates/quietdeck-server/src/fleetlayer.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/fleetlayer.rs)
+- The deck reading Matrix rooms from Fleetlayer's event log:
+  [crates/quietdeck-server/src/fleetlayer_events.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/fleetlayer_events.rs)
 - The deck copying Fleetlayer's handoffs:
   [crates/quietdeck-server/src/fleetlayer_handoffs.rs](https://github.com/QuietdeckAI/quietdeck/blob/main/crates/quietdeck-server/src/fleetlayer_handoffs.rs)
 - Every setting and environment variable: [Configuration](../configuration.md), and the deck's in
