@@ -426,8 +426,13 @@ impl Runner {
             if !self.cfg.eligible.contains(&t) {
                 return handoff(format!("{t} isn't runner-eligible"));
             }
+            // A conversation's close names the support inbox's account, which isn't a mailbox: the runner's own when
+            // its Intercom watch reads it (28 Nov 2026: every approved close went back to the agent).
+            let support_inbox = matches!(a, Action::CloseConversation { .. })
+                && self.cfg.intercom_watch.as_ref().is_some_and(|w| Some(w.account.as_str()) == a.account());
             if let Some(acct) = a.account()
                 && !self.cfg.accounts.contains_key(acct)
+                && !support_inbox
             {
                 return handoff(format!("account {acct} isn't in the runner's config"));
             }

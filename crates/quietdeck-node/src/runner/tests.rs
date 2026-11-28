@@ -124,6 +124,7 @@ tools:
   archive: {{ path: tools.google.gmail.modify, input: {{ account: "${{account.address}}", threadIds: ["${{action.thread_id}}"], archive: true }} }}
   draft: {{ path: tools.google.gmail.draft, input: {{ account: "${{account.address}}", from: "${{action.from}}", to: "${{action.to}}", subject: "${{action.subject}}", body: "${{action.body}}", replyToMessageId: "${{action.reply_to_message_id}}" }} }}
   story.create: {{ path: tools.shortcut.stories.create, input: {{ name: "${{action.title}}", workflow_state_id: "${{board.workflow_state_id}}" }} }}
+  close_conversation: {{ path: tools.intercom.conversations.close, input: {{ id: "${{action.conversation_id}}" }} }}
 boards:
   engineering: {{ workflow_state_id: 500000008 }}
 {extra}"#
@@ -415,6 +416,21 @@ async fn a_mixed_batch_is_claimed_and_handed_over_with_reasons() {
     assert_eq!(handed.len(), 1, "one message for the whole batch");
     assert!(handed[0].starts_with("5 cards handed to you:"), "{}", handed[0]);
     assert!(h.told(is_report).is_empty());
+}
+
+#[tokio::test]
+async fn the_runner_closes_conversations_on_the_support_inbox_it_watches() {
+    let close = |id: i64, account: &str| {
+        let action = json!([{"type": "close_conversation", "account": account, "conversation_id": "215477"}]);
+        released(id, action, json!({}))
+    };
+    let extra = "intercom_watch: { account: intercom, conversations: { path: tools.intercom.conversations.list, \
+                 input: {} } }\neligible: [archive, close_conversation]\n";
+    let h = harness(vec![close(1, "intercom"), close(2, "zendesk")], extra).await;
+    let out = h.runner.process().await.unwrap();
+    assert_eq!(out.done, 1, "the watched support inbox's close runs");
+    assert_eq!(h.calls_to("tools.intercom.conversations.close"), vec![json!({"id": "215477"})]);
+    assert_eq!(h.reason(102), "account zendesk isn't in the runner's config");
 }
 
 #[tokio::test]
