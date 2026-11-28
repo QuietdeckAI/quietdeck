@@ -19,6 +19,9 @@ you never start or close a session without the person's approval.
 - **"From the deck's overseer watch: sessions to look at"**: the deck names sessions that went idle (and stayed idle
   two minutes) or got blocked on a prompt, once per change. It already leaves out ignored and parked sessions (unless
   blocked), the agents runners work for, and sessions idle for more than six hours (your periodic refresh covers those).
+  It also names a session with an entry on Work that starts working again (once per change, within 10 minutes):
+  someone answered it, often the person in its own tab, so read the new part of its transcript at once and take the
+  entry off or rewrite it if that settled it.
 - **An audit every 30 minutes** (a Fleetlayer scheduler entry that messages you; without Fleetlayer, the deck's own
   "periodic refresh" every three hours with nothing else): audit every open entry, whether or not its session changed
   status. The watch only names a session when it goes idle or blocked, so a session that stays busy, or a decision the

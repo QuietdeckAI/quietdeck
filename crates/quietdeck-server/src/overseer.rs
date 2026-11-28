@@ -4,7 +4,8 @@
 //! few at a time in one message, and a session is named at most once every five minutes. A session that went idle more
 //! than six hours ago (or got blocked more than three days ago) stops counting, so a new watch doesn't wake its agent
 //! for everything that was already there. Left out: the overseer itself, the writers of other documents, the agents runners work for (the
-//! triage agent), ignored sessions and parked ones, except when blocked on a prompt. Every three hours without
+//! triage agent), ignored sessions and parked ones, except when blocked on a prompt. A session with an entry on Work
+//! that starts working again is named too, once per change, so the overseer sees what was answered in its tab. Every three hours without
 //! another wake-up it asks for a refresh (tasks due today, stale entries).
 //!
 //! `/healthz/overseer` fails while the watch has stopped ticking, or while the last wake-up couldn't be delivered for
@@ -31,6 +32,10 @@ const STALE_IDLE_MS: i64 = 6 * 3600 * 1000;
 /// Blocked longer than this: left alone too, though the Work tab still shows its prompt.
 const STALE_MS: i64 = 3 * 24 * 3600 * 1000;
 const REFRESH_MS: i64 = 3 * 3600 * 1000;
+/// A session with an entry on Work that started working again this recently is named, so the overseer reads what was
+/// just answered in its tab and clears a stale entry at once (Nathan, 28 Nov: "check it as soon as it goes from idle
+/// to active as well, to see what I responded in there").
+const RESUMED_MS: i64 = 10 * 60 * 1000;
 const MAX_NAMED: usize = 8;
 
 pub async fn ticker(state: AppState) {
@@ -161,6 +166,26 @@ pub async fn changes_for(state: &AppState, node: &str, tab: &str, now: i64) -> a
     .bind(STALE_IDLE_MS)
     .fetch_all(&state.db)
     .await?;
+    // Sessions with an entry on the writer's Work document that just started working again: someone answered them
+    // (often Nathan, in their own tab), so the entry may be stale. Named once per change, whatever the five-minute
+    // spacing, since that's when the entry goes out of date.
+    let on_work = sessions_on_work(&state.db, node, tab).await?;
+    let mut rows = rows;
+    if !on_work.is_empty() {
+        let resumed: Vec<(String, String, String, String, i64)> = sqlx::query_as(
+            "SELECT s.node, s.session_id, s.tab, s.status, s.status_changed_at FROM sessions s \
+             WHERE s.running = 1 AND s.tab IS NOT NULL AND s.closed_at IS NULL AND s.status = 'working' \
+               AND s.status_changed_at > ?1 - ?2 \
+               AND NOT EXISTS (SELECT 1 FROM overseer_told t WHERE t.node = s.node AND t.session_id = s.session_id \
+                    AND t.status_changed_at = s.status_changed_at) \
+             ORDER BY s.status_changed_at",
+        )
+        .bind(now)
+        .bind(RESUMED_MS)
+        .fetch_all(&state.db)
+        .await?;
+        rows.extend(resumed.into_iter().filter(|(n, _, t, _, _)| on_work.contains(&format!("{t}@{n}"))));
+    }
     // The agents runners work for (the triage agent) aren't the overseer's to watch.
     let runner_agents = runner_agents(&state.db).await?;
     Ok(rows
@@ -174,6 +199,26 @@ pub async fn changes_for(state: &AppState, node: &str, tab: &str, now: i64) -> a
             status,
             status_changed_at,
         })
+        .collect())
+}
+
+/// The sessions the writer's open Work report has entries for: every `session="<tab>@<node>"` in it.
+async fn sessions_on_work(db: &Db, node: &str, tab: &str) -> anyhow::Result<Vec<String>> {
+    let markdown: Option<(String,)> = sqlx::query_as(
+        "SELECT r.markdown FROM reports r JOIN documents d ON d.id = r.document_id WHERE r.closed_at IS NULL \
+         AND d.kind = 'work' AND d.removed_at IS NULL AND d.writer_node = ? AND d.writer_tab = ? \
+         ORDER BY r.id DESC LIMIT 1",
+    )
+    .bind(node)
+    .bind(tab)
+    .fetch_optional(db)
+    .await?;
+    let Some((markdown,)) = markdown else { return Ok(vec![]) };
+    Ok(markdown
+        .split("session=\"")
+        .skip(1)
+        .filter_map(|rest| rest.split_once('"').map(|(s, _)| s.trim().to_string()))
+        .filter(|s| !s.is_empty())
         .collect())
 }
 
@@ -198,6 +243,11 @@ fn message(changes: &[Change], now: i64) -> String {
             let mins = (now - c.status_changed_at).max(0) / 60_000;
             match c.status.as_str() {
                 "blocked" => format!("- `{}@{}` is blocked on a prompt (for {mins} min)", c.tab, c.node),
+                "working" => format!(
+                    "- `{}@{}` started working again {mins} min ago: read what was just answered in its tab, and \
+                     take its Work entry off or rewrite it if that settled it",
+                    c.tab, c.node
+                ),
                 _ => format!("- `{}@{}` went idle {mins} min ago", c.tab, c.node),
             }
         })
@@ -336,6 +386,48 @@ mod tests {
         sqlx::query("UPDATE overseer_told SET worked = 1 WHERE session_id = 's1'").execute(&state.db).await.unwrap();
         session(&state, "s1", "search", "idle", now - 3 * 60_000 + 1).await;
         assert_eq!(tabs(changes_for(&state, "laptop", "overseer", now).await.unwrap()), vec!["search"]);
+    }
+
+    #[tokio::test]
+    async fn a_session_with_a_work_entry_that_starts_working_again_is_named_once() {
+        let state = AppState::for_tests().await;
+        let now = now_ms();
+        let doc = crate::documents::add(
+            &state,
+            DocumentAdd {
+                slug: "work".into(),
+                name: "Work".into(),
+                tab: "Work".into(),
+                kind: DocumentKind::Work,
+                writer_node: Some("laptop".into()),
+                writer_tab: Some("overseer".into()),
+                position: None,
+            },
+        )
+        .await
+        .unwrap();
+        let overseer =
+            quietdeck_types::action::SessionRef { node: "laptop".into(), tab: "overseer".into(), session_id: None };
+        let md = "1. **`security`** asks to send batch 5.\n   <Ask id=\"b5\" options=\"Go|Hold\" session=\"security@laptop\">Send it?</Ask>\n";
+        let set = quietdeck_types::report::ReportSet { markdown: md.into(), base: None, new: false, change: None };
+        crate::reports::set(&state, &overseer, &doc, set).await.unwrap();
+        session(&state, "s1", "security", "working", now - 60_000).await; // on Work, just answered in its tab
+        session(&state, "s2", "search", "working", now - 60_000).await; // not on Work
+        session(&state, "s3", "security", "working", now - 20 * 60_000).await; // too long ago
+        sqlx::query("UPDATE sessions SET node = 'laptop', tab = 'old security' WHERE session_id = 's3'")
+            .execute(&state.db)
+            .await
+            .unwrap();
+        let first = changes_for(&state, "laptop", "overseer", now).await.unwrap();
+        assert_eq!(first.iter().map(|c| c.session_id.as_str()).collect::<Vec<_>>(), ["s1"]);
+        assert!(message(&first, now).contains("`security@laptop` started working again"), "{}", message(&first, now));
+        sqlx::query("INSERT INTO overseer_told (node, session_id, status, status_changed_at, told_at) VALUES ('laptop', 's1', 'working', ?, ?)")
+            .bind(now - 60_000)
+            .bind(now)
+            .execute(&state.db)
+            .await
+            .unwrap();
+        assert!(changes_for(&state, "laptop", "overseer", now).await.unwrap().is_empty(), "once per change");
     }
 
     #[tokio::test]
