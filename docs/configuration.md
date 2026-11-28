@@ -41,7 +41,7 @@ from the deck or a card ([Starting, resuming and closing sessions](getting-start
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `sessions.claude_args` | list of strings | `[]` | Added to every Claude Code session, such as `--dangerously-skip-permissions`. On a machine with Fleetlayer, sessions start with the flags in Fleetlayer's node.yaml instead (`harnesses.claude.args`), except a start that names a model or effort. |
+| `sessions.claude_args` | list of strings | `[]` | Added to every Claude Code session, such as `--dangerously-skip-permissions`. On a machine with Fleetlayer, sessions start with the flags in Fleetlayer's node.yaml instead (`harnesses.claude.args`), except a start naming a session other than its tab. |
 | `sessions.codex_args` | list of strings | `[--no-daemon]` | Added to every Codex session. `--no-daemon` stops a Codex daemon from another pane reporting this session as its own. |
 
 ### programs
